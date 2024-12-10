@@ -1,7 +1,9 @@
 [package]
-name = "sdk"
+name = "arch_sdk"
 version = "0.1.0"
 edition = "2021"
+description = "A Rust library for providing data types, constants, RPC methods and helper functions for programs that run inside the Arch Virtual Machine."
+license = "MIT"
 
 [dependencies]
 arch_program = { workspace = true }
