@@ -1,5 +1,4 @@
 //! This module contains constants
-
 /// The file path where the caller stores information
 pub const CALLER_FILE_PATH: &str = ".caller.json";
 pub const PROGRAM_FILE_PATH: &str = ".program.json";
@@ -23,11 +22,17 @@ pub const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 pub const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 
 /// Data
-pub const BITCOIN_NODE_ENDPOINT: &str =
-    "https://bitcoin-node.dev.aws.archnetwork.xyz:18443/wallet/testwallet";
+pub const BITCOIN_NODE_ENDPOINT: &str = "http://127.0.0.1:18443/wallet/testwallet";
 pub const BITCOIN_NODE_USERNAME: &str = "bitcoin";
-pub const BITCOIN_NODE_PASSWORD: &str = "428bae8f3c94f8c39c50757fc89c39bc7e6ebc70ebf8f618";
+pub const BITCOIN_NODE_PASSWORD: &str = "bitcoinpass";
 pub const BITCOIN_NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
+pub const MINING_ADDRESS: &str = "bcrt1q9s6pf9hswah20jjnzmyvk9s2xwp7srz6m2r5tw";
+
+pub const BITCOIN_NODE1_ADDRESS: &str = "http://127.0.0.1:18443/wallet/testwallet";
+pub const BITCOIN_NODE2_ADDRESS: &str = "http://127.0.0.1:18453/wallet/testwallet";
+
+pub const BITCOIN_NODE1_P2P_ADDRESS: &str = "127.0.0.1:18444";
+pub const BITCOIN_NODE2_P2P_ADDRESS: &str = "127.0.0.1:18454";
 
 /// Hack for Error codes
 pub const TRANSACTION_NOT_FOUND_CODE: i64 = 404;
