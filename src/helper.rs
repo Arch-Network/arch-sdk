@@ -1,15 +1,16 @@
 //! This module contains helper methods for interacting with programs
 
 use anyhow::{anyhow, Result};
-use bip322::sign_message_bip322;
+use bip322::{create_to_sign, create_to_spend, verify_simple};
 use bitcoin::{
     absolute::LockTime,
     address::Address,
     key::{Keypair, TapTweak, TweakedKeypair},
     secp256k1::{self, Secp256k1},
-    sighash::{Prevouts, SighashCache},
+    sighash::{self, Prevouts, SighashCache},
     transaction::Version,
-    Amount, OutPoint, ScriptBuf, Sequence, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness,
+    Amount, OutPoint, PrivateKey, Psbt, ScriptBuf, Sequence, TapSighashType, Transaction, TxIn,
+    TxOut, Txid, Witness,
 };
 use bitcoincore_rpc::{Auth, Client, RawTx, RpcApi};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -805,4 +806,122 @@ fn _get_address_utxos(rpc: &Client, address: String) -> Vec<Value> {
         })
         .cloned()
         .collect()
+}
+
+// bip322 utils
+pub fn sign_message_bip322(
+    keypair: &UntweakedKeypair,
+    msg: &[u8],
+    network: bitcoin::Network,
+) -> [u8; 64] {
+    let secp = Secp256k1::new();
+    let xpubk = XOnlyPublicKey::from_keypair(keypair).0;
+    let private_key = PrivateKey::new(SecretKey::from_keypair(keypair), network);
+
+    let address = Address::p2tr(&secp, xpubk, None, network);
+
+    let to_spend = create_to_spend(&address, msg).unwrap();
+    let mut to_sign = create_to_sign(&to_spend, None).unwrap();
+
+    let witness = match address.witness_program() {
+        Some(witness_program) => {
+            let version = witness_program.version().to_num();
+            let program_len = witness_program.program().len();
+
+            match version {
+                1 => {
+                    if program_len != 32 {
+                        panic!("not key spend path");
+                    }
+                    create_message_signature_taproot(&to_spend, &to_sign, private_key)
+                }
+                _ => {
+                    panic!("unsuported address");
+                }
+            }
+        }
+        None => {
+            panic!("unsuported address");
+        }
+    };
+
+    to_sign.inputs[0].final_script_witness = Some(witness);
+
+    let signature = to_sign.extract_tx().unwrap().input[0].witness.clone();
+
+    signature.to_vec()[0][..64].try_into().unwrap()
+}
+
+fn create_message_signature_taproot(
+    to_spend_tx: &Transaction,
+    to_sign: &Psbt,
+    private_key: PrivateKey,
+) -> Witness {
+    let mut to_sign = to_sign.clone();
+
+    let secp = Secp256k1::new();
+    let key_pair = Keypair::from_secret_key(&secp, &private_key.inner);
+
+    let (x_only_public_key, _parity) = XOnlyPublicKey::from_keypair(&key_pair);
+    to_sign.inputs[0].tap_internal_key = Some(x_only_public_key);
+
+    let sighash_type = TapSighashType::All;
+
+    let mut sighash_cache = SighashCache::new(to_sign.unsigned_tx.clone());
+
+    let sighash = sighash_cache
+        .taproot_key_spend_signature_hash(
+            0,
+            &sighash::Prevouts::All(&[TxOut {
+                value: Amount::from_sat(0),
+                script_pubkey: to_spend_tx.output[0].clone().script_pubkey,
+            }]),
+            sighash_type,
+        )
+        .expect("signature hash should compute");
+
+    let key_pair = key_pair
+        .tap_tweak(&secp, to_sign.inputs[0].tap_merkle_root)
+        .to_inner();
+
+    let sig = secp.sign_schnorr(
+        &bitcoin::secp256k1::Message::from_digest_slice(sighash.as_ref())
+            .expect("should be cryptographically secure hash"),
+        &key_pair,
+    );
+
+    let witness = sighash_cache
+        .witness_mut(0)
+        .expect("getting mutable witness reference should work");
+
+    witness.push(
+        bitcoin::taproot::Signature {
+            signature: sig,
+            sighash_type,
+        }
+        .to_vec(),
+    );
+
+    witness.to_owned()
+}
+
+pub fn verify_message_bip322(
+    msg: &[u8],
+    pubkey: [u8; 32],
+    signature: [u8; 64],
+    uses_sighash_all: bool,
+    network: bitcoin::Network,
+) -> Result<()> {
+    let mut signature = signature.to_vec();
+    if uses_sighash_all {
+        signature.push(1);
+    }
+    let mut witness = Witness::new();
+    witness.push(&signature);
+
+    let secp = Secp256k1::new();
+    let xpubk = XOnlyPublicKey::from_slice(&pubkey).unwrap();
+    let address = Address::p2tr(&secp, xpubk, None, network);
+
+    verify_simple(&address, msg, witness).map_err(|e| anyhow!("BIP-322 verification failed: {}", e))
 }
