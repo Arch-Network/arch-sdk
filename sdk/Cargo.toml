@@ -4,3 +4,25 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+arch_program = "0.1.0"
+
+borsh = { version = "1.5.1" }
+proptest = "1.5.0"
+serde = { version = "1.0.197" }
+sha256 = { version = "1.5.0" }
+anyhow = { version = "1", features = ["backtrace"] }
+hex = { version = "0.4.3" }
+serde_json = { version = "1.0.114" }
+bitcoincore-rpc = "0.19.0"
+bitcoin = { version = "0.32.3", features = ["serde", "rand"] }
+rand_core = { version = "0.6.4", features = ["getrandom"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+  "blocking",
+] }
+indicatif = "0.17.8"
+snafu = "0.8.5"
+base64 = "0.22.1"
+bip322 = "0.0.9"
+thiserror = { version = "1.0.57" }
