@@ -34,6 +34,7 @@ pub struct ProcessedTransaction {
     pub status: Status,
     pub bitcoin_txid: Option<String>,
     pub accounts_tags: Vec<String>,
+    pub logs: Vec<String>,
 }
 
 impl ProcessedTransaction {
@@ -59,6 +60,12 @@ impl ProcessedTransaction {
         serialized.extend((self.accounts_tags.len() as u64).to_le_bytes());
         for account_tag in &self.accounts_tags {
             serialized.extend(hex::decode(account_tag)?);
+        }
+
+        serialized.extend((self.logs.len() as u64).to_le_bytes());
+        for log in &self.logs {
+            serialized.extend((log.len() as u64).to_le_bytes());
+            serialized.extend(log.as_bytes());
         }
 
         serialized.extend(match &self.status {
@@ -101,6 +108,17 @@ impl ProcessedTransaction {
             size += 32;
         }
 
+        let data_bytes = data[size..(size + 8)].try_into()?;
+        let logs_len = u64::from_le_bytes(data_bytes) as usize;
+        size += 8;
+        let mut logs = vec![];
+        for _ in 0..logs_len {
+            let log_len = u64::from_le_bytes(data[size..(size + 8)].try_into().unwrap()) as usize;
+            size += 8;
+            logs.push(String::from_utf8(data[size..(size + log_len)].to_vec()).unwrap());
+            size += log_len;
+        }
+
         let status = match data[size] {
             0 => Status::Processing,
             1 => Status::Processed,
@@ -118,6 +136,7 @@ impl ProcessedTransaction {
             runtime_transaction,
             status,
             bitcoin_txid,
+            logs,
             accounts_tags,
         })
     }
@@ -178,6 +197,7 @@ mod tests {
                 status: Status::Processing,
                 bitcoin_txid: Some(bitcoin_txid.to_string()),
                 accounts_tags: accounts_tags.iter().map(|s| s.to_string()).collect(),
+                logs: vec![],
             };
 
             let serialized = processed_transaction.to_vec().unwrap();
