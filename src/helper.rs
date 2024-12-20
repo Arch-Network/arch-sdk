@@ -32,6 +32,7 @@ use crate::constants::{
     GET_PROCESSED_TRANSACTION, GET_PROGRAM, NODE1_ADDRESS, READ_ACCOUNT_INFO,
     TRANSACTION_NOT_FOUND_CODE,
 };
+use crate::error::SDKError;
 use crate::models::CallerInfo;
 use crate::runtime_transaction::RuntimeTransaction;
 use crate::runtime_transaction::RUNTIME_TX_SIZE_LIMIT;
@@ -245,35 +246,40 @@ pub fn sign_and_send_transaction(
 }
 
 /// Deploys the HelloWorld program using the compiled ELF
-pub fn deploy_program_txs(program_keypair: UntweakedKeypair, elf_path: &str) {
+pub fn deploy_program_txs(
+    program_keypair: UntweakedKeypair,
+    elf_path: &str,
+) -> Result<(), SDKError> {
     let program_pubkey =
         Pubkey::from_slice(&XOnlyPublicKey::from_keypair(&program_keypair).0.serialize());
 
-    let account_info = read_account_info(NODE1_ADDRESS, program_pubkey).unwrap();
+    let account_info = read_account_info(NODE1_ADDRESS, program_pubkey)?;
 
     if account_info.is_executable {
         let (txid, _) = sign_and_send_instruction(
             SystemInstruction::new_retract_instruction(program_pubkey),
             vec![program_keypair],
         )
-        .expect("signing and sending a transaction should not fail");
+        .map_err(|_| SDKError::SignAndSendFailed)?;
 
         let processed_tx = get_processed_transaction(NODE1_ADDRESS, txid.clone())
-            .expect("get processed transaction should not fail");
+            .map_err(|_| SDKError::GetProcessedTransactionFailed)?;
+
         println!("processed_tx {:?}", processed_tx);
     }
 
-    let elf = fs::read(elf_path).expect("elf path should be available");
+    let elf = fs::read(elf_path).map_err(|_| SDKError::ElfPathNotFound)?;
 
     if account_info.data.len() > elf.len() {
         let (txid, _) = sign_and_send_instruction(
             SystemInstruction::new_truncate_instruction(program_pubkey, elf.len() as u32),
             vec![program_keypair],
         )
-        .expect("signing and sending a transaction should not fail");
+        .map_err(|_| SDKError::SignAndSendFailed)?;
 
         let processed_tx = get_processed_transaction(NODE1_ADDRESS, txid.clone())
-            .expect("get processed transaction should not fail");
+            .map_err(|_| SDKError::GetProcessedTransactionFailed)?;
+
         println!("processed_tx {:?}", processed_tx);
     }
 
@@ -306,17 +312,20 @@ pub fn deploy_program_txs(program_keypair: UntweakedKeypair, elf_path: &str) {
         })
         .collect::<Vec<RuntimeTransaction>>();
 
-    let txids = process_result(post_data(NODE1_ADDRESS, "send_transactions", txs))
-        .expect("send_transaction should not fail")
+    let post_result = post_data(NODE1_ADDRESS, "send_transactions", txs);
+    let processed_data =
+        process_result(post_result).map_err(|_| SDKError::SendTransactionFailed)?;
+    let array_data = processed_data
         .as_array()
-        .expect("cannot convert result to array")
+        .ok_or(SDKError::InvalidResponseType)?;
+    let txids = array_data
         .iter()
         .map(|r| {
             r.as_str()
-                .expect("cannot convert object to string")
-                .to_string()
+                .ok_or(SDKError::InvalidResponseType)
+                .map(String::from)
         })
-        .collect::<Vec<String>>();
+        .collect::<Result<Vec<String>, SDKError>>()?;
 
     let pb = ProgressBar::new(txids.len() as u64);
 
@@ -328,12 +337,13 @@ pub fn deploy_program_txs(program_keypair: UntweakedKeypair, elf_path: &str) {
 
     for txid in txids {
         let _processed_tx = get_processed_transaction(NODE1_ADDRESS, txid.clone())
-            .expect("get processed transaction should not fail");
+            .map_err(|_| SDKError::GetProcessedTransactionFailed)?;
         pb.inc(1);
         pb.set_message("Successfully Processed Deployment Transactions :");
     }
 
     pb.finish();
+    Ok(())
 }
 
 /// Starts Key Exchange by calling the RPC method
