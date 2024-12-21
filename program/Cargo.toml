@@ -6,15 +6,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-borsh = { workspace = true }
-hex = { workspace = true }
-memoffset = { workspace = true }
-rustversion = { workspace = true }
-thiserror = { workspace = true }
-bitcoin = { workspace = true }
-sha256 = { workspace = true }
-serde = { workspace = true }
+borsh = { version = "1.5.1", features = ["derive"] }
+hex = { version = "0.4.3" }
+memoffset = { version = "0.9.0" }
+rustversion = { version = "1.0.14" }
+thiserror = { version = "1.0.57" }
+bitcoin = { version = "0.32.3", features = ["serde"] }
+sha256 = { version = "1.5.0" }
+serde = { version = "1.0.197" }
 
 [dev-dependencies]
-proptest = { workspace = true }
-rand = { workspace = true}
+proptest = { version = "1.5.0" }
+rand = { version = "0.8.5" }
