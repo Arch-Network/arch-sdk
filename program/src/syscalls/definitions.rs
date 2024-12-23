@@ -24,6 +24,8 @@ define_syscall!(fn arch_validate_utxo_ownership(utxo: *const UtxoMeta, owner: *c
 define_syscall!(fn arch_get_account_script_pubkey(script: *mut u8, pubkey: *const Pubkey) -> u64);
 define_syscall!(fn arch_get_bitcoin_block_height() -> u64);
 define_syscall!(fn arch_get_clock(clock: *mut Clock) -> u64);
+define_syscall!(fn sol_secp256k1_recover( hash_addr: *const u8, recovery_id_val: u64, signature_addr: *const u8, result_addr: *mut u8) ->  u64);
+
 // logs
 define_syscall!(fn sol_log_(message: *const u8, len: u64));
 define_syscall!(fn sol_log_64_(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64));

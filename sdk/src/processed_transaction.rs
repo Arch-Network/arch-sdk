@@ -7,7 +7,7 @@ use crate::runtime_transaction::RuntimeTransaction;
 
 #[derive(Clone, Debug, Deserialize, Serialize, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum Status {
-    Processing,
+    Queued,
     Processed,
     Failed(String),
 }
@@ -15,7 +15,7 @@ impl Status {
     pub fn from_value(value: &Value) -> Option<Self> {
         if let Some(status_str) = value.as_str() {
             match status_str {
-                "Processing" => return Some(Status::Processing),
+                "Queued" => return Some(Status::Queued),
                 _ => return Some(Status::Processed),
             }
         } else if let Some(obj) = value.as_object() {
@@ -69,7 +69,7 @@ impl ProcessedTransaction {
         }
 
         serialized.extend(match &self.status {
-            Status::Processing => vec![0_u8],
+            Status::Queued => vec![0_u8],
             Status::Processed => vec![1_u8],
             Status::Failed(err) => {
                 let mut result = vec![2_u8];
@@ -120,7 +120,7 @@ impl ProcessedTransaction {
         }
 
         let status = match data[size] {
-            0 => Status::Processing,
+            0 => Status::Queued,
             1 => Status::Processed,
             2 => {
                 let data_bytes = data[(size + 1)..(size + 9)].try_into()?;
@@ -194,7 +194,7 @@ mod tests {
 
             let processed_transaction = ProcessedTransaction {
                 runtime_transaction,
-                status: Status::Processing,
+                status: Status::Queued,
                 bitcoin_txid: Some(bitcoin_txid.to_string()),
                 accounts_tags: accounts_tags.iter().map(|s| s.to_string()).collect(),
                 logs: vec![],

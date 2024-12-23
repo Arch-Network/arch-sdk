@@ -464,7 +464,6 @@ pub fn get_processed_transaction(url: &str, tx_id: String) -> Result<ProcessedTr
         };
 
         while get_status(p.clone()) != *"Processed" && get_status(p.clone()) != *"Failed" {
-            println!("Processed transaction is not yet finalized. Retrying...");
             std::thread::sleep(std::time::Duration::from_secs(wait_time));
             p = process_get_transaction_result(post_data(
                 url,

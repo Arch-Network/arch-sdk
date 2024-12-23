@@ -18,6 +18,7 @@ pub mod program_error;
 pub mod program_stubs;
 pub mod pubkey;
 pub mod sanitized;
+pub mod sol_secp256k1_recover;
 pub mod stable_layout;
 pub mod syscalls;
 pub mod system_instruction;

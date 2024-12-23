@@ -53,3 +53,13 @@ pub(crate) fn sol_invoke_signed_rust(
     sol_log("SyscallStubs: sol_invoke_signed() not available");
     Ok(())
 }
+
+pub(crate) fn sol_secp256k1_recover(
+    hash_addr: *const u8,
+    recovery_id_val: u64,
+    signature_addr: *const u8,
+    result_addr: *mut u8,
+) -> u64 {
+    sol_log("UNAVAILABLE");
+    UNIMPLEMENTED
+}
