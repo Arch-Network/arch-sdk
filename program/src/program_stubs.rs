@@ -55,10 +55,10 @@ pub(crate) fn sol_invoke_signed_rust(
 }
 
 pub(crate) fn sol_secp256k1_recover(
-    hash_addr: *const u8,
-    recovery_id_val: u64,
-    signature_addr: *const u8,
-    result_addr: *mut u8,
+    _hash_addr: *const u8,
+    _recovery_id_val: u64,
+    _signature_addr: *const u8,
+    _result_addr: *mut u8,
 ) -> u64 {
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED
