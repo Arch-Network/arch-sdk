@@ -141,3 +141,29 @@ pub fn verify_message_bip322(
 
     verify_simple(&address, msg, witness).map_err(|e| anyhow!("BIP-322 verification failed: {}", e))
 }
+#[cfg(test)]
+mod bip322_tests {
+    use crate::helper::{sign_message_bip322, with_secret_key_file};
+
+    #[test]
+    fn test_sign_with_random_nonce() {
+        let (first_account_keypair, _first_account_pubkey) =
+            with_secret_key_file(".first_account.json")
+                .expect("getting first account info should not fail");
+
+        let signature1 = sign_message_bip322(
+            &first_account_keypair,
+            b"helloworld",
+            bitcoin::Network::Testnet,
+        );
+        let signature2 = sign_message_bip322(
+            &first_account_keypair,
+            b"helloworld",
+            bitcoin::Network::Testnet,
+        );
+
+        println!("signature1 {:?}", signature1);
+        println!("signature2 {:?}", signature2);
+        assert_ne!(signature1, signature2);
+    }
+}
