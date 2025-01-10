@@ -35,6 +35,7 @@ pub struct ProcessedTransaction {
     pub bitcoin_txid: Option<String>,
     pub accounts_tags: Vec<String>,
     pub logs: Vec<String>,
+    pub rollback_status: bool,
 }
 
 impl ProcessedTransaction {
@@ -67,6 +68,8 @@ impl ProcessedTransaction {
             serialized.extend((log.len() as u64).to_le_bytes());
             serialized.extend(log.as_bytes());
         }
+
+        serialized.push(if self.rollback_status { 1 } else { 0 });
 
         serialized.extend(match &self.status {
             Status::Queued => vec![0_u8],
@@ -119,6 +122,9 @@ impl ProcessedTransaction {
             size += log_len;
         }
 
+        let rollback_status = data[size] == 1;
+        size += 1;
+
         let status = match data[size] {
             0 => Status::Queued,
             1 => Status::Processed,
@@ -138,6 +144,7 @@ impl ProcessedTransaction {
             bitcoin_txid,
             logs,
             accounts_tags,
+            rollback_status,
         })
     }
 }
@@ -198,6 +205,7 @@ mod tests {
                 bitcoin_txid: Some(bitcoin_txid.to_string()),
                 accounts_tags: accounts_tags.iter().map(|s| s.to_string()).collect(),
                 logs: vec![],
+                rollback_status: false,
             };
 
             let serialized = processed_transaction.to_vec().unwrap();
