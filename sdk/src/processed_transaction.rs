@@ -3,7 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::runtime_transaction::RuntimeTransaction;
+use crate::{error::SDKError, runtime_transaction::RuntimeTransaction};
 
 #[derive(Clone, Debug, Deserialize, Serialize, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum Status {
@@ -11,6 +11,7 @@ pub enum Status {
     Processed,
     Failed(String),
 }
+
 impl Status {
     pub fn from_value(value: &Value) -> Option<Self> {
         if let Some(status_str) = value.as_str() {
@@ -28,6 +29,7 @@ impl Status {
         None
     }
 }
+
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct ProcessedTransaction {
     pub runtime_transaction: RuntimeTransaction,
@@ -43,7 +45,7 @@ impl ProcessedTransaction {
         self.runtime_transaction.txid()
     }
 
-    pub fn to_vec(&self) -> Result<Vec<u8>> {
+    pub fn to_vec(&self) -> Result<Vec<u8>, SDKError> {
         let mut serialized = vec![];
 
         serialized.extend((self.runtime_transaction.serialize().len() as u64).to_le_bytes());
@@ -84,7 +86,7 @@ impl ProcessedTransaction {
         Ok(serialized)
     }
 
-    pub fn from_vec(data: &[u8]) -> Result<Self> {
+    pub fn from_vec(data: &[u8]) -> Result<Self, SDKError> {
         let data_bytes = data[..8].try_into()?;
         let runtime_transaction_len = u64::from_le_bytes(data_bytes) as usize;
         let mut size = 8;

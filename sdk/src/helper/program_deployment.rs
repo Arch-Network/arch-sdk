@@ -129,7 +129,8 @@ pub fn deploy_program_txs(
     let program_pubkey =
         Pubkey::from_slice(&XOnlyPublicKey::from_keypair(&program_keypair).0.serialize());
 
-    let account_info = read_account_info(NODE1_ADDRESS, program_pubkey)?;
+    let account_info = read_account_info(NODE1_ADDRESS, program_pubkey)
+        .map_err(|_| SDKError::FromStrError("read account info failed".to_string()))?;
 
     if account_info.is_executable {
         let (txid, _) = sign_and_send_instruction(

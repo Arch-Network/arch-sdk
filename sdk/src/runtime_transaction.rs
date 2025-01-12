@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use anyhow::{anyhow, Result};
 use arch_program::message::Message;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -8,11 +10,23 @@ use crate::signature::Signature;
 
 pub const RUNTIME_TX_SIZE_LIMIT: usize = 10240;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct RuntimeTransaction {
     pub version: u32,
     pub signatures: Vec<Signature>,
     pub message: Message,
+}
+
+impl Display for RuntimeTransaction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "RuntimeTransaction {{ version: {}, signatures: {}, message: {:?} }}",
+            self.version,
+            self.signatures.len(),
+            self.message
+        )
+    }
 }
 
 impl RuntimeTransaction {
@@ -46,7 +60,7 @@ impl RuntimeTransaction {
         let message = Message::from_slice(&data[size..]);
 
         Ok(Self {
-            version: u32::from_le_bytes(data[..4].try_into().unwrap()),
+            version: u32::from_le_bytes(data[..4].try_into()?),
             signatures,
             message,
         })
