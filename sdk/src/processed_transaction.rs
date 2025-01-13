@@ -30,7 +30,7 @@ impl Status {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct ProcessedTransaction {
     pub runtime_transaction: RuntimeTransaction,
     pub status: Status,
