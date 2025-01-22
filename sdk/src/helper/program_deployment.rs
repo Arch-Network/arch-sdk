@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use tracing::{debug, error};
+use tracing::debug;
 
 use std::fs;
 
