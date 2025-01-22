@@ -156,6 +156,9 @@ pub fn get_return_data() -> Option<(Pubkey, Vec<u8>)> {
 
 pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<Vec<u8>> {
     use std::cmp::min;
+    if txid == [0u8; 32] {
+        return None;
+    }
 
     let mut buf = [0u8; MAX_BTC_TX_SIZE];
 
