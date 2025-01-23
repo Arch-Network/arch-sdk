@@ -26,7 +26,7 @@ use crate::helper::read_account_info;
 /* -------------------------------------------------------------------------- */
 /*                             PROGRAM DEPLOYMENT                             */
 /* -------------------------------------------------------------------------- */
-/// Tries to deploy the program, cre
+/// Tries to deploy the program
 
 pub fn try_deploy_program(
     elf_path: &str,
@@ -43,6 +43,13 @@ pub fn try_deploy_program(
     if let Ok(account_info_result) = read_account_info(NODE1_ADDRESS, program_pubkey) {
         if account_info_result.data == elf {
             println!("\x1b[33m Same program already deployed ! Skipping deployment. \x1b[0m");
+            print_title(
+                &format!(
+                    "PROGRAM DEPLOYMENT : OK Program account : {:?} !",
+                    program_pubkey.0
+                ),
+                5,
+            );
             return Ok(program_pubkey);
         }
         println!("\x1b[33m ELF mismatch with account content ! Redeploying \x1b[0m");
@@ -71,7 +78,7 @@ pub fn try_deploy_program(
     let _processed_tx = get_processed_transaction(NODE1_ADDRESS, pa_arch_txid.clone())
         .expect("get processed transaction should not fail");
 
-    println!("\x1b[32m Step 2/4 Successful :\x1b[0m Program account creation transaction successfully processed !.\x1b[0m");
+    println!("\x1b[32m Step 2/4 Successful :\x1b[0m Program account creation transaction successfully processed ! Tx Id : {}.\x1b[0m",pa_arch_txid.clone());
 
     deploy_program_txs(program_keypair, elf_path)?;
 
@@ -116,7 +123,37 @@ pub fn try_deploy_program(
 
     println!("\x1b[32m Step 4/4 Successful :\x1b[0m Made program account executable!");
 
-    print_title("PROGRAM DEPLOYMENT : OK !", 5);
+    print_title(
+        &format!(
+            "PROGRAM DEPLOYMENT : OK Program account : {:?} !",
+            program_pubkey.0
+        ),
+        5,
+    );
+
+    println!("\x1b[33m\x1b[1m Program account Info :\x1b[0m");
+    println!(
+        "\x1b[33mAccount Pubkey : \x1b[0m {} // {}",
+        hex::encode(program_pubkey.0),
+        program_pubkey,
+    );
+    println!(
+        "\x1b[33mOwner : \x1b[0m{} // {:?}",
+        hex::encode(program_info_after_making_executable.owner.0),
+        program_info_after_making_executable.owner.0,
+    );
+    println!(
+        "\x1b[33m\x1b[1mIs executable : \x1b[0m{}",
+        program_info_after_making_executable.is_executable
+    );
+    println!(
+        "\x1b[33m\x1b[1mUtxo details : \x1b[0m{}",
+        program_info_after_making_executable.utxo
+    );
+    println!(
+        "\x1b[33m\x1b[1mELF Size : \x1b[0m{} Bytes",
+        program_info_after_making_executable.data.len()
+    );
 
     Ok(program_pubkey)
 }
@@ -129,8 +166,9 @@ pub fn deploy_program_txs(
     let program_pubkey =
         Pubkey::from_slice(&XOnlyPublicKey::from_keypair(&program_keypair).0.serialize());
 
-    let account_info = read_account_info(NODE1_ADDRESS, program_pubkey)
-        .map_err(|_| SDKError::FromStrError("read account info failed".to_string()))?;
+    let account_info = read_account_info(NODE1_ADDRESS, program_pubkey).map_err(|e| {
+        SDKError::FromStrError(format!("Read account info failed : {}", e.to_string()).to_string())
+    })?;
 
     if account_info.is_executable {
         let (txid, _) = sign_and_send_instruction(

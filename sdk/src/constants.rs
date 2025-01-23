@@ -17,6 +17,7 @@ pub const DEPLOY_PROGRAM: &str = "deploy_program";
 pub const SEND_TRANSACTION: &str = "send_transaction";
 pub const GET_PROGRAM: &str = "get_program";
 pub const GET_BLOCK: &str = "get_block";
+pub const GET_BLOCK_COUNT: &str = "get_block_count";
 pub const GET_BEST_BLOCK_HASH: &str = "get_best_block_hash";
 pub const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 pub const GET_ACCOUNT_ADDRESS: &str = "get_account_address";

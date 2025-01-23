@@ -57,8 +57,17 @@ pub fn get_account_address(pubkey: Pubkey) -> String {
 
 pub fn with_secret_key_file(file_path: &str) -> Result<(UntweakedKeypair, Pubkey)> {
     let secp = Secp256k1::new();
-    let secret_key = match fs::read_to_string(file_path) {
-        Ok(key) => SecretKey::from_str(&key).unwrap(),
+
+    let file_content = fs::read_to_string(file_path);
+
+    let secret_key = match file_content {
+        Ok(key) => SecretKey::from_str(&key).unwrap_or_else(|_| {
+            let secret_bytes: Vec<u8> = serde_json::from_str(&key).unwrap_or_else(|_| {
+                panic!("File content is neither a valid secret key string nor a serialized vector of bytes");
+            });
+
+            SecretKey::from_slice(&secret_bytes[0..32]).expect("Failed to parse secret key from bytes")
+        }),
         Err(_) => {
             let (key, _) = secp.generate_keypair(&mut OsRng);
             fs::write(file_path, key.display_secret().to_string())
@@ -68,5 +77,6 @@ pub fn with_secret_key_file(file_path: &str) -> Result<(UntweakedKeypair, Pubkey
     };
     let keypair = UntweakedKeypair::from_secret_key(&secp, &secret_key);
     let pubkey = Pubkey::from_slice(&XOnlyPublicKey::from_keypair(&keypair).0.serialize());
+
     Ok((keypair, pubkey))
 }
