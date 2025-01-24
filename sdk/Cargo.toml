@@ -1,6 +1,6 @@
 [package]
 name = "arch_sdk"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "A Rust SDK for building applications on the Arch Network blockchain platform. Provides tools and interfaces for developing, testing, and deploying programs with native Bitcoin integration."
 license = "MIT"
