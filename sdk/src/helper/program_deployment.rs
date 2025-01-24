@@ -12,7 +12,7 @@ use crate::helper::{
 
 use crate::arch_program::message::Message;
 use crate::arch_program::pubkey::Pubkey;
-use crate::arch_program::system_instruction::SystemInstruction;
+use crate::arch_program::system_instruction;
 use crate::constants::{BITCOIN_NETWORK, NODE1_ADDRESS};
 use crate::error::SDKError;
 use crate::runtime_transaction::RuntimeTransaction;
@@ -63,7 +63,7 @@ pub fn try_deploy_program(
     );
 
     let (pa_arch_txid, _pa_arch_txid_hash) = sign_and_send_instruction(
-        SystemInstruction::new_create_account_instruction(
+        system_instruction::create_account(
             hex::decode(deploy_utxo_btc_txid)
                 .unwrap()
                 .try_into()
@@ -99,7 +99,7 @@ pub fn try_deploy_program(
     println!("\x1b[32m Step 3/4 Successful :\x1b[0m Sent ELF file as transactions, and verified program account's content against local ELF file!");
 
     let (executability_txid, _) = sign_and_send_instruction(
-        SystemInstruction::new_deploy_instruction(program_pubkey),
+        system_instruction::deploy(program_pubkey),
         vec![program_keypair],
     )
     .expect("signing and sending a transaction should not fail");
@@ -172,7 +172,7 @@ pub fn deploy_program_txs(
 
     if account_info.is_executable {
         let (txid, _) = sign_and_send_instruction(
-            SystemInstruction::new_retract_instruction(program_pubkey),
+            system_instruction::retract(program_pubkey),
             vec![program_keypair],
         )
         .map_err(|_| SDKError::SignAndSendFailed)?;
@@ -187,7 +187,7 @@ pub fn deploy_program_txs(
 
     if account_info.data.len() > elf.len() {
         let (txid, _) = sign_and_send_instruction(
-            SystemInstruction::new_truncate_instruction(program_pubkey, elf.len() as u32),
+            system_instruction::truncate(program_pubkey, elf.len() as u32),
             vec![program_keypair],
         )
         .map_err(|_| SDKError::SignAndSendFailed)?;
@@ -207,7 +207,7 @@ pub fn deploy_program_txs(
 
             let message = Message {
                 signers: vec![program_pubkey],
-                instructions: vec![SystemInstruction::new_write_bytes_instruction(
+                instructions: vec![system_instruction::write_bytes(
                     offset,
                     len,
                     chunk.to_vec(),

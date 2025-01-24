@@ -4,9 +4,7 @@ use serde_json::{from_str, json, Value};
 
 use crate::processed_transaction::ProcessedTransaction;
 
-use crate::arch_program::{
-    message::Message, pubkey::Pubkey, system_instruction::SystemInstruction,
-};
+use crate::arch_program::{message::Message, pubkey::Pubkey, system_instruction};
 
 use crate::constants::{
     GET_BEST_BLOCK_HASH, GET_BLOCK, GET_PROCESSED_TRANSACTION, NODE1_ADDRESS,
@@ -88,7 +86,7 @@ pub fn get_processed_transaction(url: &str, tx_id: String) -> Result<ProcessedTr
 pub fn extend_bytes_max_len() -> usize {
     let message = Message {
         signers: vec![Pubkey::system_program()],
-        instructions: vec![SystemInstruction::new_write_bytes_instruction(
+        instructions: vec![system_instruction::write_bytes(
             0,
             0,
             vec![0_u8; 8],

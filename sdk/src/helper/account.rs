@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::arch_program::pubkey::Pubkey;
-use crate::arch_program::system_instruction::SystemInstruction;
+use crate::arch_program::system_instruction;
 use crate::constants::NODE1_ADDRESS;
 use crate::constants::READ_ACCOUNT_INFO;
 
@@ -26,10 +26,7 @@ pub fn assign_ownership_to_program(
     instruction_data.extend(program_pubkey.serialize());
 
     let (txid, _) = sign_and_send_instruction(
-        SystemInstruction::new_assign_ownership_instruction(
-            account_to_transfer_pubkey,
-            *program_pubkey,
-        ),
+        system_instruction::assign(account_to_transfer_pubkey, *program_pubkey),
         vec![current_owner_keypair],
     )
     .expect("signing and sending a transaction should not fail");
