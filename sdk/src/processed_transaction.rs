@@ -31,13 +31,19 @@ impl Status {
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub enum RollbackStatus {
+    Rolledback(String),
+    NotRolledback,
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct ProcessedTransaction {
     pub runtime_transaction: RuntimeTransaction,
     pub status: Status,
     pub bitcoin_txid: Option<String>,
     pub accounts_tags: Vec<String>,
     pub logs: Vec<String>,
-    pub rollback_status: bool,
+    pub rollback_status: RollbackStatus,
 }
 
 impl ProcessedTransaction {
@@ -71,7 +77,15 @@ impl ProcessedTransaction {
             serialized.extend(log.as_bytes());
         }
 
-        serialized.push(if self.rollback_status { 1 } else { 0 });
+        serialized.extend(match &self.rollback_status {
+            RollbackStatus::NotRolledback => vec![0_u8],
+            RollbackStatus::Rolledback(msg) => {
+                let mut result = vec![1_u8];
+                result.extend((msg.len() as u64).to_le_bytes());
+                result.extend(msg.as_bytes());
+                result
+            }
+        });
 
         serialized.extend(match &self.status {
             Status::Queued => vec![0_u8],
@@ -124,7 +138,18 @@ impl ProcessedTransaction {
             size += log_len;
         }
 
-        let rollback_status = data[size] == 1;
+        let rollback_status = match data[size] {
+            0 => RollbackStatus::NotRolledback,
+            1 => {
+                size += 1;
+                let msg_len = u64::from_le_bytes(data[size..(size + 8)].try_into()?) as usize;
+                size += 8;
+                let msg = String::from_utf8(data[size..(size + msg_len)].to_vec())?;
+                size += msg_len;
+                RollbackStatus::Rolledback(msg)
+            }
+            _ => unreachable!("rollback status doesn't exist"),
+        };
         size += 1;
 
         let status = match data[size] {
@@ -154,6 +179,7 @@ impl ProcessedTransaction {
 #[cfg(test)]
 mod tests {
     use crate::processed_transaction::ProcessedTransaction;
+    use crate::processed_transaction::RollbackStatus;
     use crate::processed_transaction::Status;
     use crate::runtime_transaction::RuntimeTransaction;
     use crate::signature::Signature;
@@ -207,7 +233,7 @@ mod tests {
                 bitcoin_txid: Some(bitcoin_txid.to_string()),
                 accounts_tags: accounts_tags.iter().map(|s| s.to_string()).collect(),
                 logs: vec![],
-                rollback_status: false,
+                rollback_status: RollbackStatus::NotRolledback,
             };
 
             let serialized = processed_transaction.to_vec().unwrap();
