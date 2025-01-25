@@ -139,7 +139,10 @@ impl ProcessedTransaction {
         }
 
         let rollback_status = match data[size] {
-            0 => RollbackStatus::NotRolledback,
+            0 => {
+                size += 1;
+                RollbackStatus::NotRolledback
+            }
             1 => {
                 size += 1;
                 let msg_len = u64::from_le_bytes(data[size..(size + 8)].try_into()?) as usize;
@@ -150,7 +153,6 @@ impl ProcessedTransaction {
             }
             _ => unreachable!("rollback status doesn't exist"),
         };
-        size += 1;
 
         let status = match data[size] {
             0 => Status::Queued,
