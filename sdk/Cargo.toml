@@ -29,5 +29,5 @@ base64 = "0.22.1"
 bip322 = "0.0.9"
 thiserror = { version = "1.0.57" }
 termsize = "0.1.9"
-tracing.workspace = true
+tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.3", features = ["env-filter", "ansi"] }
