@@ -1,0 +1,46 @@
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      # Publish SDK crate
+      - name: Publish SDK Crate
+        working-directory: ./sdk
+        run: |
+          if [ "$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "arch_sdk") | .version')" != "$(curl -s https://crates.io/api/v1/crates/arch_sdk | jq -r '.crate.max_version // "0.0.0"')" ]; then
+            cargo publish --allow-dirty
+          else
+            echo "SDK crate version already published, skipping"
+          fi
+
+      # Publish Program crate
+      - name: Publish Program Crate
+        working-directory: ./program
+        run: |
+          if [ "$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "arch_program") | .version')" != "$(curl -s https://crates.io/api/v1/crates/arch_program | jq -r '.crate.max_version // "0.0.0"')" ]; then
+            cargo publish --allow-dirty
+          else
+            echo "Program crate version already published, skipping"
+          fi 
