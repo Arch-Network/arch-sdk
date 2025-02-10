@@ -57,8 +57,16 @@ jobs:
         if: steps.program_status.outputs.needs_publish == 'true'
         working-directory: ./program
         run: |
-          cargo publish --allow-dirty
-          echo "Published arch_program version ${{ steps.get_version.outputs.VERSION }}"
+          if ! cargo publish --allow-dirty 2>&1 | tee publish.log; then
+            if grep -q "already exists" publish.log; then
+              echo "Program crate already exists on crates.io, continuing..."
+            else
+              echo "Failed to publish program crate"
+              exit 1
+            fi
+          else
+            echo "Published arch_program version ${{ steps.get_version.outputs.VERSION }}"
+          fi
 
       # Wait for Program crate to be available if we just published it
       - name: Wait for Program crate to be available
@@ -108,5 +116,13 @@ jobs:
         if: steps.sdk_status.outputs.needs_publish == 'true'
         working-directory: ./sdk
         run: |
-          cargo publish --allow-dirty
-          echo "Published arch_sdk version ${{ steps.get_version.outputs.VERSION }}" 
+          if ! cargo publish --allow-dirty 2>&1 | tee publish.log; then
+            if grep -q "already exists" publish.log; then
+              echo "SDK crate already exists on crates.io, continuing..."
+            else
+              echo "Failed to publish SDK crate"
+              exit 1
+            fi
+          else
+            echo "Published arch_sdk version ${{ steps.get_version.outputs.VERSION }}"
+          fi 
