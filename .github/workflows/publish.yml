@@ -73,18 +73,27 @@ jobs:
         if: steps.program_status.outputs.needs_publish == 'true'
         run: |
           echo "Waiting for arch_program to be available on crates.io..."
+          
+          # Create a temporary directory for testing
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
+          
+          # Initialize a new Cargo project
+          cargo init --name test-availability
+          
           for i in {1..10}; do
-            sleep 30
-            # Show the full cargo info output for debugging
-            echo "Current cargo info output:"
-            cargo info arch_program
+            echo "Attempt $i: Checking if arch_program ${{ steps.get_version.outputs.VERSION }} is available..."
             
-            if cargo info arch_program | grep -q "version: ${{ steps.get_version.outputs.VERSION }}"; then
+            # Try to add the exact version as a dependency
+            if cargo add "arch_program@${{ steps.get_version.outputs.VERSION }}" 2>/dev/null; then
               echo "arch_program ${{ steps.get_version.outputs.VERSION }} is now available!"
               exit 0
             fi
-            echo "Attempt $i: arch_program ${{ steps.get_version.outputs.VERSION }} not yet available, waiting..."
+            
+            echo "Package not yet available, waiting 30 seconds..."
+            sleep 30
           done
+          
           echo "Error: arch_program not available after 5 minutes"
           exit 1
 
