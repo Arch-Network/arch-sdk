@@ -40,20 +40,29 @@ jobs:
           fi
           cargo build --verbose
 
-      - name: Publish Program Crate
+      - name: Check Program Crate Status
+        id: program_status
         working-directory: ./program
         run: |
           CURRENT_VERSION=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "arch_program") | .version')
-          PUBLISHED_VERSION=$(cargo search arch_program --limit 1 | grep -oP '^arch_program = "\K[^"]+' || echo "0.0.0")
-          if [ "$CURRENT_VERSION" != "$PUBLISHED_VERSION" ]; then
-            cargo publish --allow-dirty
-            echo "Published arch_program version $CURRENT_VERSION"
-          else
+          if cargo info arch_program | grep -q "^version: ${{ steps.get_version.outputs.VERSION }}$"; then
+            echo "needs_publish=false" >> $GITHUB_OUTPUT
             echo "Program version $CURRENT_VERSION already published, skipping"
+          else
+            echo "needs_publish=true" >> $GITHUB_OUTPUT
+            echo "Program version $CURRENT_VERSION needs to be published"
           fi
 
-      # Wait for Program crate to be available
+      - name: Publish Program Crate
+        if: steps.program_status.outputs.needs_publish == 'true'
+        working-directory: ./program
+        run: |
+          cargo publish --allow-dirty
+          echo "Published arch_program version ${{ steps.get_version.outputs.VERSION }}"
+
+      # Wait for Program crate to be available if we just published it
       - name: Wait for Program crate to be available
+        if: steps.program_status.outputs.needs_publish == 'true'
         run: |
           echo "Waiting for arch_program to be available on crates.io..."
           for i in {1..10}; do
@@ -81,15 +90,23 @@ jobs:
           cargo update -p arch_program
           cargo build --verbose
 
-      # Finally publish SDK
-      - name: Publish SDK Crate
+      # Finally publish SDK if needed
+      - name: Check SDK Crate Status
+        id: sdk_status
         working-directory: ./sdk
         run: |
           CURRENT_VERSION=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "arch_sdk") | .version')
-          PUBLISHED_VERSION=$(cargo search arch_sdk --limit 1 | grep -oP '^arch_sdk = "\K[^"]+' || echo "0.0.0")
-          if [ "$CURRENT_VERSION" != "$PUBLISHED_VERSION" ]; then
-            cargo publish --allow-dirty
-            echo "Published arch_sdk version $CURRENT_VERSION"
-          else
+          if cargo info arch_sdk | grep -q "^version: ${{ steps.get_version.outputs.VERSION }}$"; then
+            echo "needs_publish=false" >> $GITHUB_OUTPUT
             echo "SDK version $CURRENT_VERSION already published, skipping"
-          fi 
+          else
+            echo "needs_publish=true" >> $GITHUB_OUTPUT
+            echo "SDK version $CURRENT_VERSION needs to be published"
+          fi
+
+      - name: Publish SDK Crate
+        if: steps.sdk_status.outputs.needs_publish == 'true'
+        working-directory: ./sdk
+        run: |
+          cargo publish --allow-dirty
+          echo "Published arch_sdk version ${{ steps.get_version.outputs.VERSION }}" 
