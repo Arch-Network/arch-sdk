@@ -5,69 +5,95 @@ on:
     tags:
       - 'v*' # Trigger on version tags
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
 jobs:
-  verify:
-    name: Verify Build
+  publish:
+    name: Build and Publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2
-      
-      - name: Build SDK
-        working-directory: ./sdk
-        run: cargo build --verbose
-      
+
+      # Extract version from tag
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      # Verify versions match in both crates
+      - name: Verify versions
+        run: |
+          PROGRAM_VERSION=$(cargo metadata --manifest-path program/Cargo.toml --format-version=1 | jq -r '.packages[] | select(.name == "arch_program") | .version')
+          SDK_VERSION=$(cargo metadata --manifest-path sdk/Cargo.toml --format-version=1 | jq -r '.packages[] | select(.name == "arch_sdk") | .version')
+          TAG_VERSION=${{ steps.get_version.outputs.VERSION }}
+          if [ "$PROGRAM_VERSION" != "$TAG_VERSION" ] || [ "$SDK_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: Version mismatch!"
+            echo "Tag version: $TAG_VERSION"
+            echo "Program version: $PROGRAM_VERSION"
+            echo "SDK version: $SDK_VERSION"
+            echo "All versions must match the tag version"
+            exit 1
+          fi
+
+      # Build and publish Program crate
       - name: Build Program
         working-directory: ./program
         run: cargo build --verbose
 
-  publish:
-    name: Publish to crates.io
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-
-      # Publish SDK crate first since program might depend on it
-      - name: Publish SDK Crate
-        working-directory: ./sdk
-        run: |
-          CURRENT_VERSION=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "arch_sdk") | .version')
-          PUBLISHED_VERSION=$(cargo search arch_sdk --limit 1 | grep -oP '^arch_sdk = "\K[^"]+')
-          if [ "$CURRENT_VERSION" != "$PUBLISHED_VERSION" ]; then
-            cargo publish --allow-dirty
-          else
-            echo "SDK version $CURRENT_VERSION already published, skipping"
-          fi
-
-      # Add a small delay to ensure the SDK is available
-      - name: Wait for SDK to be available
-        if: success()
-        run: sleep 30
-
-      # Publish Program crate
       - name: Publish Program Crate
         working-directory: ./program
         run: |
           CURRENT_VERSION=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "arch_program") | .version')
-          PUBLISHED_VERSION=$(cargo search arch_program --limit 1 | grep -oP '^arch_program = "\K[^"]+')
+          PUBLISHED_VERSION=$(cargo search arch_program --limit 1 | grep -oP '^arch_program = "\K[^"]+' || echo "0.0.0")
           if [ "$CURRENT_VERSION" != "$PUBLISHED_VERSION" ]; then
             cargo publish --allow-dirty
+            echo "Published arch_program version $CURRENT_VERSION"
           else
             echo "Program version $CURRENT_VERSION already published, skipping"
+          fi
+
+      # Wait for Program crate to be available
+      - name: Wait for Program crate to be available
+        run: |
+          echo "Waiting for arch_program to be available on crates.io..."
+          for i in {1..10}; do
+            sleep 30
+            if cargo search arch_program | grep -q "^arch_program = \"${{ steps.get_version.outputs.VERSION }}\""; then
+              echo "arch_program ${{ steps.get_version.outputs.VERSION }} is now available!"
+              exit 0
+            fi
+            echo "Attempt $i: arch_program ${{ steps.get_version.outputs.VERSION }} not yet available, waiting..."
+          done
+          echo "Error: arch_program not available after 5 minutes"
+          exit 1
+
+      # Build and publish SDK crate
+      - name: Build SDK
+        working-directory: ./sdk
+        run: cargo build --verbose
+
+      - name: Publish SDK Crate
+        working-directory: ./sdk
+        run: |
+          CURRENT_VERSION=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "arch_sdk") | .version')
+          PUBLISHED_VERSION=$(cargo search arch_sdk --limit 1 | grep -oP '^arch_sdk = "\K[^"]+' || echo "0.0.0")
+          if [ "$CURRENT_VERSION" != "$PUBLISHED_VERSION" ]; then
+            # Verify arch_program dependency version matches
+            PROGRAM_DEP_VERSION=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "arch_sdk") | .dependencies[] | select(.name == "arch_program") | .req')
+            if [ "^${{ steps.get_version.outputs.VERSION }}" != "$PROGRAM_DEP_VERSION" ]; then
+              echo "Error: arch_program dependency version ($PROGRAM_DEP_VERSION) in SDK does not match the version being published (${{ steps.get_version.outputs.VERSION }})"
+              exit 1
+            fi
+            cargo publish --allow-dirty
+            echo "Published arch_sdk version $CURRENT_VERSION"
+          else
+            echo "SDK version $CURRENT_VERSION already published, skipping"
           fi 
