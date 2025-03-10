@@ -1,3 +1,4 @@
+use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,8 @@ pub const PUBKEY_BYTES: usize = 32;
     BorshDeserialize,
     Pod,
     Zeroable,
+    Encode,
+    Decode,
 )]
 pub struct Pubkey(pub [u8; 32]);
 

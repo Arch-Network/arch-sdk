@@ -9,6 +9,7 @@ license = "MIT"
 
 [dependencies]
 borsh = { version = "1.4.0", features = ["derive"] }
+bitcode = "0.6.4"
 hex = { version = "0.4.3", default-features = false }
 memoffset = "0.9.1"
 rustversion = "1.0.14"

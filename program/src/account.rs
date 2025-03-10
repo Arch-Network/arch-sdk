@@ -1,5 +1,6 @@
 use crate::{msg, pubkey::Pubkey, utxo::UtxoMeta};
 
+use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +16,18 @@ pub struct AccountInfo<'a> {
     pub is_executable: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Encode,
+    Decode,
+)]
 #[repr(C)]
 pub struct AccountMeta {
     pub pubkey: Pubkey,

@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use anyhow::{anyhow, Result};
 use arch_program::message::Message;
+use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
@@ -10,7 +11,18 @@ use crate::signature::Signature;
 
 pub const RUNTIME_TX_SIZE_LIMIT: usize = 10240;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Encode,
+    Decode,
+)]
 pub struct RuntimeTransaction {
     pub version: u32,
     pub signatures: Vec<Signature>,

@@ -1,11 +1,22 @@
 use anyhow::Result;
+use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{error::SDKError, runtime_transaction::RuntimeTransaction};
 
-#[derive(Clone, Debug, Deserialize, Serialize, BorshDeserialize, BorshSerialize, PartialEq)]
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Serialize,
+    BorshDeserialize,
+    BorshSerialize,
+    PartialEq,
+    Encode,
+    Decode,
+)]
 pub enum Status {
     Queued,
     Processed,
@@ -30,13 +41,33 @@ impl Status {
     }
 }
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone,
+    PartialEq,
+    Debug,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Encode,
+    Decode,
+)]
 pub enum RollbackStatus {
     Rolledback(String),
     NotRolledback,
 }
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone,
+    PartialEq,
+    Debug,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Encode,
+    Decode,
+)]
 pub struct ProcessedTransaction {
     pub runtime_transaction: RuntimeTransaction,
     pub status: Status,

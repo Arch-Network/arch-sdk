@@ -6,11 +6,23 @@ use crate::program_error::*;
 use crate::pubkey::Pubkey;
 use crate::{account::AccountMeta, program_error::ProgramError};
 
+use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Encode,
+    Decode,
+)]
 pub struct Instruction {
     pub program_id: Pubkey,
     pub accounts: Vec<AccountMeta>,

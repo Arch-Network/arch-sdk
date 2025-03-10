@@ -1,11 +1,23 @@
 use crate::instruction::Instruction;
 use crate::pubkey::Pubkey;
 
+use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Encode,
+    Decode,
+)]
 pub struct Message {
     pub signers: Vec<Pubkey>,
     pub instructions: Vec<Instruction>,
