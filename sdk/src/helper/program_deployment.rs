@@ -292,7 +292,7 @@ impl ProgramDeployer {
     }
 
     /// Deploy a program ELF
-    fn deploy_program_elf(
+    pub fn deploy_program_elf(
         &self,
         program_keypair: Keypair,
         program_pubkey: Pubkey,
