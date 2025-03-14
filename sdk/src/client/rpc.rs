@@ -112,9 +112,9 @@ impl ArchRpcClient {
         let mut wait_time = 1;
 
         // First try to get the transaction, retry if null
-        let mut tx = match self.get_processed_transaction(tx_id)? {
-            Some(tx) => tx,
-            None => {
+        let mut tx = match self.get_processed_transaction(tx_id) {
+            Ok(Some(tx)) => tx,
+            Ok(None) => {
                 // Transaction not found, start polling
                 loop {
                     std::thread::sleep(Duration::from_secs(wait_time));
@@ -133,6 +133,7 @@ impl ArchRpcClient {
                     }
                 }
             }
+            Err(e) => return Err(e),
         };
 
         // Now wait for the transaction to finish processing

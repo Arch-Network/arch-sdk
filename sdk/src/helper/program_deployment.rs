@@ -8,6 +8,7 @@ use std::fs;
 use crate::{
     helper::{utxo::BitcoinHelper, with_secret_key_file},
     types::{RuntimeTransaction, Signature, RUNTIME_TX_SIZE_LIMIT},
+    Status,
 };
 
 use crate::arch_program::pubkey::Pubkey;
@@ -59,6 +60,7 @@ impl From<std::io::Error> for ProgramDeployerError {
 /*                             PROGRAM DEPLOYMENT                             */
 /* -------------------------------------------------------------------------- */
 /// Configuration for program deployment
+#[derive(Debug)]
 pub struct DeploymentConfig {
     /// URL of the Arch node
     pub node_url: String,
@@ -193,6 +195,20 @@ impl ProgramDeployer {
             vec![program_keypair.clone()],
         )?;
 
+        let tx = self
+            .client
+            .wait_for_processed_transaction(&create_account_tx)?;
+
+        match tx.status {
+            Status::Failed(e) => {
+                return Err(ProgramDeployerError::TransactionError(format!(
+                    "Program account creation transaction failed: {}",
+                    e.to_string()
+                )));
+            }
+            _ => {}
+        }
+
         println!(
             "\x1b[32m Step 2/4 Successful :\x1b[0m Program account creation transaction successfully processed! Tx Id: {}",
             create_account_tx
@@ -211,6 +227,11 @@ impl ProgramDeployer {
             .wait_for_processed_transaction(&executability_txid)?;
 
         let program_info_after_making_executable = self.client.read_account_info(program_pubkey)?;
+
+        assert!(
+            program_info_after_making_executable.data == elf,
+            "ELF content verification failed: deployed program data doesn't match local ELF file"
+        );
 
         debug!(
             "Current Program Account {:x}: \n   Owner : {:x}, \n   Data length : {} Bytes,\n   Anchoring UTXO : {}, \n   Executable? : {}",
@@ -277,16 +298,41 @@ impl ProgramDeployer {
         program_pubkey: Pubkey,
         elf: &[u8],
     ) -> Result<(), ProgramDeployerError> {
-        let max_len = extend_bytes_max_len();
-        let elf_len = elf.len();
-        let chunks = (elf_len + max_len - 1) / max_len; // ceiling division
+        let account_info = self.client.read_account_info(program_pubkey)?;
 
-        println!(
-            "\x1b[32m Step 3/4 :\x1b[0m Sending ELF file ({} bytes) as {} transactions...",
-            elf_len, chunks
-        );
+        println!("Account info : {:?}", account_info);
 
-        let pb = ProgressBar::new(chunks as u64);
+        if account_info.is_executable {
+            let instruction = system_instruction::retract(program_pubkey);
+            let tx_id = self.sign_and_send_instruction(instruction, vec![program_keypair])?;
+            self.client.wait_for_processed_transaction(&tx_id)?;
+        }
+
+        if account_info.data.len() > elf.len() {
+            let instruction = system_instruction::truncate(program_pubkey, elf.len() as u32);
+            let tx_id = self.sign_and_send_instruction(instruction, vec![program_keypair])?;
+            self.client.wait_for_processed_transaction(&tx_id)?;
+        }
+
+        let txs: Vec<RuntimeTransaction> = elf
+            .chunks(extend_bytes_max_len())
+            .enumerate()
+            .map(|(i, chunk)| {
+                let offset: u32 = (i * extend_bytes_max_len()) as u32;
+                let len: u32 = chunk.len() as u32;
+
+                let instruction =
+                    system_instruction::write_bytes(offset, len, chunk.to_vec(), program_pubkey);
+
+                build_transaction(
+                    vec![program_keypair.clone()],
+                    vec![instruction],
+                    self.config.bitcoin_network,
+                )
+            })
+            .collect();
+
+        let pb = ProgressBar::new(txs.len() as u64);
         pb.set_style(
             ProgressStyle::default_bar()
                 .template(
@@ -296,44 +342,16 @@ impl ProgramDeployer {
                 .progress_chars("#>-"),
         );
 
-        let mut transaction_ids = Vec::with_capacity(chunks);
+        pb.set_message("Successfully Processed Deployment Transactions :");
 
-        for i in 0..chunks {
-            let start = i * max_len;
-            let end = std::cmp::min(start + max_len, elf_len);
-            let chunk = &elf[start..end];
+        let tx_ids = self.client.send_transactions(txs)?;
 
-            let offset = start as u32;
-            let instruction =
-                system_instruction::write_bytes(offset, 0, chunk.to_vec(), program_pubkey);
-
-            match self.sign_and_send_instruction(instruction, vec![program_keypair.clone()]) {
-                Ok(tx_id) => transaction_ids.push(tx_id),
-                Err(e) => {
-                    return Err(ProgramDeployerError::DeploymentError(format!(
-                        "Failed to send ELF chunk {}/{}: {}",
-                        i + 1,
-                        chunks,
-                        e
-                    )))
-                }
-            }
-
+        for tx_id in tx_ids.iter() {
+            self.client.wait_for_processed_transaction(tx_id)?;
             pb.inc(1);
         }
 
-        pb.finish_with_message("All ELF chunks sent successfully!");
-
-        // Verify program data
-        let program_info = self.client.read_account_info(program_pubkey)?;
-
-        if program_info.data != elf {
-            return Err(ProgramDeployerError::VerificationError(
-                "ELF content verification failed: deployed program data doesn't match local ELF file".to_string()
-            ));
-        }
-
-        println!("\x1b[32m Step 3/4 Successful :\x1b[0m Sent ELF file as transactions, and verified program account's content against local ELF file!");
+        pb.finish_with_message("Successfully Processed Deployment Transactions");
 
         Ok(())
     }
