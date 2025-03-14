@@ -11,16 +11,12 @@ use rand_core::OsRng;
 
 use std::{fs, str::FromStr};
 
-use crate::constants::{BITCOIN_NETWORK, GET_ACCOUNT_ADDRESS, NODE1_ADDRESS};
-
-use super::{post_data, process_result};
-
 /* -------------------------------------------------------------------------- */
 /*                           GENERATES A NEW KEYPAIR                          */
 /* -------------------------------------------------------------------------- */
 /// Generates an untweaked keypair, and provides it's pubkey and BTC address
 /// corresponding to the currently used BTC Network
-pub fn generate_new_keypair() -> (UntweakedKeypair, Pubkey, Address) {
+pub fn generate_new_keypair(network: bitcoin::Network) -> (UntweakedKeypair, Pubkey, Address) {
     let secp = Secp256k1::new();
 
     let (secret_key, _public_key) = secp.generate_keypair(&mut OsRng);
@@ -29,30 +25,11 @@ pub fn generate_new_keypair() -> (UntweakedKeypair, Pubkey, Address) {
 
     let (x_only_public_key, _parity) = XOnlyPublicKey::from_keypair(&key_pair);
 
-    let address = Address::p2tr(&secp, x_only_public_key, None, BITCOIN_NETWORK);
+    let address = Address::p2tr(&secp, x_only_public_key, None, network);
 
     let pubkey = Pubkey::from_slice(&XOnlyPublicKey::from_keypair(&key_pair).0.serialize());
 
     (key_pair, pubkey, address)
-}
-
-/* -------------------------------------------------------------------------- */
-/*                           Fetching the group key                           */
-/* -------------------------------------------------------------------------- */
-/// This endpoint is used to fetch the network's account address, this is the joint
-/// address corresponding to the shared public key of all the validators
-/// on the network and the tweak of the account pubkey
-/// Utxos are sent to the network using this particular address
-pub fn get_account_address(pubkey: Pubkey) -> String {
-    process_result(post_data(
-        NODE1_ADDRESS,
-        GET_ACCOUNT_ADDRESS,
-        pubkey.serialize(),
-    ))
-    .expect("get_account_address should not fail")
-    .as_str()
-    .expect("cannot convert result to string")
-    .to_string()
 }
 
 pub fn with_secret_key_file(file_path: &str) -> Result<(UntweakedKeypair, Pubkey)> {

@@ -1,10 +1,33 @@
+use std::{array::TryFromSliceError, string::FromUtf8Error};
+
 use anyhow::Result;
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{error::SDKError, runtime_transaction::RuntimeTransaction};
+use super::{RuntimeTransaction, RuntimeTransactionError};
+
+#[derive(thiserror::Error, Debug, Clone, PartialEq)]
+pub enum ParseProcessedTransactionError {
+    #[error("from hex error: {0}")]
+    FromHexError(#[from] hex::FromHexError),
+
+    #[error("from utf8 error: {0}")]
+    FromUtf8Error(#[from] FromUtf8Error),
+
+    #[error("try from slice error")]
+    TryFromSliceError,
+
+    #[error("runtime transaction error: {0}")]
+    RuntimeTransactionError(#[from] RuntimeTransactionError),
+}
+
+impl From<TryFromSliceError> for ParseProcessedTransactionError {
+    fn from(_e: TryFromSliceError) -> Self {
+        ParseProcessedTransactionError::TryFromSliceError
+    }
+}
 
 #[derive(
     Clone,
@@ -81,7 +104,7 @@ impl ProcessedTransaction {
         self.runtime_transaction.txid()
     }
 
-    pub fn to_vec(&self) -> Result<Vec<u8>, SDKError> {
+    pub fn to_vec(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
         let mut serialized = vec![];
 
         serialized.extend((self.runtime_transaction.serialize().len() as u64).to_le_bytes());
@@ -125,7 +148,7 @@ impl ProcessedTransaction {
         Ok(serialized)
     }
 
-    pub fn from_vec(data: &[u8]) -> Result<Self, SDKError> {
+    pub fn from_vec(data: &[u8]) -> Result<Self, ParseProcessedTransactionError> {
         let data_bytes = data[..8].try_into()?;
         let runtime_transaction_len = u64::from_le_bytes(data_bytes) as usize;
         let mut size = 8;
@@ -195,11 +218,11 @@ impl ProcessedTransaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::processed_transaction::ProcessedTransaction;
-    use crate::processed_transaction::RollbackStatus;
-    use crate::processed_transaction::Status;
-    use crate::runtime_transaction::RuntimeTransaction;
-    use crate::signature::Signature;
+    use super::ProcessedTransaction;
+    use super::RollbackStatus;
+    use super::RuntimeTransaction;
+    use super::Status;
+    use crate::types::Signature;
     use arch_program::instruction::Instruction;
     use arch_program::message::Message;
     use arch_program::pubkey::Pubkey;

@@ -1,15 +1,34 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    array::TryFromSliceError,
+    fmt::{Display, Formatter},
+};
 
-use anyhow::{anyhow, Result};
 use arch_program::message::Message;
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
-use crate::signature::Signature;
+use super::Signature;
 
 pub const RUNTIME_TX_SIZE_LIMIT: usize = 10240;
+
+#[derive(thiserror::Error, Debug, Clone, PartialEq)]
+pub enum RuntimeTransactionError {
+    #[error("runtime transaction size exceeds limit: {0} > {1}")]
+    RuntimeTransactionSizeExceedsLimit(usize, usize),
+
+    #[error("try from slice error")]
+    TryFromSliceError,
+}
+
+impl From<TryFromSliceError> for RuntimeTransactionError {
+    fn from(_e: TryFromSliceError) -> Self {
+        RuntimeTransactionError::TryFromSliceError
+    }
+}
+
+type Result<T> = std::result::Result<T, RuntimeTransactionError>;
 
 #[derive(
     Clone,
@@ -85,11 +104,10 @@ impl RuntimeTransaction {
     pub fn check_tx_size_limit(&self) -> Result<()> {
         let serialized_tx = self.serialize();
         if serialized_tx.len() > RUNTIME_TX_SIZE_LIMIT {
-            Err(anyhow!(format!(
-                "runtime tx size exceeds RUNTIME_TX_SIZE_LIMIT {} {}",
+            Err(RuntimeTransactionError::RuntimeTransactionSizeExceedsLimit(
                 serialized_tx.len(),
-                RUNTIME_TX_SIZE_LIMIT
-            )))
+                RUNTIME_TX_SIZE_LIMIT,
+            ))
         } else {
             Ok(())
         }
@@ -98,8 +116,8 @@ impl RuntimeTransaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime_transaction::RuntimeTransaction;
-    use crate::signature::Signature;
+    use super::RuntimeTransaction;
+    use super::Signature;
     use arch_program::instruction::Instruction;
     use arch_program::message::Message;
     use arch_program::pubkey::Pubkey;
