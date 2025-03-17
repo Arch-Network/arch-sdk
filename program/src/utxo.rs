@@ -1,7 +1,7 @@
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Hash, Eq, Encode, Decode)]
 #[repr(C)]
 pub struct UtxoMeta([u8; 36]);
 

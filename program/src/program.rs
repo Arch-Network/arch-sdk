@@ -200,6 +200,40 @@ pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<Vec<u8>> {
     }
 }
 
+pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<u8>> {
+    use std::cmp::min;
+    if txid == [0u8; 32] {
+        return None;
+    }
+
+    let mut buf = [0u8; MAX_BTC_TX_SIZE];
+
+    #[cfg(target_os = "solana")]
+    let size = unsafe {
+        crate::syscalls::arch_get_runes_from_output(
+            buf.as_mut_ptr(),
+            buf.len() as u64,
+            &txid,
+            output_index,
+        )
+    };
+
+    #[cfg(not(target_os = "solana"))]
+    let size = crate::program_stubs::arch_get_runes_from_output(
+        buf.as_mut_ptr(),
+        buf.len(),
+        &txid,
+        output_index,
+    );
+
+    if size == 0 {
+        None
+    } else {
+        let size = min(size as usize, MAX_BTC_TX_SIZE);
+        Some(buf[..size as usize].to_vec())
+    }
+}
+
 pub fn get_network_xonly_pubkey() -> [u8; 32] {
     let mut buf = [0u8; 32];
     let _ = unsafe { crate::syscalls::arch_get_network_xonly_pubkey(buf.as_mut_ptr()) };
