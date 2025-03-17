@@ -1,3 +1,7 @@
+//! Message module provides functionality for creating, serializing, and hashing messages.
+//!
+//! A message consists of a list of signers and a list of instructions that will be executed
+//! in the context of the signers.
 use crate::instruction::Instruction;
 use crate::pubkey::Pubkey;
 
@@ -6,6 +10,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
+/// A Message contains all the information needed to execute a transaction.
+///
+/// This includes the list of signers (accounts that have signed the transaction)
+/// and the list of instructions that will be executed.
 #[derive(
     Debug,
     Clone,
@@ -19,11 +27,25 @@ use sha256::digest;
     Decode,
 )]
 pub struct Message {
+    /// List of public keys that have signed this message.
     pub signers: Vec<Pubkey>,
+
+    /// List of instructions to be executed as part of this message.
     pub instructions: Vec<Instruction>,
 }
 
 impl Message {
+    /// Serializes the message into a byte array.
+    ///
+    /// The format is:
+    /// - 1 byte for the number of signers
+    /// - 32 bytes for each signer public key
+    /// - 1 byte for the number of instructions
+    /// - Variable number of bytes for each instruction
+    ///
+    /// # Returns
+    ///
+    /// A vector of bytes representing the serialized message.
     pub fn serialize(&self) -> Vec<u8> {
         let mut serialized = vec![];
 
@@ -39,6 +61,15 @@ impl Message {
         serialized
     }
 
+    /// Deserializes a byte array into a Message.
+    ///
+    /// # Parameters
+    ///
+    /// * `data` - The byte array to deserialize
+    ///
+    /// # Returns
+    ///
+    /// A new Message instance constructed from the provided byte array.
     pub fn from_slice(data: &[u8]) -> Self {
         let mut size = 0;
 
@@ -64,6 +95,13 @@ impl Message {
         }
     }
 
+    /// Computes a double SHA-256 hash of the serialized message.
+    ///
+    /// This is commonly used for creating message signatures or for message verification.
+    ///
+    /// # Returns
+    ///
+    /// A vector of bytes representing the hash of the message.
     pub fn hash(&self) -> Vec<u8> {
         let serialized_message = self.serialize();
         let first_hash = digest(serialized_message);

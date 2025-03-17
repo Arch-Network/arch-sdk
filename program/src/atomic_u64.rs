@@ -1,16 +1,20 @@
+//! Atomic `u64` operations with 32-bit system fallback.
 pub(crate) use implementation::AtomicU64;
 
 #[cfg(target_pointer_width = "64")]
 mod implementation {
     use std::sync::atomic;
 
+    /// Atomic 64-bit unsigned integer using native atomic operations.
     pub(crate) struct AtomicU64(atomic::AtomicU64);
 
     impl AtomicU64 {
+        /// Creates a new `AtomicU64` with the given value.
         pub(crate) const fn new(initial: u64) -> Self {
             Self(atomic::AtomicU64::new(initial))
         }
 
+        /// Atomically adds a value, returning the previous value.
         pub(crate) fn fetch_add(&self, v: u64) -> u64 {
             self.0.fetch_add(v, atomic::Ordering::Relaxed)
         }
@@ -21,13 +25,16 @@ mod implementation {
 mod implementation {
     use parking_lot::{const_mutex, Mutex};
 
+    /// Atomic 64-bit unsigned integer using mutex-based fallback.
     pub(crate) struct AtomicU64(Mutex<u64>);
 
     impl AtomicU64 {
+        /// Creates a new `AtomicU64` with the given value.
         pub(crate) const fn new(initial: u64) -> Self {
             Self(const_mutex(initial))
         }
 
+        /// Atomically adds a value, returning the previous value.
         pub(crate) fn fetch_add(&self, v: u64) -> u64 {
             let mut lock = self.0.lock();
             let i = *lock;

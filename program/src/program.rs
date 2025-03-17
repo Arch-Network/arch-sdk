@@ -11,14 +11,52 @@ use crate::transaction_to_sign::TransactionToSign;
 use crate::utxo::UtxoMeta;
 use crate::{account::AccountInfo, entrypoint::ProgramResult, pubkey::Pubkey};
 
+/// Invokes a program instruction through cross-program invocation.
+///
+/// This function processes the provided instruction by dispatching control to another program
+/// using the account information provided.
+///
+/// # Arguments
+/// * `instruction` - The instruction to process
+/// * `account_infos` - The accounts required to process the instruction
+///
+/// # Returns
+/// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
 pub fn invoke(instruction: &Instruction, account_infos: &[AccountInfo]) -> ProgramResult {
     invoke_signed(instruction, account_infos, &[])
 }
 
+/// Invokes a program instruction without checking account permissions.
+///
+/// Similar to `invoke`, but skips the account permission checking step.
+/// This is generally less safe than `invoke` and should be used carefully.
+///
+/// # Arguments
+/// * `instruction` - The instruction to process
+/// * `account_infos` - The accounts required to process the instruction
+///
+/// # Returns
+/// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
 pub fn invoke_unchecked(instruction: &Instruction, account_infos: &[AccountInfo]) -> ProgramResult {
     invoke_signed_unchecked(instruction, account_infos, &[])
 }
 
+/// Invokes a program instruction with additional signing authority.
+///
+/// This function processes the provided instruction by dispatching control to another program,
+/// while also providing program-derived address signing authority.
+/// It performs permission checks on the accounts before invoking.
+///
+/// # Arguments
+/// * `instruction` - The instruction to process
+/// * `account_infos` - The accounts required to process the instruction
+/// * `signers_seeds` - Seeds used to sign the transaction as a program-derived address
+///
+/// # Returns
+/// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
+///
+/// # Errors
+/// Returns an error if any required account cannot be borrowed according to its stated permissions
 pub fn invoke_signed(
     instruction: &Instruction,
     account_infos: &[AccountInfo],
@@ -41,6 +79,18 @@ pub fn invoke_signed(
     invoke_signed_unchecked(instruction, account_infos, signers_seeds)
 }
 
+/// Invokes a program instruction with additional signing authority without checking account permissions.
+///
+/// Similar to `invoke_signed`, but skips the account permission checking step.
+/// This is generally less safe than `invoke_signed` and should be used carefully.
+///
+/// # Arguments
+/// * `instruction` - The instruction to process
+/// * `account_infos` - The accounts required to process the instruction
+/// * `signers_seeds` - Seeds used to sign the transaction as a program-derived address
+///
+/// # Returns
+/// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
 pub fn invoke_signed_unchecked(
     instruction: &Instruction,
     account_infos: &[AccountInfo],
@@ -68,6 +118,19 @@ pub fn invoke_signed_unchecked(
     crate::program_stubs::sol_invoke_signed(instruction, account_infos, signers_seeds)
 }
 
+/// Gets the next account from an account iterator.
+///
+/// A utility function that advances the iterator and returns the next `AccountInfo`,
+/// or returns a `NotEnoughAccountKeys` error if there are no more accounts.
+///
+/// # Arguments
+/// * `iter` - Mutable reference to an iterator yielding references to `AccountInfo`
+///
+/// # Returns
+/// * `Result<&AccountInfo, ProgramError>` - The next account info or an error if depleted
+///
+/// # Errors
+/// Returns `ProgramError::NotEnoughAccountKeys` if the iterator has no more items
 pub fn next_account_info<'a, 'b, I: Iterator<Item = &'a AccountInfo<'b>>>(
     iter: &mut I,
 ) -> Result<I::Item, ProgramError> {
@@ -76,6 +139,17 @@ pub fn next_account_info<'a, 'b, I: Iterator<Item = &'a AccountInfo<'b>>>(
 
 pub const MAX_TRANSACTION_TO_SIGN: usize = 4 * 1024;
 
+/// Sets an Arch transaction to be signed by the program.
+///
+/// This function takes a transaction and its associated signing metadata and prepares it
+/// for signing through the runtime. It also updates the UTXO metadata for relevant accounts.
+///
+/// # Arguments
+/// * `accounts` - Slice of account information required for the transaction
+/// * `transaction_to_sign` - The transaction and metadata needed for signing
+///
+/// # Returns
+/// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
 pub fn set_transaction_to_sign(
     accounts: &[AccountInfo],
     transaction_to_sign: TransactionToSign,
@@ -177,6 +251,13 @@ pub fn get_return_data() -> Option<(Pubkey, Vec<u8>)> {
     }
 }
 
+/// Retrieves a Bitcoin transaction by its transaction ID.
+///
+/// # Arguments
+/// * `txid` - 32-byte array containing the Bitcoin transaction ID
+///
+/// # Returns
+/// * `Option<Vec<u8>>` - The raw transaction bytes if found, None if not found
 pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<Vec<u8>> {
     use std::cmp::min;
     if txid == [0u8; 32] {
@@ -234,12 +315,26 @@ pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<u8
     }
 }
 
+/// Retrieves the network's X-only public key.
+///
+/// This function fetches the X-only public key associated with the current network configuration.
+///
+/// # Returns
+/// * `[u8; 32]` - The 32-byte X-only public key
 pub fn get_network_xonly_pubkey() -> [u8; 32] {
     let mut buf = [0u8; 32];
     let _ = unsafe { crate::syscalls::arch_get_network_xonly_pubkey(buf.as_mut_ptr()) };
     buf
 }
 
+/// Validates if a UTXO is owned by the specified public key.
+///
+/// # Arguments
+/// * `utxo` - The UTXO metadata to validate
+/// * `owner` - The public key to check ownership against
+///
+/// # Returns
+/// * `bool` - true if the UTXO is owned by the specified public key, false otherwise
 pub fn validate_utxo_ownership(utxo: &UtxoMeta, owner: &Pubkey) -> bool {
     #[cfg(target_os = "solana")]
     unsafe {
@@ -251,6 +346,14 @@ pub fn validate_utxo_ownership(utxo: &UtxoMeta, owner: &Pubkey) -> bool {
         crate::program_stubs::arch_validate_utxo_ownership(utxo, owner) != 0
     }
 }
+
+/// Gets the script public key for a given account.
+///
+/// # Arguments
+/// * `pubkey` - The public key of the account
+///
+/// # Returns
+/// * `[u8; 34]` - The 34-byte script public key
 pub fn get_account_script_pubkey(pubkey: &Pubkey) -> [u8; 34] {
     let mut buf = [0u8; 34];
 
@@ -262,10 +365,18 @@ pub fn get_account_script_pubkey(pubkey: &Pubkey) -> [u8; 34] {
     buf
 }
 
+/// Retrieves the current Bitcoin block height from the runtime.
+///
+/// # Returns
+/// * `u64` - The current Bitcoin block height
 pub fn get_bitcoin_block_height() -> u64 {
     unsafe { crate::syscalls::arch_get_bitcoin_block_height() }
 }
 
+/// Gets the current clock information from the runtime.
+///
+/// # Returns
+/// * `Clock` - The current clock state containing timing information
 pub fn get_clock() -> Clock {
     let mut clock = Clock::default();
     unsafe { crate::syscalls::arch_get_clock(&mut clock) };

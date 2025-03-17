@@ -1,9 +1,22 @@
+//! Error types and handling for Arch VM programs.
+//!
+//! This module defines the standard error types that can be returned by programs
+//! running in the Arch VM environment. It provides a uniform way to represent,
+//! decode, and display program errors, allowing for consistent error handling
+//! across the platform.
+//!
+//! The error system is designed to be compatible with program-specific custom errors
+//! while also providing a set of standard error types for common failure scenarios.
 use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::{decode_error::DecodeError, msg};
 
 /// Reasons the program may fail
+///
+/// This enum defines all standard error types that can be returned by programs
+/// running in the Arch VM environment. Programs can also define their own custom
+/// error types using the `Custom` variant.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ProgramError {
     /// Allows on-chain programs to implement program-specific error types and see them returned

@@ -1,11 +1,32 @@
+//! Bitcoin UTXO (Unspent Transaction Output) management and processing.
+//!
+//! This module provides utilities for working with Bitcoin UTXOs in the Arch VM environment.
+//! It includes functionality for serializing, deserializing, and managing UTXO metadata,
+//! which combines a transaction ID (txid) and output index (vout) to uniquely identify
+//! a specific Bitcoin UTXO.
+
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 
+/// Represents metadata for a Bitcoin UTXO (Unspent Transaction Output).
+///
+/// A UTXO is uniquely identified by a transaction ID (txid) and an output index (vout).
+/// This struct stores these values in a compact 36-byte array format:
+/// - First 32 bytes: transaction ID (txid)
+/// - Last 4 bytes: output index (vout) in little-endian format
 #[derive(Clone, Debug, PartialEq, Hash, Eq, Encode, Decode)]
 #[repr(C)]
 pub struct UtxoMeta([u8; 36]);
 
 impl UtxoMeta {
+    /// Creates a new UtxoMeta from a raw transaction ID and output index.
+    ///
+    /// # Arguments
+    /// * `txid` - The 32-byte transaction ID
+    /// * `vout` - The output index within the transaction
+    ///
+    /// # Returns
+    /// A new UtxoMeta instance
     pub fn from(txid: [u8; 32], vout: u32) -> Self {
         let mut data: [u8; 36] = [0; 36];
         data[..32].copy_from_slice(&txid);
@@ -13,6 +34,14 @@ impl UtxoMeta {
         Self(data)
     }
 
+    /// Creates a new UtxoMeta from a Bitcoin OutPoint structure.
+    ///
+    /// # Arguments
+    /// * `txid` - The Bitcoin transaction ID
+    /// * `vout` - The output index within the transaction
+    ///
+    /// # Returns
+    /// A new UtxoMeta instance
     pub fn from_outpoint(txid: Txid, vout: u32) -> Self {
         let mut data: [u8; 36] = [0; 36];
         data[..32].copy_from_slice(
@@ -25,6 +54,10 @@ impl UtxoMeta {
         Self(data)
     }
 
+    /// Converts this UtxoMeta to a Bitcoin OutPoint structure.
+    ///
+    /// # Returns
+    /// A Bitcoin OutPoint representing this UTXO
     pub fn to_outpoint(&self) -> OutPoint {
         OutPoint {
             txid: Txid::from_str(&hex::encode(self.txid())).unwrap(),
@@ -32,26 +65,59 @@ impl UtxoMeta {
         }
     }
 
+    /// Creates a new UtxoMeta from a slice of bytes.
+    ///
+    /// # Arguments
+    /// * `data` - A byte slice containing at least 36 bytes of UTXO data
+    ///
+    /// # Returns
+    /// A new UtxoMeta instance
+    ///
+    /// # Panics
+    /// Panics if the slice is shorter than 36 bytes
     pub fn from_slice(data: &[u8]) -> Self {
         Self(data[..36].try_into().expect("utxo meta is 36 bytes long"))
     }
 
+    /// Returns a reference to the transaction ID bytes.
+    ///
+    /// # Returns
+    /// A slice containing the 32-byte transaction ID
     pub fn txid(&self) -> &[u8] {
         &self.0[..32]
     }
 
+    /// Returns a mutable reference to the transaction ID bytes.
+    ///
+    /// # Returns
+    /// A mutable slice containing the 32-byte transaction ID
     pub fn txid_mut(&mut self) -> &mut [u8] {
         &mut self.0[..32]
     }
 
+    /// Returns a mutable reference to the vout (output index) bytes.
+    ///
+    /// # Returns
+    /// A mutable slice containing the 4-byte vout in little-endian format
     pub fn vout_bytes_mut(&mut self) -> &mut [u8] {
         &mut self.0[32..]
     }
 
+    /// Returns the output index (vout) as a u32 value.
+    ///
+    /// # Returns
+    /// The output index as a u32 value
+    ///
+    /// # Panics
+    /// Panics if the vout bytes cannot be converted to a u32 (should not happen in practice)
     pub fn vout(&self) -> u32 {
         u32::from_le_bytes(self.0[32..].try_into().expect("utxo meta unreachable"))
     }
 
+    /// Serializes the UtxoMeta into its raw 36-byte array representation.
+    ///
+    /// # Returns
+    /// A 36-byte array containing the serialized UTXO metadata
     pub fn serialize(&self) -> [u8; 36] {
         self.0
     }
@@ -91,24 +157,28 @@ impl fmt::Display for UtxoMeta {
     }
 }
 
+/// Allows accessing the UtxoMeta's internal bytes as a slice.
 impl AsRef<[u8]> for UtxoMeta {
     fn as_ref(&self) -> &[u8] {
         &self.0[..]
     }
 }
 
+/// Allows accessing the UtxoMeta's internal bytes as a mutable slice.
 impl AsMut<[u8]> for UtxoMeta {
     fn as_mut(&mut self) -> &mut [u8] {
         &mut self.0[..]
     }
 }
 
+/// Creates a UtxoMeta from a 36-byte array.
 impl From<[u8; 36]> for UtxoMeta {
     fn from(value: [u8; 36]) -> Self {
         UtxoMeta(value)
     }
 }
 
+/// Implements Borsh serialization for UtxoMeta.
 impl BorshSerialize for UtxoMeta {
     #[inline]
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
@@ -116,6 +186,7 @@ impl BorshSerialize for UtxoMeta {
     }
 }
 
+/// Implements Borsh deserialization for UtxoMeta.
 impl BorshDeserialize for UtxoMeta {
     #[inline]
     fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self> {

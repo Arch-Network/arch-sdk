@@ -1,9 +1,12 @@
+//! Core account abstractions and management functionality for blockchain accounts, including account information and metadata structures.
 use crate::{msg, pubkey::Pubkey, utxo::UtxoMeta};
 
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
+/// Account information that is passed to programs during instruction execution.
+/// The account's data contains the actual account state managed by programs.
 #[derive(Clone)]
 #[repr(C)]
 pub struct AccountInfo<'a> {
@@ -16,6 +19,8 @@ pub struct AccountInfo<'a> {
     pub is_executable: bool,
 }
 
+/// Meta information about an account used to define its role in an instruction.
+/// This includes whether the account is a signer and if it's writable.
 #[derive(
     Debug,
     PartialEq,
@@ -36,6 +41,11 @@ pub struct AccountMeta {
 }
 
 impl AccountMeta {
+    /// Creates a new `AccountMeta` with the given public key as a writable account.
+    ///
+    /// # Arguments
+    /// * `pubkey` - The account's public key
+    /// * `is_signer` - Whether this account is a transaction signer
     pub fn new(pubkey: Pubkey, is_signer: bool) -> Self {
         Self {
             pubkey,
@@ -44,6 +54,11 @@ impl AccountMeta {
         }
     }
 
+    /// Creates a new read-only `AccountMeta` with the given public key.
+    ///
+    /// # Arguments
+    /// * `pubkey` - The account's public key
+    /// * `is_signer` - Whether this account is a transaction signer
     pub fn new_readonly(pubkey: Pubkey, is_signer: bool) -> Self {
         Self {
             pubkey,
@@ -52,6 +67,10 @@ impl AccountMeta {
         }
     }
 
+    /// Serializes the AccountMeta into a fixed-size byte array.
+    ///
+    /// # Returns
+    /// A 34-byte array containing the serialized account metadata
     pub fn serialize(&self) -> [u8; 34] {
         let mut serilized = [0; size_of::<Pubkey>() + 2];
 
@@ -62,6 +81,13 @@ impl AccountMeta {
         serilized
     }
 
+    /// Deserializes an AccountMeta from a byte slice.
+    ///
+    /// # Arguments
+    /// * `data` - Byte slice containing serialized account metadata
+    ///
+    /// # Returns
+    /// A new AccountMeta instance
     pub fn from_slice(data: &[u8]) -> Self {
         Self {
             pubkey: Pubkey::from_slice(&data[..size_of::<Pubkey>()]),
@@ -71,7 +97,14 @@ impl AccountMeta {
     }
 }
 
-// Helper Funtions
+/// Gets the next AccountInfo from an iterator, or returns a NotEnoughAccountKeys error.
+///
+/// # Arguments
+/// * `iter` - Iterator over AccountInfo references
+///
+/// # Returns
+/// * `Ok(AccountInfo)` - The next account info
+/// * `Err(ProgramError)` - If there are no more accounts in the iterator
 pub fn next_account_info<'a, 'b, I: Iterator<Item = &'a AccountInfo<'b>>>(
     iter: &mut I,
 ) -> Result<I::Item, ProgramError> {
@@ -110,6 +143,16 @@ impl<'a> fmt::Debug for AccountInfo<'a> {
 }
 
 impl<'a> AccountInfo<'a> {
+    /// Creates a new AccountInfo instance.
+    ///
+    /// # Arguments
+    /// * `key` - The account's public key
+    /// * `data` - The account's mutable data
+    /// * `owner` - The program that owns this account
+    /// * `utxo` - The UTXO metadata associated with this account
+    /// * `is_signer` - Whether this account is a signer
+    /// * `is_writable` - Whether this account is writable
+    /// * `is_executable` - Whether this account contains executable code
     pub fn new(
         key: &'a Pubkey,
         data: &'a mut [u8],
@@ -130,20 +173,38 @@ impl<'a> AccountInfo<'a> {
         }
     }
 
+    /// Returns the length of the account's data.
+    ///
+    /// # Returns
+    /// The length of the account's data in bytes
     pub fn data_len(&self) -> usize {
         self.data.borrow().len()
     }
 
+    /// Immutably borrows the account's data.
+    ///
+    /// # Returns
+    /// * `Ok(Ref<&mut [u8]>)` - A reference to the account's data
+    /// * `Err(ProgramError)` - If the data is already mutably borrowed
     pub fn try_borrow_data(&self) -> Result<Ref<&mut [u8]>, ProgramError> {
         self.data
             .try_borrow()
             .map_err(|_| ProgramError::AccountBorrowFailed)
     }
 
+    /// Checks if the account's data is empty.
+    ///
+    /// # Returns
+    /// `true` if the account contains no data, `false` otherwise
     pub fn data_is_empty(&self) -> bool {
         self.data.borrow().is_empty()
     }
 
+    /// Mutably borrows the account's data.
+    ///
+    /// # Returns
+    /// * `Ok(RefMut<&mut [u8]>)` - A mutable reference to the account's data
+    /// * `Err(ProgramError)` - If the data is already borrowed
     pub fn try_borrow_mut_data(&self) -> Result<RefMut<&'a mut [u8]>, ProgramError> {
         self.data
             .try_borrow_mut()
@@ -225,6 +286,14 @@ impl<'a> AccountInfo<'a> {
         Ok(())
     }
 
+    /// Sets a new owner for the account.
+    ///
+    /// # Arguments
+    /// * `owner` - The public key of the new owner program
+    ///
+    /// # Safety
+    /// This method uses unsafe operations to modify a non-mutable reference.
+    /// It should only be used in contexts where this operation is valid.
     #[rustversion::attr(since(1.72), allow(invalid_reference_casting))]
     pub fn set_owner(&self, owner: &Pubkey) {
         // Set the non-mut owner field
@@ -236,6 +305,14 @@ impl<'a> AccountInfo<'a> {
         }
     }
 
+    /// Sets a new UTXO for the account.
+    ///
+    /// # Arguments
+    /// * `utxo` - The new UTXO metadata to associate with this account
+    ///
+    /// # Safety
+    /// This method uses unsafe operations to modify a non-mutable reference.
+    /// It should only be used in contexts where this operation is valid.
     #[rustversion::attr(since(1.72), allow(invalid_reference_casting))]
     pub fn set_utxo(&self, utxo: &UtxoMeta) {
         // Set the non-mut owner field

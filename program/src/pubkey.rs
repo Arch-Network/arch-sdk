@@ -1,3 +1,10 @@
+//! Public key definitions and operations for the Arch VM environment.
+//!
+//! This module defines the `Pubkey` type, which represents a 32-byte public key
+//! used throughout the Arch system for identifying accounts, programs, and other entities.
+//! It provides methods for creating, manipulating, and verifying public keys, including
+//! program-derived addresses (PDAs).
+
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytemuck::{Pod, Zeroable};
@@ -6,6 +13,12 @@ use serde::{Deserialize, Serialize};
 /// Number of bytes in a pubkey
 pub const PUBKEY_BYTES: usize = 32;
 
+/// A public key used to identify accounts, programs, and other entities in the Arch VM.
+///
+/// The `Pubkey` is a 32-byte value that uniquely identifies an entity within the Arch system.
+/// It can be used as an account identifier, a program ID, or for other identification purposes.
+/// The struct provides methods for serialization, creation, and verification of program-derived
+/// addresses (PDAs).
 #[repr(C)]
 #[derive(
     Clone,
@@ -28,29 +41,56 @@ pub const PUBKEY_BYTES: usize = 32;
 pub struct Pubkey(pub [u8; 32]);
 
 impl Pubkey {
+    /// Serializes the public key to a 32-byte array.
+    ///
+    /// # Returns
+    /// A 32-byte array containing the public key bytes
     pub fn serialize(&self) -> [u8; 32] {
         self.0
     }
 
+    /// Creates a new Pubkey from a slice of bytes.
+    ///
+    /// If the slice is shorter than 32 bytes, the remaining bytes will be padded with zeros.
+    ///
+    /// # Arguments
+    /// * `data` - The byte slice to create the Pubkey from
+    ///
+    /// # Returns
+    /// A new Pubkey instance
     pub fn from_slice(data: &[u8]) -> Self {
         let mut tmp = [0u8; 32];
         tmp[..data.len()].copy_from_slice(data);
         Self(tmp)
     }
 
+    /// Returns the system program's public key.
+    ///
+    /// # Returns
+    /// The system program's Pubkey
     pub fn system_program() -> Self {
         let mut tmp = [0u8; 32];
         tmp[31] = 1;
         Self(tmp)
     }
 
+    /// Checks if the Pubkey represents the system program.
+    ///
+    /// # Returns
+    /// `true` if the Pubkey is the system program's Pubkey, `false` otherwise
     pub fn is_system_program(&self) -> bool {
         let mut tmp = [0u8; 32];
         tmp[31] = 1;
         self.0 == tmp
     }
 
-    /// unique Pubkey for tests and benchmarks.
+    /// Creates a unique Pubkey for tests and benchmarks.
+    ///
+    /// This method generates a deterministic unique pubkey by incrementing an atomic counter.
+    /// It is useful for creating distinct keys in test and benchmark environments.
+    ///
+    /// # Returns
+    /// A new unique Pubkey instance
     pub fn new_unique() -> Self {
         use crate::atomic_u64::AtomicU64;
         static I: AtomicU64 = AtomicU64::new(1);
@@ -63,11 +103,27 @@ impl Pubkey {
         Self::from(b)
     }
 
-    /// Log a `Pubkey` from a program
+    /// Logs the Pubkey to the program log.
+    ///
+    /// This method is used within programs to output the public key to the program's log,
+    /// which can be useful for debugging and monitoring program execution.
+    ///
+    /// # Safety
+    /// This method makes a direct system call and should only be used within a program context.
     pub fn log(&self) {
         unsafe { crate::syscalls::sol_log_pubkey(self.as_ref() as *const _ as *const u8) };
     }
 
+    /// Checks if a public key represents a point on the secp256k1 curve.
+    ///
+    /// This is used in program address derivation to ensure that derived addresses
+    /// cannot be used to sign transactions (as they don't map to valid private keys).
+    ///
+    /// # Arguments
+    /// * `pubkey` - The public key bytes to check
+    ///
+    /// # Returns
+    /// `true` if the pubkey is on the curve, `false` otherwise
     #[cfg(not(target_os = "solana"))]
     pub fn is_on_curve(pubkey: &[u8]) -> bool {
         match bitcoin::secp256k1::PublicKey::from_slice(pubkey) {
@@ -76,11 +132,37 @@ impl Pubkey {
         }
     }
 
+    /// Finds a valid program address and bump seed for the given seeds and program ID.
+    ///
+    /// This method searches for a program-derived address (PDA) by trying different bump seeds
+    /// until it finds one that produces a valid PDA (one that is not on the curve).
+    ///
+    /// # Arguments
+    /// * `seeds` - The seeds to use in the address derivation
+    /// * `program_id` - The program ID to derive the address from
+    ///
+    /// # Returns
+    /// A tuple containing the derived program address and the bump seed used
+    ///
+    /// # Panics
+    /// Panics if no valid program address could be found with any bump seed
     pub fn find_program_address(seeds: &[&[u8]], program_id: &Pubkey) -> (Pubkey, u8) {
         Self::try_find_program_address(seeds, program_id)
             .unwrap_or_else(|| panic!("Unable to find a viable program address bump seed"))
     }
 
+    /// Attempts to find a valid program address and bump seed for the given seeds and program ID.
+    ///
+    /// Similar to `find_program_address`, but returns `None` instead of panicking if no valid
+    /// address can be found.
+    ///
+    /// # Arguments
+    /// * `seeds` - The seeds to use in the address derivation
+    /// * `program_id` - The program ID to derive the address from
+    ///
+    /// # Returns
+    /// An Option containing a tuple of the derived program address and bump seed if found,
+    /// or None if no valid program address could be derived
     pub fn try_find_program_address(seeds: &[&[u8]], program_id: &Pubkey) -> Option<(Pubkey, u8)> {
         // Perform the calculation inline, calling this from within a program is
         // not supported
@@ -125,6 +207,25 @@ impl Pubkey {
         }
     }
 
+    /// Creates a program address (PDA) deterministically from a set of seeds and a program ID.
+    ///
+    /// Program addresses are deterministically derived from seeds and a program ID, but
+    /// unlike normal public keys, they do not lie on the ed25519 curve and thus have no
+    /// associated private key.
+    ///
+    /// # Arguments
+    /// * `seeds` - The seeds to use in the address derivation, maximum of 16 seeds with
+    ///   each seed having a maximum length of 32 bytes
+    /// * `program_id` - The program ID to derive the address from
+    ///
+    /// # Returns
+    /// The derived program address if successful
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - There are more than MAX_SEEDS seeds
+    /// - Any seed is longer than MAX_SEED_LEN bytes
+    /// - The resulting address would lie on the ed25519 curve (invalid for a PDA)
     pub fn create_program_address(
         seeds: &[&[u8]],
         program_id: &Pubkey,
@@ -177,7 +278,9 @@ impl Pubkey {
     }
 }
 
+/// Maximum number of seeds allowed in PDA derivation
 pub const MAX_SEEDS: usize = 16;
+/// Maximum length in bytes for each seed used in PDA derivation
 pub const MAX_SEED_LEN: usize = 32;
 
 impl std::fmt::LowerHex for Pubkey {

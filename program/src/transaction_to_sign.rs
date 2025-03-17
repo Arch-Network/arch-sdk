@@ -1,14 +1,38 @@
+//! Transaction to sign representation for serialization and deserialization.
+//!
+//! This module provides the `TransactionToSign` struct which represents a transaction
+//! along with the inputs that need to be signed.
+
 use crate::input_to_sign::InputToSign;
 use crate::pubkey::Pubkey;
 
+/// Represents a transaction that needs to be signed with associated inputs.
+///
+/// This struct holds the raw transaction bytes and a list of inputs that need to be
+/// signed, each with their own index and signer public key.
 #[repr(C)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TransactionToSign<'a> {
+    /// The raw transaction bytes to be signed.
     pub tx_bytes: &'a [u8],
+    /// List of inputs within the transaction that need signatures.
     pub inputs_to_sign: &'a [InputToSign],
 }
 
 impl<'a> TransactionToSign<'a> {
+    /// Serializes the `TransactionToSign` into a byte vector.
+    ///
+    /// The serialized format is:
+    /// - 4 bytes: length of tx_bytes (u32, little endian)
+    /// - N bytes: tx_bytes content
+    /// - 4 bytes: number of inputs to sign (u32, little endian)
+    /// - For each input:
+    ///   - 4 bytes: input index (u32, little endian)
+    ///   - 32 bytes: signer public key
+    ///
+    /// # Returns
+    ///
+    /// A vector of bytes containing the serialized transaction.
     pub fn serialise(&self) -> Vec<u8> {
         let mut serialized = vec![];
 
@@ -23,6 +47,20 @@ impl<'a> TransactionToSign<'a> {
         serialized
     }
 
+    /// Deserializes a byte slice into a `TransactionToSign`.
+    ///
+    /// # Parameters
+    ///
+    /// * `data` - A byte slice containing the serialized transaction.
+    ///
+    /// # Returns
+    ///
+    /// A new `TransactionToSign` instance.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the input data is malformed or doesn't contain
+    /// enough bytes for the expected format.
     pub fn from_slice(data: &'a [u8]) -> Self {
         let mut size = 0;
 

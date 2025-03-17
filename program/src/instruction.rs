@@ -1,3 +1,6 @@
+/// This module defines the instruction data structure and related error types.
+/// Instructions are the fundamental unit of program execution in the Arch Network,
+/// containing the program to call, accounts to interact with, and instruction data.
 use std::mem::size_of;
 
 use thiserror::Error;
@@ -11,6 +14,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
+/// An instruction for a program to execute.
+///
+/// Each instruction contains:
+/// * The program ID (public key) of the program that should process this instruction
+/// * A list of accounts that the instruction will operate on
+/// * A byte array of instruction data that is program-specific
 #[derive(
     Debug,
     PartialEq,
@@ -24,12 +33,26 @@ use sha256::digest;
     Decode,
 )]
 pub struct Instruction {
+    /// Program ID that executes this instruction
     pub program_id: Pubkey,
+    /// Metadata for accounts that this instruction interacts with
     pub accounts: Vec<AccountMeta>,
+    /// Program-specific instruction data
     pub data: Vec<u8>,
 }
 
 impl Instruction {
+    /// Serializes an instruction to a byte array.
+    ///
+    /// The serialization format is:
+    /// * program_id (32 bytes)
+    /// * accounts length (1 byte)
+    /// * account metadata (34 bytes per account)
+    /// * data length (8 bytes)
+    /// * instruction data (variable)
+    ///
+    /// # Returns
+    /// A vector containing the serialized instruction
     pub fn serialize(&self) -> Vec<u8> {
         let mut serilized = vec![];
 
@@ -46,6 +69,13 @@ impl Instruction {
         serilized
     }
 
+    /// Deserializes an instruction from a byte slice.
+    ///
+    /// # Parameters
+    /// * `data` - The byte slice containing the serialized instruction
+    ///
+    /// # Returns
+    /// A new Instruction instance
     pub fn from_slice(data: &[u8]) -> Self {
         let mut size = 32;
         let accounts_len = data[size] as usize;
@@ -65,11 +95,19 @@ impl Instruction {
         }
     }
 
+    /// Computes a unique hash for this instruction.
+    ///
+    /// # Returns
+    /// A string containing the double SHA-256 hash of the serialized instruction
     pub fn hash(&self) -> String {
         digest(digest(self.serialize()))
     }
 }
 
+/// Errors that can be returned by programs when processing instructions.
+///
+/// These errors are used by the runtime to indicate various failure conditions
+/// that may occur during instruction execution.
 #[derive(Debug, Error, PartialEq, Eq, Clone)]
 pub enum InstructionError {
     /// Deprecated! Use CustomError instead!
@@ -306,8 +344,16 @@ pub enum InstructionError {
     // conversions must also be added
 }
 
+/// Implementation for converting u64 error codes to InstructionError variants
 #[allow(non_snake_case)]
 impl From<u64> for InstructionError {
+    /// Converts a u64 error code to the corresponding InstructionError variant.
+    ///
+    /// # Parameters
+    /// * `value` - The u64 error code to convert
+    ///
+    /// # Returns
+    /// The corresponding InstructionError variant
     fn from(value: u64) -> Self {
         match value {
             CUSTOM_ZERO => Self::Custom(0),

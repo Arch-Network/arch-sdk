@@ -1,3 +1,4 @@
+//! Clock module provides time-related functionality for the program.
 use borsh::{BorshDeserialize, BorshSerialize};
 
 // Add the Clock struct definition
