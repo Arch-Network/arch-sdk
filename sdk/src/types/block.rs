@@ -2,6 +2,8 @@ use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
+use super::ProcessedTransaction;
+
 #[derive(Debug, thiserror::Error, Clone, PartialEq)]
 pub enum BlockParseError {
     #[error("Invalid bytes")]
@@ -136,6 +138,39 @@ fn read_u128(data: &[u8], cursor: &mut usize) -> Result<u128, BlockParseError> {
     let result = u128::from_le_bytes(data[*cursor..*cursor + 16].try_into().unwrap());
     *cursor += 16;
     Ok(result)
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Encode,
+    Decode,
+)]
+pub struct FullBlock {
+    pub transactions: Vec<ProcessedTransaction>,
+    pub previous_block_hash: String,
+    pub timestamp: u128,
+    pub bitcoin_block_height: u64,
+    pub transaction_count: u64,
+    pub merkle_root: String,
+}
+
+impl From<(Block, Vec<ProcessedTransaction>)> for FullBlock {
+    fn from(value: (Block, Vec<ProcessedTransaction>)) -> Self {
+        FullBlock {
+            transactions: value.1,
+            previous_block_hash: value.0.previous_block_hash,
+            timestamp: value.0.timestamp,
+            bitcoin_block_height: value.0.bitcoin_block_height,
+            transaction_count: value.0.transaction_count,
+            merkle_root: value.0.merkle_root,
+        }
+    }
 }
 
 #[cfg(test)]

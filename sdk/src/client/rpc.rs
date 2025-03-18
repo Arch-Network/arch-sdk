@@ -1,5 +1,6 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
+use crate::{AccountInfoWithPubkey, BlockTransactionFilter, FullBlock};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_str, json, Value};
 use std::time::Duration;
@@ -13,11 +14,13 @@ use crate::types::{
 // RPC method constants
 const ASSIGN_AUTHORITY: &str = "assign_authority";
 const READ_ACCOUNT_INFO: &str = "read_account_info";
+const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
 const DEPLOY_PROGRAM: &str = "deploy_program";
 const SEND_TRANSACTION: &str = "send_transaction";
 const SEND_TRANSACTIONS: &str = "send_transactions";
 const GET_PROGRAM: &str = "get_program";
 const GET_BLOCK: &str = "get_block";
+const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
 const GET_BLOCK_COUNT: &str = "get_block_count";
 const GET_BLOCK_HASH: &str = "get_block_hash";
 const GET_BEST_BLOCK_HASH: &str = "get_best_block_hash";
@@ -97,6 +100,20 @@ impl ArchRpcClient {
             None => Err(ArchError::NotFound(format!(
                 "Account not found for pubkey: {}",
                 pubkey
+            ))),
+        }
+    }
+
+    /// Read account information for multiple public keys
+    pub fn get_multiple_accounts(
+        &self,
+        pubkeys: Vec<Pubkey>,
+    ) -> Result<Vec<Option<AccountInfoWithPubkey>>> {
+        match self.call_method_with_params(GET_MULTIPLE_ACCOUNTS, pubkeys.clone())? {
+            Some(info) => Ok(info),
+            None => Err(ArchError::NotFound(format!(
+                "Accounts not found for pubkeys: {:?}",
+                pubkeys
             ))),
         }
     }
@@ -219,9 +236,58 @@ impl ArchRpcClient {
         }
     }
 
-    /// Get block by hash
-    pub fn get_block(&self, block_hash: &str) -> Result<Option<Block>> {
+    /// Get block by hash with signatures only
+    pub fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<Block>> {
+        // For signatures only, we can just pass the block hash directly
         self.call_method_with_params(GET_BLOCK, block_hash)
+    }
+
+    /// Get full block by hash with complete transaction details
+    pub fn get_full_block_by_hash(&self, block_hash: &str) -> Result<Option<FullBlock>> {
+        // Create parameters array with block_hash and full filter
+        let params = vec![
+            serde_json::to_value(block_hash)?,
+            serde_json::to_value(BlockTransactionFilter::Full)?,
+        ];
+
+        // Process the response - first get the raw value
+        match self.process_result(self.post_data(GET_BLOCK, params)?)? {
+            Some(value) => {
+                // Deserialize into a FullBlock
+                let result = serde_json::from_value(value).map_err(|e| {
+                    ArchError::ParseError(format!("Failed to deserialize FullBlock: {}", e))
+                })?;
+                Ok(Some(result))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Get block by height with signatures only
+    pub fn get_block_by_height(&self, block_height: u64) -> Result<Option<Block>> {
+        // For signatures only, we can just pass the block hash directly
+        self.call_method_with_params(GET_BLOCK_BY_HEIGHT, block_height)
+    }
+
+    /// Get full block by hash with complete transaction details
+    pub fn get_full_block_by_height(&self, block_height: u64) -> Result<Option<FullBlock>> {
+        // Create parameters array with block_hash and full filter
+        let params = vec![
+            serde_json::to_value(block_height)?,
+            serde_json::to_value(BlockTransactionFilter::Full)?,
+        ];
+
+        // Process the response - first get the raw value
+        match self.process_result(self.post_data(GET_BLOCK_BY_HEIGHT, params)?)? {
+            Some(value) => {
+                // Deserialize into a FullBlock
+                let result = serde_json::from_value(value).map_err(|e| {
+                    ArchError::ParseError(format!("Failed to deserialize FullBlock: {}", e))
+                })?;
+                Ok(Some(result))
+            }
+            None => Ok(None),
+        }
     }
 
     /// Get account address for a public key
@@ -693,7 +759,7 @@ mod tests {
         );
 
         let client = get_test_client(&server);
-        let result = client.get_block(block_hash).unwrap();
+        let result = client.get_block_by_hash(block_hash).unwrap();
 
         assert!(result.is_some());
         let returned_block = result.unwrap();
@@ -864,6 +930,209 @@ mod tests {
         } else {
             panic!("Expected RpcRequestFailed error");
         }
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_multiple_accounts() {
+        let mut server = Server::new();
+
+        // Create test pubkeys
+        let pubkey1 = Pubkey::new_unique();
+        let pubkey2 = Pubkey::new_unique();
+        let pubkeys = vec![pubkey1, pubkey2];
+
+        // Create account info for responses
+        let account_info1 = AccountInfo {
+            owner: Pubkey::new_unique(),
+            data: vec![1, 2, 3, 4],
+            utxo: "utxo123".to_string(),
+            is_executable: false,
+        };
+
+        let account_info2 = AccountInfo {
+            owner: Pubkey::new_unique(),
+            data: vec![5, 6, 7, 8],
+            utxo: "utxo456".to_string(),
+            is_executable: true,
+        };
+
+        // Updated to match actual struct definition
+        let account_with_pubkey1 = AccountInfoWithPubkey {
+            key: pubkey1,
+            owner: account_info1.owner,
+            data: account_info1.data.clone(),
+            utxo: account_info1.utxo.clone(),
+            is_executable: account_info1.is_executable,
+        };
+
+        // Updated to match actual struct definition
+        let account_with_pubkey2 = AccountInfoWithPubkey {
+            key: pubkey2,
+            owner: account_info2.owner,
+            data: account_info2.data.clone(),
+            utxo: account_info2.utxo.clone(),
+            is_executable: account_info2.is_executable,
+        };
+
+        let expected_accounts = vec![
+            Some(account_with_pubkey1.clone()),
+            Some(account_with_pubkey2.clone()),
+        ];
+
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_MULTIPLE_ACCOUNTS,
+            pubkeys.clone(),
+            serde_json::to_value(expected_accounts.clone()).unwrap(),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.get_multiple_accounts(pubkeys).unwrap();
+
+        assert_eq!(result.len(), 2);
+        // Updated assertions to use the correct field names
+        assert_eq!(result[0].as_ref().unwrap().key, pubkey1);
+        assert_eq!(result[0].as_ref().unwrap().data, account_info1.data);
+        assert_eq!(result[1].as_ref().unwrap().key, pubkey2);
+        assert_eq!(
+            result[1].as_ref().unwrap().is_executable,
+            account_info2.is_executable
+        );
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_full_block() {
+        let mut server = Server::new();
+        let block_hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
+        // Create a sample full block for the response
+        let full_block = FullBlock {
+            transactions: vec![], // Simplified for test purposes
+            previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            timestamp: 1630000000,
+            bitcoin_block_height: 100,
+            transaction_count: 0,
+            merkle_root: "merkle_root_hash".to_string(),
+        };
+
+        // Mock response with the correct parameters (block_hash and BlockTransactionFilter::Full)
+        let params = vec![
+            serde_json::to_value(block_hash).unwrap(),
+            serde_json::to_value(BlockTransactionFilter::Full).unwrap(),
+        ];
+
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_BLOCK,
+            params,
+            serde_json::to_value(full_block.clone()).unwrap(),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.get_full_block_by_hash(block_hash).unwrap();
+
+        assert!(result.is_some());
+        let returned_block = result.unwrap();
+        assert_eq!(returned_block.timestamp, full_block.timestamp);
+        assert_eq!(
+            returned_block.previous_block_hash,
+            full_block.previous_block_hash
+        );
+        assert_eq!(
+            returned_block.bitcoin_block_height,
+            full_block.bitcoin_block_height
+        );
+        assert_eq!(returned_block.merkle_root, full_block.merkle_root);
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_block_by_height() {
+        let mut server = Server::new();
+        let block_height = 12345u64;
+
+        // Create a sample block for the response
+        let block = Block {
+            transactions: vec!["tx1".to_string(), "tx2".to_string()],
+            previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            timestamp: 1630000000,
+            bitcoin_block_height: 100,
+            transaction_count: 2,
+            merkle_root: "merkle_root_hash".to_string(),
+        };
+
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_BLOCK_BY_HEIGHT,
+            block_height,
+            serde_json::to_value(block.clone()).unwrap(),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.get_block_by_height(block_height).unwrap();
+
+        assert!(result.is_some());
+        let returned_block = result.unwrap();
+        assert_eq!(returned_block.transactions, block.transactions);
+        assert_eq!(returned_block.transaction_count, block.transaction_count);
+        assert_eq!(
+            returned_block.bitcoin_block_height,
+            block.bitcoin_block_height
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_full_block_by_height() {
+        let mut server = Server::new();
+        let block_height = 12345u64;
+
+        // Create a sample full block for the response
+        let full_block = FullBlock {
+            transactions: vec![], // Simplified for test purposes
+            previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            timestamp: 1630000000,
+            bitcoin_block_height: 100,
+            transaction_count: 0,
+            merkle_root: "merkle_root_hash".to_string(),
+        };
+
+        // Mock response with the correct parameters (block_height and BlockTransactionFilter::Full)
+        let params = vec![
+            serde_json::to_value(block_height).unwrap(),
+            serde_json::to_value(BlockTransactionFilter::Full).unwrap(),
+        ];
+
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_BLOCK_BY_HEIGHT,
+            params,
+            serde_json::to_value(full_block.clone()).unwrap(),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.get_full_block_by_height(block_height).unwrap();
+
+        assert!(result.is_some());
+        let returned_block = result.unwrap();
+        assert_eq!(returned_block.timestamp, full_block.timestamp);
+        assert_eq!(
+            returned_block.previous_block_hash,
+            full_block.previous_block_hash
+        );
+        assert_eq!(
+            returned_block.bitcoin_block_height,
+            full_block.bitcoin_block_height
+        );
+        assert_eq!(returned_block.merkle_root, full_block.merkle_root);
 
         mock.assert();
     }
