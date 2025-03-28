@@ -1,7 +1,6 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
 use crate::{AccountInfoWithPubkey, BlockTransactionFilter, FullBlock};
-use jsonrpsee::types::error::ErrorCode;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_str, json, Value};
 use std::time::Duration;
@@ -449,44 +448,7 @@ fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
 mod tests {
     use super::*;
     use crate::arch_program::pubkey::Pubkey;
-    use crate::arch_program::{account::AccountMeta, instruction::Instruction, message::Message};
-    use crate::types::Signature;
-    use jsonrpsee::types::{error::ErrorCode, ErrorObject};
-    use mockall::mock;
-    use mockall::predicate;
     use mockito::Server;
-
-    mock! {
-        RpcServer {
-            fn get_transaction_status(&self, txid: String) -> Result<Option<TransactionStatus>>;
-            fn send_transactions(&self, txs: Vec<RuntimeTransaction>) -> Result<Vec<String>>;
-        }
-    }
-
-    #[derive(Debug, Clone)]
-    pub enum TransactionStatus {
-        Queued,
-        Processed,
-        Failed,
-    }
-
-    pub struct RpcClient {
-        url: String,
-    }
-
-    impl RpcClient {
-        pub fn new(url: String) -> Self {
-            Self { url }
-        }
-
-        pub async fn is_transaction_finalized(&self, txid: &str) -> Result<bool> {
-            Ok(true) // Simplified for tests
-        }
-
-        pub async fn send_transactions(&self, txs: Vec<RuntimeTransaction>) -> Result<Vec<String>> {
-            Ok(vec![]) // Simplified for tests
-        }
-    }
 
     // Helper to create a test client with the mockito server
     fn get_test_client(server: &Server) -> ArchRpcClient {
@@ -644,141 +606,239 @@ mod tests {
         mock.assert();
     }
 
-    #[tokio::test]
-    async fn test_is_transaction_finalized_function() {
-        let mut mock_server = MockRpcServer::new();
-        let client = RpcClient::new("http://localhost:8899".to_string());
+    #[test]
+    fn test_is_transaction_finalized_function() {
+        use crate::types::{RollbackStatus, Signature};
+        use arch_program::message::Message;
 
-        // Create a valid signer
-        let signer = Pubkey::new_unique();
-
-        // Create a valid instruction with proper data
-        let instruction = Instruction {
-            program_id: Pubkey::system_program(),
-            accounts: vec![AccountMeta {
-                pubkey: signer,
-                is_signer: true,
-                is_writable: true,
-            }],
-            data: vec![1; 32], // 32 bytes of data
+        // Create a RuntimeTransaction for testing
+        let rt_tx = RuntimeTransaction {
+            version: 0,
+            block_hash: String::new(),
+            message: Message::from_slice(&[]),
         };
 
-        // Create a message with the signer and instruction
-        let message = Message {
-            signers: vec![signer],
-            instructions: vec![instruction],
+        // Test all status variants
+        let processed_tx = ProcessedTransaction {
+            runtime_transaction: rt_tx.clone(),
+            status: Status::Processed,
+            bitcoin_txid: None,
+            logs: Vec::new(),
+            rollback_status: RollbackStatus::NotRolledback,
         };
+        assert!(is_transaction_finalized(&processed_tx));
 
-        // Create a RuntimeTransaction
-        let transaction = RuntimeTransaction {
-            version: 1,
-            block_hash: "block_hash".to_string(),
-            message,
+        let failed_tx = ProcessedTransaction {
+            runtime_transaction: rt_tx.clone(),
+            status: Status::Failed("error".to_string()),
+            bitcoin_txid: None,
+            logs: Vec::new(),
+            rollback_status: RollbackStatus::NotRolledback,
         };
+        assert!(is_transaction_finalized(&failed_tx));
 
-        let transaction_id = transaction.txid();
-
-        // Test error case
-        mock_server
-            .expect_get_transaction_status()
-            .with(predicate::eq(transaction_id.clone()))
-            .times(1)
-            .returning(|_| Err(ArchError::RpcRequestFailed("Invalid request".to_string())));
-
-        let result = client.is_transaction_finalized(&transaction_id).await;
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            ArchError::RpcRequestFailed(_)
-        ));
+        let queued_tx = ProcessedTransaction {
+            runtime_transaction: rt_tx.clone(),
+            status: Status::Queued,
+            bitcoin_txid: None,
+            logs: Vec::new(),
+            rollback_status: RollbackStatus::NotRolledback,
+        };
+        assert!(!is_transaction_finalized(&queued_tx));
     }
 
-    #[tokio::test]
-    async fn test_send_transactions() {
-        let mut mock_server = MockRpcServer::new();
-        let client = RpcClient::new("http://localhost:8899".to_string());
+    #[test]
+    fn test_send_transaction() {
+        let mut server = Server::new();
+        use arch_program::message::Message;
 
-        // Create two unique public keys for signers
-        let signer1 = Pubkey::new_unique();
-        let signer2 = Pubkey::new_unique();
-
-        // Create valid signatures (64 bytes each)
-        let signature1 = Signature(vec![1; 64]);
-        let signature2 = Signature(vec![2; 64]);
-
-        // Create two instructions, each with a signer and some data
-        let instruction1 = Instruction {
-            program_id: Pubkey::system_program(),
-            accounts: vec![AccountMeta {
-                pubkey: signer1,
-                is_signer: true,
-                is_writable: true,
-            }],
-            data: vec![1; 32], // 32 bytes of data
+        // Create a minimal valid RuntimeTransaction for the test
+        let tx = RuntimeTransaction {
+            version: 0,
+            block_hash: String::new(),
+            message: Message::from_slice(&[]),
         };
 
-        let instruction2 = Instruction {
-            program_id: Pubkey::system_program(),
-            accounts: vec![AccountMeta {
-                pubkey: signer2,
-                is_signer: true,
-                is_writable: true,
-            }],
-            data: vec![2; 32], // 32 bytes of data
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            SEND_TRANSACTION,
+            tx.clone(),
+            json!("tx_id_12345"),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.send_transaction(tx).unwrap();
+
+        assert_eq!(result, "tx_id_12345");
+        mock.assert();
+    }
+
+    // Additional test for get_program_accounts
+    #[test]
+    fn test_get_program_accounts() {
+        let mut server = Server::new();
+        let program_id = Pubkey::new_unique();
+        let filters = None;
+
+        // Create some program accounts for the response
+        let account_info = AccountInfo {
+            owner: program_id,
+            data: vec![1, 2, 3, 4],
+            utxo: "utxo123".to_string(),
+            is_executable: false,
         };
 
-        // Create two messages, each with a signer and instruction
-        let message1 = Message {
-            signers: vec![signer1],
-            instructions: vec![instruction1],
+        let program_account = ProgramAccount {
+            pubkey: Pubkey::new_unique(),
+            account: account_info,
         };
 
-        let message2 = Message {
-            signers: vec![signer2],
-            instructions: vec![instruction2],
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_PROGRAM_ACCOUNTS,
+            json!([program_id.serialize(), filters]),
+            json!([program_account]),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.get_program_accounts(&program_id, filters).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].pubkey, program_account.pubkey);
+        assert_eq!(result[0].account.data, program_account.account.data);
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_block_hash() {
+        let mut server = Server::new();
+        let block_height = 12345u64;
+        let expected_hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_BLOCK_HASH,
+            block_height,
+            json!(expected_hash),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.get_block_hash(block_height).unwrap();
+
+        assert_eq!(result, expected_hash);
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_block() {
+        let mut server = Server::new();
+        let block_hash = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
+        // Create a sample block for the response
+        let block = Block {
+            transactions: vec!["tx1".to_string(), "tx2".to_string()],
+            previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            timestamp: 1630000000,
+            bitcoin_block_height: 100,
+            transaction_count: 2,
+            merkle_root: "merkle_root_hash".to_string(),
         };
 
-        // Create two transactions
-        let transaction1 = RuntimeTransaction {
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_BLOCK,
+            block_hash,
+            serde_json::to_value(block.clone()).unwrap(),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.get_block_by_hash(block_hash).unwrap();
+
+        assert!(result.is_some());
+        let returned_block = result.unwrap();
+        assert_eq!(returned_block.transactions, block.transactions);
+        assert_eq!(returned_block.transaction_count, block.transaction_count);
+        assert_eq!(
+            returned_block.bitcoin_block_height,
+            block.bitcoin_block_height
+        );
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_processed_transaction() {
+        let mut server = Server::new();
+        let tx_id = "tx_test_12345";
+
+        use crate::types::{RollbackStatus, Signature};
+        use arch_program::message::Message;
+
+        // Create a sample processed transaction
+        let rt_tx = RuntimeTransaction {
+            version: 0,
+            block_hash: String::new(),
+            message: Message::from_slice(&[]),
+        };
+
+        let processed_tx = ProcessedTransaction {
+            runtime_transaction: rt_tx.clone(),
+            status: Status::Processed,
+            bitcoin_txid: None,
+            logs: vec!["Log entry 1".to_string(), "Log entry 2".to_string()],
+            rollback_status: RollbackStatus::NotRolledback,
+        };
+
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_PROCESSED_TRANSACTION,
+            tx_id,
+            serde_json::to_value(processed_tx.clone()).unwrap(),
+        );
+
+        let client = get_test_client(&server);
+        let result = client.get_processed_transaction(tx_id).unwrap();
+
+        assert!(result.is_some());
+        let returned_tx = result.unwrap();
+        assert_eq!(returned_tx.status, processed_tx.status);
+        assert_eq!(returned_tx.logs, processed_tx.logs);
+        mock.assert();
+    }
+
+    #[test]
+    fn test_send_transactions() {
+        let mut server = Server::new();
+        use arch_program::message::Message;
+
+        // Create multiple transactions
+        let tx1 = RuntimeTransaction {
+            version: 0,
+            block_hash: String::new(),
+            message: Message::from_slice(&[]),
+        };
+
+        let tx2 = RuntimeTransaction {
             version: 1,
-            block_hash: "block_hash1".to_string(),
-            message: message1,
+            block_hash: String::new(),
+            message: Message::from_slice(&[]),
         };
 
-        let transaction2 = RuntimeTransaction {
-            version: 1,
-            block_hash: "block_hash2".to_string(),
-            message: message2,
-        };
+        let transactions = vec![tx1, tx2];
+        let expected_tx_ids = vec!["tx_id_1".to_string(), "tx_id_2".to_string()];
 
-        let transactions = vec![transaction1, transaction2];
-        let expected_transaction_ids = vec![transactions[0].txid(), transactions[1].txid()];
-        let expected_ids = expected_transaction_ids.clone();
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            SEND_TRANSACTIONS,
+            transactions.clone(),
+            json!(expected_tx_ids),
+        );
 
-        // Test successful case
-        mock_server
-            .expect_send_transactions()
-            .with(predicate::eq(transactions.clone()))
-            .times(1)
-            .returning(move |_| Ok(expected_ids.clone()));
+        let client = get_test_client(&server);
+        let result = client.send_transactions(transactions).unwrap();
 
-        let result = client.send_transactions(transactions.clone()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), expected_transaction_ids);
-
-        // Test error case
-        mock_server
-            .expect_send_transactions()
-            .with(predicate::eq(transactions.clone()))
-            .times(1)
-            .returning(|_| Err(ArchError::RpcRequestFailed("Invalid request".to_string())));
-
-        let result = client.send_transactions(transactions).await;
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            ArchError::RpcRequestFailed(_)
-        ));
+        assert_eq!(result, expected_tx_ids);
+        mock.assert();
     }
 
     #[test]
