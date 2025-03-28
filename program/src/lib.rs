@@ -15,7 +15,7 @@ errors, and interacting with the Arch runtime environment.
 Add this crate to your `Cargo.toml`:
 ```toml
 [dependencies]
-arch_program = "0.3.2"
+arch_program = "0.4.0"
 ```
 Then import the modules you need in your code:
 ```rust
