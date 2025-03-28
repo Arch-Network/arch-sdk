@@ -1,8 +1,10 @@
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use super::ProcessedTransaction;
+use super::RuntimeTransaction;
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq)]
 pub enum BlockParseError {
@@ -34,6 +36,19 @@ pub struct Block {
     pub bitcoin_block_height: u64,
     pub transaction_count: u64,
     pub merkle_root: String,
+}
+
+impl Default for Block {
+    fn default() -> Self {
+        Self {
+            transactions: Vec::new(),
+            previous_block_hash: String::new(),
+            timestamp: 0,
+            bitcoin_block_height: 0,
+            transaction_count: 0,
+            merkle_root: String::new(),
+        }
+    }
 }
 
 impl Block {

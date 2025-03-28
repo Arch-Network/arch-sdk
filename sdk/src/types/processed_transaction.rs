@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{RuntimeTransaction, RuntimeTransactionError};
+use arch_program::message::Message;
+use std::fmt;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum ParseProcessedTransactionError {
@@ -214,6 +216,34 @@ impl ProcessedTransaction {
             rollback_status,
         })
     }
+
+    pub fn from_runtime_transaction(
+        runtime_transaction: RuntimeTransaction,
+        status: Status,
+        _block_hash: String,
+        _block_timestamp: u128,
+        _bitcoin_block_height: u64,
+    ) -> Self {
+        Self {
+            runtime_transaction,
+            status,
+            bitcoin_txid: None,
+            logs: Vec::new(),
+            rollback_status: RollbackStatus::NotRolledback,
+        }
+    }
+}
+
+impl From<RuntimeTransaction> for ProcessedTransaction {
+    fn from(tx: RuntimeTransaction) -> Self {
+        Self {
+            runtime_transaction: tx,
+            status: Status::Queued,
+            bitcoin_txid: None,
+            logs: Vec::new(),
+            rollback_status: RollbackStatus::NotRolledback,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -233,16 +263,10 @@ mod tests {
         #[test]
         fn fuzz_serialize_deserialize_processed_transaction(
             version in any::<u32>(),
-            signatures in prop::collection::vec(prop::collection::vec(any::<u8>(), 64), 0..10),
             signers in prop::collection::vec(any::<[u8; 32]>(), 0..10),
             instructions in prop::collection::vec(prop::collection::vec(any::<u8>(), 0..100), 0..10),
             bitcoin_txid in "[0-9a-f]{64}",
         ) {
-            // Generate a random RuntimeTransaction
-            let signatures: Vec<Signature> = signatures.into_iter()
-                .map(|sig_bytes| Signature::from_slice(&sig_bytes))
-                .collect();
-
             let signers: Vec<Pubkey> = signers.into_iter()
                 .map(Pubkey::from)
                 .collect();
@@ -262,7 +286,7 @@ mod tests {
 
             let runtime_transaction = RuntimeTransaction {
                 version,
-                signatures,
+                block_hash: String::new(),
                 message,
             };
 

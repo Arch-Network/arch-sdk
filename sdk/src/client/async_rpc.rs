@@ -666,11 +666,8 @@ mod tests {
         // Create a minimal valid RuntimeTransaction for the test
         let tx = RuntimeTransaction {
             version: 0,
-            signatures: Vec::new(),
-            message: Message {
-                signers: Vec::new(),
-                instructions: Vec::new(),
-            },
+            block_hash: String::new(),
+            message: Message::from_slice(&[]),
         };
 
         let mock = mock_rpc_response_with_params(

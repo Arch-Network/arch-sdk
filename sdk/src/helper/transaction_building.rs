@@ -1,7 +1,4 @@
-use crate::{
-    arch_program::pubkey::Pubkey,
-    types::{RuntimeTransaction, Signature},
-};
+use crate::{arch_program::pubkey::Pubkey, types::RuntimeTransaction};
 use arch_program::{instruction::Instruction, message::Message};
 use bitcoin::{key::Keypair, XOnlyPublicKey};
 
@@ -26,19 +23,9 @@ pub fn build_transaction(
         instructions,
     };
 
-    let digest_slice = message.hash();
-
-    let signatures = signer_key_pairs
-        .iter()
-        .map(|signer| {
-            let signature = sign_message_bip322(signer, &digest_slice, network).to_vec();
-            Signature(signature)
-        })
-        .collect::<Vec<Signature>>();
-
     RuntimeTransaction {
         version: 0,
-        signatures,
+        block_hash: String::new(),
         message,
     }
 }

@@ -36,6 +36,8 @@ tokio = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
 uuid = { workspace = true }
+jsonrpsee = { version = "0.22.2", features = ["server", "client"] }
 
 [dev-dependencies]
 mockito = "1.2"
+mockall = "0.12"
