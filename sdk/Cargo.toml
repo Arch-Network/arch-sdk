@@ -31,7 +31,11 @@ thiserror = { version = "1.0.57" }
 termsize = "0.1.9"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.3", features = ["env-filter", "ansi"] }
+tokio-tungstenite = { workspace = true }
 tokio = { workspace = true }
+futures = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 mockito = "1.2"
