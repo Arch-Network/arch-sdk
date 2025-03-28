@@ -614,8 +614,11 @@ mod tests {
         // Create a RuntimeTransaction for testing
         let rt_tx = RuntimeTransaction {
             version: 0,
-            block_hash: String::new(),
-            message: Message::from_slice(&[]),
+            signatures: Vec::new(),
+            message: Message {
+                signers: Vec::new(),
+                instructions: Vec::new(),
+            },
         };
 
         // Test all status variants
@@ -655,8 +658,11 @@ mod tests {
         // Create a minimal valid RuntimeTransaction for the test
         let tx = RuntimeTransaction {
             version: 0,
-            block_hash: String::new(),
-            message: Message::from_slice(&[]),
+            signatures: Vec::new(),
+            message: Message {
+                signers: Vec::new(),
+                instructions: Vec::new(),
+            },
         };
 
         let mock = mock_rpc_response_with_params(
@@ -777,8 +783,11 @@ mod tests {
         // Create a sample processed transaction
         let rt_tx = RuntimeTransaction {
             version: 0,
-            block_hash: String::new(),
-            message: Message::from_slice(&[]),
+            signatures: Vec::new(),
+            message: Message {
+                signers: Vec::new(),
+                instructions: Vec::new(),
+            },
         };
 
         let processed_tx = ProcessedTransaction {
@@ -814,14 +823,20 @@ mod tests {
         // Create multiple transactions
         let tx1 = RuntimeTransaction {
             version: 0,
-            block_hash: String::new(),
-            message: Message::from_slice(&[]),
+            signatures: Vec::new(),
+            message: Message {
+                signers: Vec::new(),
+                instructions: Vec::new(),
+            },
         };
 
         let tx2 = RuntimeTransaction {
             version: 1,
-            block_hash: String::new(),
-            message: Message::from_slice(&[]),
+            signatures: Vec::new(),
+            message: Message {
+                signers: Vec::new(),
+                instructions: Vec::new(),
+            },
         };
 
         let transactions = vec![tx1, tx2];

@@ -377,9 +377,9 @@ fn extend_bytes_max_len() -> usize {
 
     RUNTIME_TX_SIZE_LIMIT
         - RuntimeTransaction {
-            message: Message::from_slice(&[]),
-            block_hash: String::new(),
             version: 0,
+            signatures: vec![Signature([0_u8; 64].to_vec())],
+            message,
         }
         .serialize()
         .len()
