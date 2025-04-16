@@ -40,6 +40,8 @@ impl From<TryFromSliceError> for ParseProcessedTransactionError {
     Encode,
     Decode,
 )]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "type", content = "message")]
 pub enum Status {
     Queued,
     Processed,
@@ -75,6 +77,8 @@ impl Status {
     Encode,
     Decode,
 )]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "type", content = "message")]
 pub enum RollbackStatus {
     Rolledback(String),
     NotRolledback,
