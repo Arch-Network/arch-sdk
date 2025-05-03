@@ -136,7 +136,7 @@ pub fn verify_message_bip322(
     witness.push(&signature);
 
     let secp = Secp256k1::new();
-    let xpubk = XOnlyPublicKey::from_slice(&pubkey).unwrap();
+    let xpubk = XOnlyPublicKey::from_slice(&pubkey)?;
     let address = Address::p2tr(&secp, xpubk, None, network);
 
     verify_simple(&address, msg, witness).map_err(|e| anyhow!("BIP-322 verification failed: {}", e))
