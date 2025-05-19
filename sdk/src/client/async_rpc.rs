@@ -1,6 +1,6 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
-use crate::{AccountInfoWithPubkey, BlockTransactionFilter, FullBlock};
+use crate::{AccountInfoWithPubkey, BlockTransactionFilter, FullBlock, NOT_FOUND_CODE};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -12,13 +12,10 @@ use crate::types::{
 };
 
 // RPC method constants
-const ASSIGN_AUTHORITY: &str = "assign_authority";
 const READ_ACCOUNT_INFO: &str = "read_account_info";
 const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
-const DEPLOY_PROGRAM: &str = "deploy_program";
 const SEND_TRANSACTION: &str = "send_transaction";
 const SEND_TRANSACTIONS: &str = "send_transactions";
-const GET_PROGRAM: &str = "get_program";
 const GET_BLOCK: &str = "get_block";
 const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
 const GET_BLOCK_COUNT: &str = "get_block_count";
@@ -28,8 +25,6 @@ const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
 const START_DKG: &str = "start_dkg";
-
-pub const NOT_FOUND_CODE: i64 = 404;
 
 /// AsyncArchRpcClient provides a simple interface for making asynchronous RPC calls to the Arch blockchain
 #[derive(Clone)]
@@ -500,6 +495,7 @@ fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arch_program::{account::MIN_ACCOUNT_LAMPORTS, sanitized::ArchMessage};
     use mockito::Server;
 
     // Helper to create a test client with the mockito server
@@ -618,6 +614,7 @@ mod tests {
 
         // Create account info according to the actual struct definition
         let account_info = AccountInfo {
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: Pubkey::new_unique(),
             data: vec![1, 2, 3, 4],
             utxo: "utxo123".to_string(),
@@ -661,16 +658,12 @@ mod tests {
     #[tokio::test]
     async fn test_send_transaction() {
         let mut server = Server::new_async().await;
-        use arch_program::message::Message;
 
         // Create a minimal valid RuntimeTransaction for the test
         let tx = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: Message {
-                signers: Vec::new(),
-                instructions: Vec::new(),
-            },
+            message: ArchMessage::new(&[], None, "BLOCK_HASH".to_string()),
         };
 
         let mock = mock_rpc_response_with_params(
@@ -695,6 +688,7 @@ mod tests {
 
         // Create some program accounts for the response
         let account_info = AccountInfo {
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: program_id,
             data: vec![1, 2, 3, 4],
             utxo: "utxo123".to_string(),

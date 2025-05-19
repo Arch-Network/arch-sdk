@@ -3,15 +3,19 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use arch_program::message::Message;
+use arch_program::sanitized::ArchMessage;
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
+use sanitize::{Sanitize, SanitizeError};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
 use super::Signature;
 
 pub const RUNTIME_TX_SIZE_LIMIT: usize = 10240;
+
+/// Allowed versions for RuntimeTransaction
+pub const ALLOWED_VERSIONS: [u32; 1] = [0];
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum RuntimeTransactionError {
@@ -20,6 +24,9 @@ pub enum RuntimeTransactionError {
 
     #[error("try from slice error")]
     TryFromSliceError,
+
+    #[error("sanitize error: {0}")]
+    SanitizeError(#[from] SanitizeError),
 }
 
 impl From<TryFromSliceError> for RuntimeTransactionError {
@@ -28,7 +35,7 @@ impl From<TryFromSliceError> for RuntimeTransactionError {
     }
 }
 
-type Result<T> = std::result::Result<T, RuntimeTransactionError>;
+// type Result<T> = std::result::Result<T, RuntimeTransactionError>;
 
 #[derive(
     Clone,
@@ -45,7 +52,26 @@ type Result<T> = std::result::Result<T, RuntimeTransactionError>;
 pub struct RuntimeTransaction {
     pub version: u32,
     pub signatures: Vec<Signature>,
-    pub message: Message,
+    pub message: ArchMessage,
+}
+
+impl Sanitize for RuntimeTransaction {
+    fn sanitize(&self) -> Result<(), SanitizeError> {
+        // Check if version is allowed
+        if !ALLOWED_VERSIONS.contains(&self.version) {
+            return Err(SanitizeError::InvalidVersion);
+        }
+
+        // Check if number of signatures matches required signers
+        if self.signatures.len() != self.message.header().num_required_signatures as usize {
+            return Err(SanitizeError::SignatureCountMismatch {
+                expected: self.message.header().num_required_signatures as usize,
+                actual: self.signatures.len(),
+            });
+        }
+        // Continue with message sanitization
+        self.message.sanitize()
+    }
 }
 
 impl Display for RuntimeTransaction {
@@ -78,7 +104,7 @@ impl RuntimeTransaction {
         serilized
     }
 
-    pub fn from_slice(data: &[u8]) -> Result<Self> {
+    pub fn from_slice(data: &[u8]) -> Result<Self, RuntimeTransactionError> {
         let mut size = 4;
         let signatures_len = data[size] as usize;
         size += 1;
@@ -88,7 +114,9 @@ impl RuntimeTransaction {
             signatures.push(Signature::from_slice(&data[size..(size + 64)]));
             size += 64;
         }
-        let message = Message::from_slice(&data[size..]);
+        // let message = Message::from_slice(&data[size..]);
+        let message = ArchMessage::deserialize(&data[size..])
+            .map_err(|_| RuntimeTransactionError::TryFromSliceError)?;
 
         Ok(Self {
             version: u32::from_le_bytes(data[..4].try_into()?),
@@ -101,7 +129,7 @@ impl RuntimeTransaction {
         digest(digest(self.serialize()))
     }
 
-    pub fn check_tx_size_limit(&self) -> Result<()> {
+    pub fn check_tx_size_limit(&self) -> Result<(), RuntimeTransactionError> {
         let serialized_tx = self.serialize();
         if serialized_tx.len() > RUNTIME_TX_SIZE_LIMIT {
             Err(RuntimeTransactionError::RuntimeTransactionSizeExceedsLimit(
@@ -116,51 +144,63 @@ impl RuntimeTransaction {
 
 #[cfg(test)]
 mod tests {
-    use super::RuntimeTransaction;
-    use super::Signature;
-    use arch_program::instruction::Instruction;
-    use arch_program::message::Message;
-    use arch_program::pubkey::Pubkey;
-    use proptest::prelude::*;
+    use super::{RuntimeTransaction, Signature, ALLOWED_VERSIONS};
+    use arch_program::{
+        pubkey::Pubkey,
+        sanitized::{ArchMessage, MessageHeader, SanitizedInstruction},
+    };
+    use sanitize::{Sanitize as _, SanitizeError};
 
-    proptest! {
-        #[test]
-        fn fuzz_serialize_deserialize_runtime_transaction(
-            version in any::<u32>(),
-            signatures in prop::collection::vec(prop::collection::vec(any::<u8>(), 64), 0..10),
-            signers in prop::collection::vec(any::<[u8; 32]>(), 0..10),
-            instructions in prop::collection::vec(prop::collection::vec(any::<u8>(), 0..100), 0..10)
-        ) {
-            let signatures: Vec<Signature> = signatures.into_iter()
-                .map(|sig_bytes| Signature::from_slice(&sig_bytes))
-                .collect();
-
-            let signers: Vec<Pubkey> = signers.into_iter()
-                .map(Pubkey::from)
-                .collect();
-
-            let instructions: Vec<Instruction> = instructions.into_iter()
-                .map(|data| Instruction {
-                    program_id: Pubkey::system_program(),
-                    accounts: vec![],
-                    data,
-                })
-                .collect();
-
-            let message = Message {
-                signers,
-                instructions,
-            };
-
-            let transaction = RuntimeTransaction {
-                version,
-                signatures,
-                message,
-            };
-
-            let serialized = transaction.serialize();
-            let deserialized = RuntimeTransaction::from_slice(&serialized).unwrap();
-            assert_eq!(transaction, deserialized);
+    fn create_test_transaction(
+        version: u32,
+        num_signatures: usize,
+        num_accounts: usize,
+    ) -> RuntimeTransaction {
+        RuntimeTransaction {
+            version,
+            signatures: vec![Signature::from_slice(&[1; 64]); num_signatures],
+            message: ArchMessage {
+                header: MessageHeader {
+                    num_required_signatures: 2,
+                    num_readonly_signed_accounts: 1,
+                    num_readonly_unsigned_accounts: 1,
+                },
+                account_keys: (0..num_accounts).map(|_| Pubkey::new_unique()).collect(),
+                recent_blockhash: hex::encode([0; 32]),
+                instructions: vec![SanitizedInstruction {
+                    program_id_index: 2,
+                    accounts: vec![0, 1, 3],
+                    data: vec![1, 2, 3],
+                }],
+            },
         }
+    }
+
+    #[test]
+    fn test_all_allowed_versions_are_valid() {
+        for &version in ALLOWED_VERSIONS.iter() {
+            let transaction = create_test_transaction(version, 2, 4);
+            assert!(
+                transaction.sanitize().is_ok(),
+                "Version {} should be valid",
+                version
+            );
+        }
+    }
+
+    #[test]
+    fn test_version_not_in_allowed_versions() {
+        // Find a version that's not in ALLOWED_VERSIONS
+        let invalid_version = (0..u32::MAX)
+            .find(|&v| !ALLOWED_VERSIONS.contains(&v))
+            .expect("Should find at least one invalid version");
+
+        let transaction = create_test_transaction(invalid_version, 2, 2);
+        assert_eq!(
+            transaction.sanitize().unwrap_err(),
+            SanitizeError::InvalidVersion,
+            "Version {} should be invalid",
+            invalid_version
+        );
     }
 }

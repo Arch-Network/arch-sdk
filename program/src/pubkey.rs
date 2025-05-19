@@ -68,7 +68,7 @@ impl Pubkey {
     ///
     /// # Returns
     /// The system program's Pubkey
-    pub fn system_program() -> Self {
+    pub const fn system_program() -> Self {
         let mut tmp = [0u8; 32];
         tmp[31] = 1;
         Self(tmp)
@@ -301,7 +301,7 @@ use crate::program_error::ProgramError;
 ///  Change this in future according to the correct base implementation
 impl fmt::Display for Pubkey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0)
+        write!(f, "{}", hex::encode(self.0))
     }
 }
 

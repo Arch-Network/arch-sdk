@@ -5,12 +5,18 @@ use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
+pub const MIN_ACCOUNT_LAMPORTS: u64 = 1024;
+
+// This is the account id for the shared validator data account
+pub const SHARED_VALIDATOR_DATA_ACCOUNT_ID: [u8; 32] = [2; 32];
 /// Account information that is passed to programs during instruction execution.
 /// The account's data contains the actual account state managed by programs.
 #[derive(Clone)]
 #[repr(C)]
 pub struct AccountInfo<'a> {
     pub key: &'a Pubkey,
+    /// The lamports in the account.  Modifiable by programs.
+    pub lamports: Rc<RefCell<&'a mut u64>>,
     pub utxo: &'a UtxoMeta, // utxo has this account key in script_pubkey
     pub data: Rc<RefCell<&'a mut [u8]>>,
     pub owner: &'a Pubkey, // owner of an account is always a program
@@ -133,6 +139,7 @@ impl<'a> fmt::Debug for AccountInfo<'a> {
             .field("owner", &self.owner)
             .field("data.len", &self.data_len())
             .field("key", &self.key)
+            .field("lamports", &self.lamports.borrow())
             .field("is_signer", &self.is_signer)
             .field("is_writable", &self.is_writable)
             .field("is_executable", &self.is_executable);
@@ -155,6 +162,7 @@ impl<'a> AccountInfo<'a> {
     /// * `is_executable` - Whether this account contains executable code
     pub fn new(
         key: &'a Pubkey,
+        lamports: &'a mut u64,
         data: &'a mut [u8],
         owner: &'a Pubkey,
         utxo: &'a UtxoMeta,
@@ -164,6 +172,7 @@ impl<'a> AccountInfo<'a> {
     ) -> Self {
         Self {
             key,
+            lamports: Rc::new(RefCell::new(lamports)),
             data: Rc::new(RefCell::new(data)),
             owner,
             utxo,
@@ -181,6 +190,49 @@ impl<'a> AccountInfo<'a> {
         self.data.borrow().len()
     }
 
+    pub fn try_data_len(&self) -> Result<usize, ProgramError> {
+        Ok(self.try_borrow_data()?.len())
+    }
+
+    pub fn data_is_empty(&self) -> bool {
+        self.data.borrow().is_empty()
+    }
+
+    pub fn try_data_is_empty(&self) -> Result<bool, ProgramError> {
+        Ok(self.try_borrow_data()?.is_empty())
+    }
+
+    pub fn signer_key(&self) -> Option<&Pubkey> {
+        if self.is_signer {
+            Some(self.key)
+        } else {
+            None
+        }
+    }
+
+    pub fn unsigned_key(&self) -> &Pubkey {
+        self.key
+    }
+
+    pub fn lamports(&self) -> u64 {
+        **self.lamports.borrow()
+    }
+
+    pub fn try_lamports(&self) -> Result<u64, ProgramError> {
+        Ok(**self.try_borrow_lamports()?)
+    }
+
+    pub fn try_borrow_lamports(&self) -> Result<Ref<&mut u64>, ProgramError> {
+        self.lamports
+            .try_borrow()
+            .map_err(|_| ProgramError::AccountBorrowFailed)
+    }
+
+    pub fn try_borrow_mut_lamports(&self) -> Result<RefMut<&'a mut u64>, ProgramError> {
+        self.lamports
+            .try_borrow_mut()
+            .map_err(|_| ProgramError::AccountBorrowFailed)
+    }
     /// Immutably borrows the account's data.
     ///
     /// # Returns
@@ -190,14 +242,6 @@ impl<'a> AccountInfo<'a> {
         self.data
             .try_borrow()
             .map_err(|_| ProgramError::AccountBorrowFailed)
-    }
-
-    /// Checks if the account's data is empty.
-    ///
-    /// # Returns
-    /// `true` if the account contains no data, `false` otherwise
-    pub fn data_is_empty(&self) -> bool {
-        self.data.borrow().is_empty()
     }
 
     /// Mutably borrows the account's data.
@@ -211,7 +255,7 @@ impl<'a> AccountInfo<'a> {
             .map_err(|_| ProgramError::AccountBorrowFailed)
     }
 
-    /// Return the utxo's original data length when it was serialized for the
+    /// Return the account's original data length when it was serialized for the
     /// current program invocation.
     ///
     /// # Safety
@@ -295,7 +339,7 @@ impl<'a> AccountInfo<'a> {
     /// This method uses unsafe operations to modify a non-mutable reference.
     /// It should only be used in contexts where this operation is valid.
     #[rustversion::attr(since(1.72), allow(invalid_reference_casting))]
-    pub fn set_owner(&self, owner: &Pubkey) {
+    pub fn assign(&self, owner: &Pubkey) {
         // Set the non-mut owner field
         unsafe {
             std::ptr::write_volatile(
@@ -322,6 +366,10 @@ impl<'a> AccountInfo<'a> {
                 utxo.serialize(),
             );
         }
+    }
+
+    pub fn get_utxo(&self) -> &UtxoMeta {
+        self.utxo
     }
 }
 

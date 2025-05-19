@@ -56,8 +56,6 @@ pub type AsyncEventCallback = Box<dyn Fn(Event) -> BoxFuture<'static, ()> + Send
 
 /// A handler for a subscription
 struct SubscriptionHandler {
-    /// The subscription ID (only for confirmed subscriptions)
-    id: Option<String>,
     /// The topic that was subscribed to
     topic: EventTopic,
     /// The filter used for subscription
@@ -234,19 +232,14 @@ impl WebSocketClient {
         let (cancel_tx, cancel_rx) = mpsc::channel::<()>(1);
         self.cancel_tx = Some(cancel_tx);
 
-        // Create dummy receiver for establishing connection
-        let (_, receiver) = mpsc::channel::<Message>(100);
-
         // Establish connection
         let connect_result = Self::establish_new_connection(
             &self.server_url,
             &self.connected,
             &self.connection_callbacks,
-            &self.subscriptions,
             &self.keep_alive_handle,
             &self.keep_alive_interval,
             &self.running,
-            receiver,
         )
         .await;
 
@@ -263,8 +256,8 @@ impl WebSocketClient {
         // Replace the dummy sender with the real one
         self.sender = sender.clone();
 
-        // Store spawned task handle for cleanup
-        let task_handle = tokio::spawn(Self::message_processor(
+        // TODO: Store spawned task handle for cleanup
+        let _task_handle = tokio::spawn(Self::message_processor(
             read,
             sender,
             self.subscriptions.clone(),
@@ -298,11 +291,9 @@ impl WebSocketClient {
         server_url: &Arc<String>,
         connected: &Arc<Mutex<bool>>,
         connection_callbacks: &Arc<RwLock<Vec<ConnectionCallback>>>,
-        subscriptions: &Arc<RwLock<HashMap<String, SubscriptionHandler>>>,
         keep_alive_handle: &Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
         keep_alive_interval: &Arc<Mutex<Option<Duration>>>,
         running: &Arc<Mutex<bool>>,
-        receiver: mpsc::Receiver<Message>,
     ) -> Result<
         (
             futures::stream::SplitStream<
@@ -319,7 +310,7 @@ impl WebSocketClient {
         let (write, read) = ws_stream.split();
 
         // Set up the writer task
-        let sender = Self::spawn_writer_task(write, receiver);
+        let sender = Self::spawn_writer_task(write);
 
         // Keep connection alive with ping messages
         if let Some(interval) = *keep_alive_interval.lock().await {
@@ -378,19 +369,14 @@ impl WebSocketClient {
                 reconnect_attempts, delay
             );
 
-            // Create dummy receiver for establishing connection
-            let (_, receiver) = mpsc::channel::<Message>(100);
-
             // Try to reconnect using our common connection logic
             match Self::establish_new_connection(
                 server_url,
                 connected,
                 connection_callbacks,
-                subscriptions,
                 keep_alive_handle,
                 keep_alive_interval,
                 running,
-                receiver,
             )
             .await
             {
@@ -452,7 +438,6 @@ impl WebSocketClient {
                 subs.insert(
                     response.subscription_id.clone(),
                     SubscriptionHandler {
-                        id: Some(response.subscription_id.clone()),
                         topic: handler.topic,
                         filter: handler.filter,
                         pending: false,
@@ -499,7 +484,6 @@ impl WebSocketClient {
                 subs.insert(
                     pending_id.clone(),
                     SubscriptionHandler {
-                        id: None,
                         topic: topic.clone(),
                         filter: filter.clone(),
                         pending: true,
@@ -694,7 +678,6 @@ impl WebSocketClient {
             WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>,
             Message,
         >,
-        mut receiver: mpsc::Receiver<Message>,
     ) -> mpsc::Sender<Message> {
         // Create a channel for the writer
         let (sender, mut new_receiver) = mpsc::channel::<Message>(1000);
@@ -858,7 +841,6 @@ impl WebSocketClient {
         subs.insert(
             pending_id.clone(), // Use the pending ID as the key
             SubscriptionHandler {
-                id: None,
                 topic: topic.clone(),
                 filter: filter.clone(),
                 pending: true,
