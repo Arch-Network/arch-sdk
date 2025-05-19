@@ -31,7 +31,6 @@ pub struct Block {
     pub transactions: Vec<String>,
     pub previous_block_hash: String,
     pub timestamp: u128,
-    pub block_height: u64,
     pub bitcoin_block_height: u64,
     pub transaction_count: u64,
     pub merkle_root: String,
@@ -52,9 +51,6 @@ impl Block {
 
         // Serialize timestamp
         serialized.extend_from_slice(&self.timestamp.to_le_bytes());
-
-        // Serialize block height
-        serialized.extend_from_slice(&self.block_height.to_le_bytes());
 
         // Serialize bitcoin block height
         serialized.extend_from_slice(&self.bitcoin_block_height.to_le_bytes());
@@ -85,9 +81,6 @@ impl Block {
         // Deserialize timestamp
         let timestamp = read_u128(data, &mut cursor)?;
 
-        // Deserialize block height
-        let block_height = read_u64(data, &mut cursor)?;
-
         // Deserialize bitcoin_block_height
         let bitcoin_block_height = read_u64(data, &mut cursor)?;
 
@@ -108,7 +101,6 @@ impl Block {
             transactions,
             previous_block_hash,
             timestamp,
-            block_height,
             bitcoin_block_height,
             transaction_count,
             merkle_root,
@@ -163,7 +155,6 @@ pub struct FullBlock {
     pub transactions: Vec<ProcessedTransaction>,
     pub previous_block_hash: String,
     pub timestamp: u128,
-    pub block_height: u64,
     pub bitcoin_block_height: u64,
     pub transaction_count: u64,
     pub merkle_root: String,
@@ -175,54 +166,9 @@ impl From<(Block, Vec<ProcessedTransaction>)> for FullBlock {
             transactions: value.1,
             previous_block_hash: value.0.previous_block_hash,
             timestamp: value.0.timestamp,
-            block_height: value.0.block_height,
             bitcoin_block_height: value.0.bitcoin_block_height,
             transaction_count: value.0.transaction_count,
             merkle_root: value.0.merkle_root,
-        }
-    }
-}
-
-impl FullBlock {
-    pub fn hash(&self) -> String {
-        // Create Block without cloning the entire FullBlock
-        let block = Block {
-            transactions: self.transactions.iter().map(|t| t.txid()).collect(),
-            previous_block_hash: self.previous_block_hash.clone(),
-            timestamp: self.timestamp,
-            bitcoin_block_height: self.bitcoin_block_height,
-            transaction_count: self.transaction_count,
-            merkle_root: self.merkle_root.clone(),
-            block_height: self.block_height,
-        };
-        block.hash()
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        // Create Block without cloning the entire FullBlock
-        let block = Block {
-            transactions: self.transactions.iter().map(|t| t.txid()).collect(),
-            previous_block_hash: self.previous_block_hash.clone(),
-            timestamp: self.timestamp,
-            bitcoin_block_height: self.bitcoin_block_height,
-            transaction_count: self.transaction_count,
-            merkle_root: self.merkle_root.clone(),
-            block_height: self.block_height,
-        };
-        block.to_vec()
-    }
-}
-
-impl From<FullBlock> for Block {
-    fn from(value: FullBlock) -> Self {
-        Block {
-            transactions: value.transactions.into_iter().map(|t| t.txid()).collect(),
-            previous_block_hash: value.previous_block_hash,
-            timestamp: value.timestamp,
-            bitcoin_block_height: value.bitcoin_block_height,
-            transaction_count: value.transaction_count,
-            merkle_root: value.merkle_root,
-            block_height: value.block_height,
         }
     }
 }
@@ -239,7 +185,6 @@ mod tests {
             transactions: vec!["tx1".to_string(), "tx2".to_string()],
             previous_block_hash: GENESIS_BLOCK_HASH.to_string(),
             timestamp: 1630000000,
-            block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 2,
             merkle_root: "merkle_root_hash".to_string(),
@@ -267,7 +212,6 @@ mod tests {
             transactions: vec!["tx1".to_string(), "tx2".to_string()],
             previous_block_hash: GENESIS_BLOCK_HASH.to_string(),
             timestamp: 1630000000,
-            block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 2,
             merkle_root: "merkle_root_hash".to_string(),

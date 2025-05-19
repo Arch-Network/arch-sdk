@@ -123,12 +123,6 @@ impl UtxoMeta {
     }
 }
 
-impl Default for UtxoMeta {
-    fn default() -> Self {
-        UtxoMeta([0; 36])
-    }
-}
-
 #[test]
 fn test_outpoint() {
     assert_eq!(

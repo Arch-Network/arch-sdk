@@ -1,4 +1,3 @@
-use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, thiserror::Error)]
@@ -23,9 +22,6 @@ pub enum ArchError {
 
     #[error("Unknown error: {0}")]
     UnknownError(String),
-
-    #[error("FromHexError: {0}")]
-    FromHexError(String),
 }
 
 impl From<serde_json::Error> for ArchError {
@@ -55,12 +51,6 @@ impl From<String> for ArchError {
 impl From<&str> for ArchError {
     fn from(err: &str) -> Self {
         ArchError::UnknownError(err.to_string())
-    }
-}
-
-impl From<FromHexError> for ArchError {
-    fn from(err: FromHexError) -> Self {
-        ArchError::FromHexError(err.to_string())
     }
 }
 

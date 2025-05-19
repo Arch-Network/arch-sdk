@@ -1,25 +1,22 @@
-use crate::arch_program::pubkey::Pubkey;
-use crate::arch_program::system_instruction;
-use crate::build_and_sign_transaction;
-use crate::client::ArchError;
-use crate::client::ArchRpcClient;
+use arch_program::{instruction::Instruction, message::Message};
+use bitcoin::{key::Keypair, Network};
+use indicatif::{ProgressBar, ProgressStyle};
+use tracing::debug;
+
+use std::fs;
+
 use crate::{
-    helper::utxo::BitcoinHelper,
+    helper::{utxo::BitcoinHelper, with_secret_key_file},
     types::{RuntimeTransaction, Signature, RUNTIME_TX_SIZE_LIMIT},
     Status,
 };
-use anyhow::Result;
-use arch_program::account::MIN_ACCOUNT_LAMPORTS;
-use arch_program::bpf_loader::{LoaderState, BPF_LOADER_ID};
-use arch_program::instruction::InstructionError;
-use arch_program::loader_instruction;
-use arch_program::sanitized::ArchMessage;
-use bitcoin::{key::Keypair, Network};
-use indicatif::{ProgressBar, ProgressStyle};
-use std::fs;
-use tracing::debug;
 
-use super::sign_message_bip322;
+use crate::arch_program::pubkey::Pubkey;
+use crate::arch_program::system_instruction;
+
+use crate::client::ArchError;
+use crate::client::ArchRpcClient;
+use crate::helper::transaction_building::build_transaction;
 
 /* -------------------------------------------------------------------------- */
 /*                               ERROR HANDLING                               */
@@ -63,12 +60,18 @@ impl From<std::io::Error> for ProgramDeployerError {
 /*                             PROGRAM DEPLOYMENT                             */
 /* -------------------------------------------------------------------------- */
 /// Configuration for program deployment
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct DeploymentConfig {
     /// URL of the Arch node
     pub node_url: String,
     /// Bitcoin network to use (Mainnet, Testnet, Regtest)
     pub bitcoin_network: Network,
+    /// Path to the program's secret key file
+    pub program_file_path: String,
+    /// Path to the ELF file
+    pub elf_path: String,
+    /// Name of the program (for display purposes)
+    pub program_name: String,
     /// Bitcoin node endpoint URL
     pub bitcoin_node_endpoint: String,
     /// Bitcoin node username
@@ -82,6 +85,9 @@ impl DeploymentConfig {
     pub fn new(
         node_url: String,
         bitcoin_network: Network,
+        program_file_path: String,
+        elf_path: String,
+        program_name: String,
         bitcoin_node_endpoint: String,
         bitcoin_node_username: String,
         bitcoin_node_password: String,
@@ -89,24 +95,13 @@ impl DeploymentConfig {
         Self {
             node_url,
             bitcoin_network,
+            program_file_path,
+            elf_path,
+            program_name,
             bitcoin_node_endpoint,
             bitcoin_node_username,
             bitcoin_node_password,
         }
-    }
-}
-
-pub fn get_state(data: &[u8]) -> Result<&LoaderState, InstructionError> {
-    unsafe {
-        let data = data
-            .get(0..LoaderState::program_data_offset())
-            .ok_or(InstructionError::AccountDataTooSmall)?
-            .try_into()
-            .unwrap();
-        Ok(std::mem::transmute::<
-            &[u8; LoaderState::program_data_offset()],
-            &LoaderState,
-        >(data))
     }
 }
 
@@ -137,28 +132,24 @@ impl ProgramDeployer {
     }
 
     /// Try to deploy a program
-    pub fn try_deploy_program(
-        &self,
-        program_name: String,
-        program_keypair: Keypair,
-        authority_keypair: Keypair,
-        elf_path: &String,
-    ) -> Result<Pubkey, ProgramDeployerError> {
-        print_title(&format!("PROGRAM DEPLOYMENT {}", program_name), 5);
+    pub fn try_deploy_program(&self) -> Result<Pubkey, ProgramDeployerError> {
+        print_title(
+            &format!("PROGRAM DEPLOYMENT {}", self.config.program_name),
+            5,
+        );
 
-        let elf = fs::read(elf_path).map_err(|e| {
+        let (program_keypair, program_pubkey) =
+            with_secret_key_file(&self.config.program_file_path)
+                .map_err(|e| ProgramDeployerError::KeypairError(e.to_string()))?;
+
+        let elf = fs::read(&self.config.elf_path).map_err(|e| {
             ProgramDeployerError::ElfFileError(format!("Failed to read ELF file: {}", e))
         })?;
 
-        let program_pubkey = Pubkey::from_slice(&program_keypair.x_only_public_key().0.serialize());
-        let authority_pubkey =
-            Pubkey::from_slice(&authority_keypair.x_only_public_key().0.serialize());
-
-        if let Ok(account_info_result) = self.client.read_account_info(program_pubkey) {
-            if account_info_result.data.len() < LoaderState::program_data_offset() {
-                println!("\x1b[33m Account is not initialized ! Redeploying \x1b[0m");
-            } else if account_info_result.data[LoaderState::program_data_offset()..] == elf {
-                println!("\x1b[33m Same program already deployed ! Skipping deployment. \x1b[0m");
+        // Check if the program is already deployed with the same code
+        if let Ok(account_info) = self.client.read_account_info(program_pubkey) {
+            if account_info.data == elf {
+                println!("\x1b[33m Same program already deployed! Skipping deployment. \x1b[0m");
                 print_title(
                     &format!(
                         "PROGRAM DEPLOYMENT : OK Program account : {:?} !",
@@ -168,84 +159,45 @@ impl ProgramDeployer {
                 );
                 return Ok(program_pubkey);
             }
-            println!("\x1b[33m ELF mismatch with account content ! Redeploying \x1b[0m");
-        } else {
-            let recent_blockhash = self.client.get_best_block_hash()?;
-
-            let create_account_tx = build_and_sign_transaction(
-                ArchMessage::new(
-                    &[system_instruction::create_account(
-                        &authority_pubkey,
-                        &program_pubkey,
-                        MIN_ACCOUNT_LAMPORTS,
-                        0,
-                        &BPF_LOADER_ID,
-                    )],
-                    Some(authority_pubkey),
-                    recent_blockhash,
-                ),
-                vec![authority_keypair.clone(), program_keypair.clone()],
-                self.config.bitcoin_network,
-            );
-
-            let create_account_txid = self.client.send_transaction(create_account_tx)?;
-            let tx = self
-                .client
-                .wait_for_processed_transaction(&create_account_txid)?;
-
-            match tx.status {
-                Status::Failed(e) => {
-                    return Err(ProgramDeployerError::TransactionError(format!(
-                        "Program account creation transaction failed: {}",
-                        e.to_string()
-                    )));
-                }
-                _ => {}
-            }
-
-            println!(
-                "\x1b[32m Step 2/4 Successful :\x1b[0m Program account creation transaction successfully processed ! Tx Id : {}.\x1b[0m",
-                create_account_txid
-            );
+            println!("\x1b[33m ELF mismatch with account content! Redeploying \x1b[0m");
         }
 
-        self.deploy_program_elf(program_keypair.clone(), authority_keypair.clone(), &elf)?;
-
-        let program_info_after_deployment = self.client.read_account_info(program_pubkey)?;
+        // Step 1: Send UTXO to create program account
+        let (deploy_utxo_btc_txid, deploy_utxo_vout) = self
+            .send_utxo(program_pubkey)
+            .map_err(|e| ProgramDeployerError::UtxoError(e.to_string()))?;
 
         println!(
-            "program_info_after_deployment length {:?} elf length {:?}",
-            program_info_after_deployment.data.len(),
-            elf.len()
+            "\x1b[32m Step 1/4 Successful :\x1b[0m BTC Transaction for program account UTXO successfully sent : {} -- vout : {}",
+            deploy_utxo_btc_txid, deploy_utxo_vout
         );
 
-        assert!(program_info_after_deployment.data[LoaderState::program_data_offset()..] == elf);
-
-        debug!(
-            "Current Program Account {:x}: \n   Owner : {}, \n   Data length : {} Bytes,\n   Anchoring UTXO : {}, \n   Executable? : {}",
-            program_pubkey, program_info_after_deployment.owner,
-            program_info_after_deployment.data.len(),
-            program_info_after_deployment.utxo,
-            program_info_after_deployment.is_executable
-        );
-
-        println!("\x1b[32m Step 3/4 Successful :\x1b[0m Sent ELF file as transactions, and verified program account's content against local ELF file!");
-
-        let recent_blockhash = self.client.get_best_block_hash()?;
-        let executability_tx = build_and_sign_transaction(
-            ArchMessage::new(
-                &[loader_instruction::deploy(program_pubkey, authority_pubkey)],
-                Some(authority_pubkey),
-                recent_blockhash,
+        // Step 2: Create account
+        let create_account_tx = self.sign_and_send_instruction(
+            system_instruction::create_account(
+                hex::decode(&deploy_utxo_btc_txid)
+                    .map_err(|e| {
+                        ProgramDeployerError::TransactionError(format!(
+                            "Failed to decode hex: {}",
+                            e
+                        ))
+                    })?
+                    .try_into()
+                    .map_err(|_| {
+                        ProgramDeployerError::TransactionError(format!(
+                            "Failed to convert to array: {}",
+                            deploy_utxo_btc_txid.to_string()
+                        ))
+                    })?,
+                deploy_utxo_vout,
+                program_pubkey,
             ),
-            vec![authority_keypair.clone()],
-            self.config.bitcoin_network,
-        );
+            vec![program_keypair.clone()],
+        )?;
 
-        let executability_txid = self.client.send_transaction(executability_tx)?;
         let tx = self
             .client
-            .wait_for_processed_transaction(&executability_txid)?;
+            .wait_for_processed_transaction(&create_account_tx)?;
 
         match tx.status {
             Status::Failed(e) => {
@@ -257,7 +209,29 @@ impl ProgramDeployer {
             _ => {}
         }
 
+        println!(
+            "\x1b[32m Step 2/4 Successful :\x1b[0m Program account creation transaction successfully processed! Tx Id: {}",
+            create_account_tx
+        );
+
+        // Step 3: Deploy program ELF
+        self.deploy_program_elf(program_keypair.clone(), program_pubkey, &elf)?;
+
+        // Step 4: Make program executable
+        let executability_txid = self.sign_and_send_instruction(
+            system_instruction::deploy(program_pubkey),
+            vec![program_keypair],
+        )?;
+
+        self.client
+            .wait_for_processed_transaction(&executability_txid)?;
+
         let program_info_after_making_executable = self.client.read_account_info(program_pubkey)?;
+
+        assert!(
+            program_info_after_making_executable.data == elf,
+            "ELF content verification failed: deployed program data doesn't match local ELF file"
+        );
 
         debug!(
             "Current Program Account {:x}: \n   Owner : {:x}, \n   Data length : {} Bytes,\n   Anchoring UTXO : {}, \n   Executable? : {}",
@@ -267,8 +241,6 @@ impl ProgramDeployer {
             program_info_after_making_executable.utxo,
             program_info_after_making_executable.is_executable
         );
-
-        assert!(program_info_after_making_executable.is_executable);
 
         println!("\x1b[32m Step 4/4 Successful :\x1b[0m Made program account executable!");
 
@@ -280,135 +252,85 @@ impl ProgramDeployer {
             5,
         );
 
-        println!("\x1b[33m\x1b[1m Program account Info :\x1b[0m");
-        println!(
-            "\x1b[33mAccount Pubkey : \x1b[0m {} // {}",
-            hex::encode(program_pubkey.0),
-            program_pubkey,
-        );
-        println!(
-            "\x1b[33mOwner : \x1b[0m{} // {:?}",
-            hex::encode(program_info_after_making_executable.owner.0),
-            program_info_after_making_executable.owner.0,
-        );
-        println!(
-            "\x1b[33m\x1b[1mIs executable : \x1b[0m{}",
-            program_info_after_making_executable.is_executable
-        );
-        println!(
-            "\x1b[33m\x1b[1mUtxo details : \x1b[0m{}",
-            program_info_after_making_executable.utxo
-        );
-        println!(
-            "\x1b[33m\x1b[1mELF Size : \x1b[0m{} Bytes",
-            program_info_after_making_executable.data.len()
-        );
-
         Ok(program_pubkey)
+    }
+
+    /// Send a UTXO to create a program account
+    fn send_utxo(&self, program_pubkey: Pubkey) -> Result<(String, u32), ProgramDeployerError> {
+        // Use the BitcoinHelper to send the UTXO
+        self.bitcoin_helper
+            .send_utxo(program_pubkey)
+            .map_err(|e| ProgramDeployerError::UtxoError(format!("Failed to send UTXO: {}", e)))
+    }
+
+    /// Sign and send an instruction
+    fn sign_and_send_instruction(
+        &self,
+        instruction: Instruction,
+        signers: Vec<Keypair>,
+    ) -> Result<String, ProgramDeployerError> {
+        // Build the transaction
+        let transaction =
+            build_transaction(signers, vec![instruction], self.config.bitcoin_network);
+
+        // Send the transaction
+        let tx_id = self.client.send_transaction(transaction).map_err(|e| {
+            ProgramDeployerError::TransactionError(format!("Failed to send transaction: {}", e))
+        })?;
+
+        // Wait for the transaction to be processed
+        self.client
+            .wait_for_processed_transaction(&tx_id)
+            .map_err(|e| {
+                ProgramDeployerError::TransactionError(format!(
+                    "Failed to process transaction: {}",
+                    e
+                ))
+            })?;
+
+        Ok(tx_id)
     }
 
     /// Deploy a program ELF
     pub fn deploy_program_elf(
         &self,
         program_keypair: Keypair,
-        authority_keypair: Keypair,
+        program_pubkey: Pubkey,
         elf: &[u8],
     ) -> Result<(), ProgramDeployerError> {
-        let program_pubkey = Pubkey::from_slice(&program_keypair.x_only_public_key().0.serialize());
-        let authority_pubkey =
-            Pubkey::from_slice(&authority_keypair.x_only_public_key().0.serialize());
-
         let account_info = self.client.read_account_info(program_pubkey)?;
-        println!(
-            "account_info is_executable {:?}",
-            account_info.is_executable
-        );
 
-        println!("account_info data {:?}", get_state(&account_info.data));
+        println!("Account info : {:?}", account_info);
 
         if account_info.is_executable {
-            let recent_blockhash = self.client.get_best_block_hash()?;
-            let retract_tx = build_and_sign_transaction(
-                ArchMessage::new(
-                    &[loader_instruction::retract(
-                        program_pubkey,
-                        authority_pubkey,
-                    )],
-                    Some(authority_pubkey),
-                    recent_blockhash,
-                ),
-                vec![authority_keypair.clone()],
-                self.config.bitcoin_network,
-            );
-
-            let retract_txid = self.client.send_transaction(retract_tx)?;
-            let processed_tx = self.client.wait_for_processed_transaction(&retract_txid)?;
-
-            println!("processed_tx {:?}", processed_tx);
+            let instruction = system_instruction::retract(program_pubkey);
+            let tx_id = self.sign_and_send_instruction(instruction, vec![program_keypair])?;
+            self.client.wait_for_processed_transaction(&tx_id)?;
         }
 
-        println!(
-            "account_info.data.len() > LoaderState::program_data_offset() + elf.len() {:?}",
-            account_info.data.len() > LoaderState::program_data_offset() + elf.len()
-        );
-
-        if account_info.data.len() != LoaderState::program_data_offset() + elf.len() {
-            println!("Truncating program account to size of ELF file");
-            let recent_blockhash = self.client.get_best_block_hash()?;
-            let truncate_tx = build_and_sign_transaction(
-                ArchMessage::new(
-                    &[loader_instruction::truncate(
-                        program_pubkey,
-                        authority_pubkey,
-                        elf.len() as u32,
-                    )],
-                    Some(authority_pubkey),
-                    recent_blockhash,
-                ),
-                vec![program_keypair.clone(), authority_keypair.clone()],
-                self.config.bitcoin_network,
-            );
-
-            let truncate_txid = self.client.send_transaction(truncate_tx)?;
-            let processed_tx = self.client.wait_for_processed_transaction(&truncate_txid)?;
-
-            println!("processed_tx {:?}", processed_tx);
+        if account_info.data.len() > elf.len() {
+            let instruction = system_instruction::truncate(program_pubkey, elf.len() as u32);
+            let tx_id = self.sign_and_send_instruction(instruction, vec![program_keypair])?;
+            self.client.wait_for_processed_transaction(&tx_id)?;
         }
 
-        let txs = elf
+        let txs: Vec<RuntimeTransaction> = elf
             .chunks(extend_bytes_max_len())
             .enumerate()
             .map(|(i, chunk)| {
                 let offset: u32 = (i * extend_bytes_max_len()) as u32;
+                let len: u32 = chunk.len() as u32;
 
-                let recent_blockhash = self.client.get_best_block_hash().unwrap();
-                let message = ArchMessage::new(
-                    &[loader_instruction::write(
-                        program_pubkey,
-                        authority_pubkey,
-                        offset,
-                        chunk.to_vec(),
-                    )],
-                    Some(authority_pubkey),
-                    recent_blockhash,
-                );
+                let instruction =
+                    system_instruction::write_bytes(offset, len, chunk.to_vec(), program_pubkey);
 
-                let digest_slice = message.hash();
-
-                RuntimeTransaction {
-                    version: 0,
-                    signatures: vec![Signature(
-                        sign_message_bip322(
-                            &authority_keypair,
-                            &digest_slice,
-                            self.config.bitcoin_network,
-                        )
-                        .to_vec(),
-                    )],
-                    message,
-                }
+                build_transaction(
+                    vec![program_keypair.clone()],
+                    vec![instruction],
+                    self.config.bitcoin_network,
+                )
             })
-            .collect::<Vec<RuntimeTransaction>>();
+            .collect();
 
         let pb = ProgressBar::new(txs.len() as u64);
         pb.set_style(
@@ -425,11 +347,7 @@ impl ProgramDeployer {
         let tx_ids = self.client.send_transactions(txs)?;
 
         for tx_id in tx_ids.iter() {
-            let processed_tx = self.client.wait_for_processed_transaction(tx_id)?;
-            println!("processed_tx status {:?}", processed_tx.status);
-            for log in processed_tx.logs {
-                println!("log {:?}", log);
-            }
+            self.client.wait_for_processed_transaction(tx_id)?;
             pb.inc(1);
         }
 
@@ -446,17 +364,16 @@ fn print_title(title: &str, length: usize) {
 }
 
 /// Returns the remaining space in an account's data storage
-pub fn extend_bytes_max_len() -> usize {
-    let message = ArchMessage::new(
-        &[loader_instruction::write(
-            Pubkey::system_program(),
-            Pubkey::system_program(),
+fn extend_bytes_max_len() -> usize {
+    let message = Message {
+        signers: vec![Pubkey::system_program()],
+        instructions: vec![system_instruction::write_bytes(
             0,
-            vec![0_u8; 256],
+            0,
+            vec![0_u8; 8],
+            Pubkey::system_program(),
         )],
-        None,
-        hex::encode([0; 32]),
-    );
+    };
 
     RUNTIME_TX_SIZE_LIMIT
         - RuntimeTransaction {

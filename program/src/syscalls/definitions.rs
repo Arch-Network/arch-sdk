@@ -32,7 +32,6 @@ define_syscall!(fn sol_secp256k1_recover( hash_addr: *const u8, recovery_id_val:
 // logs
 define_syscall!(fn sol_log_(message: *const u8, len: u64));
 define_syscall!(fn sol_log_64_(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64));
-define_syscall!(fn sol_log_compute_units_());
 define_syscall!(fn sol_log_pubkey(pubkey_addr: *const u8));
 define_syscall!(fn sol_log_data(data: *const u8, data_len: u64));
 
@@ -40,5 +39,3 @@ define_syscall!(fn sol_memcmp_(data1: *const u8, data2: *const u8, len: u64, res
 define_syscall!(fn sol_memcpy_(dest: *mut u8, src: *const u8, len: u64) -> u64);
 define_syscall!(fn sol_memset_(dest: *mut u8, val: u8, len: u64) -> u64);
 define_syscall!(fn sol_memmove_(dest: *mut u8, src: *const u8, len: u64) -> u64);
-
-define_syscall!(fn sol_get_stack_height() -> u64);

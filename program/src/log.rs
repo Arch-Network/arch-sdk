@@ -141,14 +141,3 @@ pub fn sol_log_params(accounts: &[AccountInfo], data: &[u8]) {
     msg!("Instruction data");
     sol_log_slice(data);
 }
-
-/// Print the remaining compute units available to the program.
-#[inline]
-pub fn sol_log_compute_units() {
-    #[cfg(target_os = "solana")]
-    unsafe {
-        crate::syscalls::sol_log_compute_units_();
-    }
-    #[cfg(not(target_os = "solana"))]
-    crate::program_stubs::sol_log_compute_units();
-}

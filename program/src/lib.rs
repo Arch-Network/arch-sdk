@@ -1,4 +1,3 @@
-#![allow(unexpected_cfgs)]
 /*!
 # Arch Program
 A Rust library for building programs that run inside the Arch Virtual Machine. This crate
@@ -33,10 +32,8 @@ pub use bitcoin;
 pub mod account;
 /// Atomic operations for u64 values
 pub mod atomic_u64;
-pub mod bpf_loader;
 /// Time-related functionality for on-chain programs
 pub mod clock;
-pub mod compiled_keys;
 /// Utilities for debugging account data
 pub mod debug_account_data;
 /// Error handling for decoding operations
@@ -49,12 +46,10 @@ pub mod helper;
 pub mod input_to_sign;
 /// Instruction definitions and processing
 pub mod instruction;
-pub mod loader_instruction;
 /// Logging functionality for on-chain programs
 pub mod log;
 /// Message format and processing utilities
 pub mod message;
-pub mod native_loader;
 /// Program runtime interfaces and state management
 pub mod program;
 /// Error types for program operations
@@ -67,7 +62,6 @@ pub mod program_option;
 pub mod program_pack;
 /// Stub implementations for program interfaces
 pub mod program_stubs;
-pub mod program_utils;
 /// Public key definitions and operations
 pub mod pubkey;
 /// Sanitized transaction processing
@@ -76,31 +70,14 @@ pub mod sanitized;
 pub mod sol_secp256k1_recover;
 /// Stable memory layout implementations
 pub mod stable_layout;
-pub mod stake;
 /// System call interfaces for interacting with the runtime
 pub mod syscalls;
 /// System instruction definitions and creation
 pub mod system_instruction;
-pub mod system_program;
 /// Bitcoin transaction signing utilities
 pub mod transaction_to_sign;
 /// Bitcoin UTXO (Unspent Transaction Output) management
 pub mod utxo;
-pub mod vote;
-
-#[macro_use]
-extern crate serde_derive;
 
 /// Maximum size of a Bitcoin transaction in bytes
 pub const MAX_BTC_TX_SIZE: usize = 3976;
-
-pub mod builtin {
-    use super::*;
-    use crate::pubkey::Pubkey;
-
-    pub const BUILTIN_PROGRAMS_ID: &[Pubkey] = &[
-        native_loader::NATIVE_LOADER_ID,
-        system_program::SYSTEM_PROGRAM_ID,
-        bpf_loader::BPF_LOADER_ID,
-    ];
-}

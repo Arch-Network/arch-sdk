@@ -1,8 +1,6 @@
 use bitcoin::{address::Address, Amount, Network};
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use std::str::FromStr;
-use std::thread::sleep;
-use std::time::Duration;
 
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::ArchRpcClient;
@@ -85,8 +83,25 @@ impl BitcoinHelper {
             }
         }
 
-        sleep(Duration::from_millis(200));
-
         Ok((txid.to_string(), vout))
     }
+}
+
+// Backwards compatibility for the old utxo helper
+
+const DEFAULT_RPC_URL: &str = "http://127.0.0.1:18443/wallet/testwallet";
+const DEFAULT_USERNAME: &str = "bitcoin";
+const DEFAULT_PASSWORD: &str = "bitcoinpass";
+const DEFAULT_ARCH_URL: &str = "http://127.0.0.1:9002/";
+
+pub fn send_utxo(pubkey: Pubkey, network: Network) -> Result<(String, u32), String> {
+    let helper = BitcoinHelper::new(
+        DEFAULT_RPC_URL.to_string(),
+        DEFAULT_USERNAME.to_string(),
+        DEFAULT_PASSWORD.to_string(),
+        network,
+        DEFAULT_ARCH_URL.to_string(),
+    );
+
+    helper.send_utxo(pubkey)
 }

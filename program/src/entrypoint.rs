@@ -95,9 +95,6 @@ pub unsafe fn deserialize<'a>(input: *mut u8) -> (&'a Pubkey, Vec<AccountInfo<'a
             let is_executable = *(input.add(offset) as *const bool);
             offset += size_of::<bool>();
 
-            let lamports = Rc::new(RefCell::new(&mut *(input.add(offset) as *mut u64)));
-            offset += size_of::<u64>();
-
             let key: &Pubkey = &*(input.add(offset) as *const Pubkey);
             offset += size_of::<Pubkey>();
 
@@ -124,7 +121,6 @@ pub unsafe fn deserialize<'a>(input: *mut u8) -> (&'a Pubkey, Vec<AccountInfo<'a
 
             accounts.push(AccountInfo {
                 key,
-                lamports,
                 utxo,
                 data,
                 owner,

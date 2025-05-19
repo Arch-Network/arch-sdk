@@ -1,4 +1,3 @@
-use core::fmt;
 /// This module defines the instruction data structure and related error types.
 /// Instructions are the fundamental unit of program execution in the Arch Network,
 /// containing the program to call, accounts to interact with, and instruction data.
@@ -8,9 +7,6 @@ use thiserror::Error;
 
 use crate::program_error::*;
 use crate::pubkey::Pubkey;
-use crate::stake::instruction::StakeError;
-use crate::system_instruction::SystemError;
-use crate::vote::instruction::VoteError;
 use crate::{account::AccountMeta, program_error::ProgramError};
 
 use bitcode::{Decode, Encode};
@@ -46,14 +42,6 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn new(program_id: Pubkey, data: Vec<u8>, accounts: Vec<AccountMeta>) -> Self {
-        Self {
-            program_id,
-            accounts,
-            data,
-        }
-    }
-
     /// Serializes an instruction to a byte array.
     ///
     /// The serialization format is:
@@ -114,18 +102,6 @@ impl Instruction {
     pub fn hash(&self) -> String {
         digest(digest(self.serialize()))
     }
-
-    pub fn new_with_bincode<T: Serialize>(
-        program_id: Pubkey,
-        data: T,
-        accounts: Vec<AccountMeta>,
-    ) -> Self {
-        Self {
-            program_id,
-            accounts,
-            data: bincode::serialize(&data).unwrap(),
-        }
-    }
 }
 
 /// Errors that can be returned by programs when processing instructions.
@@ -160,7 +136,7 @@ pub enum InstructionError {
     InsufficientFunds,
 
     /// The account did not have the expected program id
-    #[error("incorrect program id for instructions")]
+    #[error("incorrect program id for instruction")]
     IncorrectProgramId,
 
     /// A signature was required but not found
@@ -188,8 +164,8 @@ pub enum InstructionError {
     ExternalAccountLamportSpend,
 
     /// Program modified the data of an account that doesn't belong to it
-    #[error("instruction modified data of an account it does not own, Account key: {0}, instruction program should own this account in order to modify it")]
-    ExternalAccountDataModified(String),
+    #[error("instruction modified data of an account it does not own, Account key: {0}, but program_id is: {1}, instruction program should own this account in order to modify it")]
+    ExternalAccountDataModified(String, String),
 
     /// Read-only account's data was modified
     #[error("instruction modified data of a read-only account, Account key: {0}")]
@@ -358,48 +334,14 @@ pub enum InstructionError {
     BuiltinProgramsMustConsumeComputeUnits,
 
     /// Vm execution failed
-    #[error("Vm failed while executing ebpf code {0}")]
+    #[error("Vm failed while executing ebpf ncode {0}")]
     EbpfError(String),
 
     /// Invalid transaction to sign
     #[error("Invalid transaction to sign")]
     InvalidTxToSign,
-
-    #[error("Error occured during running of System Program {0}")]
-    SystemError(SystemError), // Note: For any new error added here an equivalent ProgramError and its
+    // Note: For any new error added here an equivalent ProgramError and its
     // conversions must also be added
-    #[error("Account lamports cannot be negative")]
-    NegativeAccountLamports,
-
-    #[error("Readonly lamport change")]
-    ReadonlyLamportChange,
-
-    #[error("Executable lamport change")]
-    ExecutableLamportChange,
-
-    #[error("Bitcoin encoding error")]
-    BitcoinEncodingError,
-
-    #[error("Titan error")]
-    TitanError,
-
-    #[error("Invalid utxo owner")]
-    InvalidUtxoOwner,
-
-    #[error("Stake error: {0}")]
-    StakeError(StakeError),
-
-    #[error("Vote error: {0}")]
-    VoteError(VoteError),
-
-    #[error("Account is not anchored")]
-    AccountNotAnchored,
-}
-
-impl From<SystemError> for InstructionError {
-    fn from(error: SystemError) -> Self {
-        InstructionError::SystemError(error)
-    }
 }
 
 /// Implementation for converting u64 error codes to InstructionError variants
@@ -441,10 +383,6 @@ impl From<u64> for InstructionError {
             ARITHMETIC_OVERFLOW => Self::ArithmeticOverflow,
             IMMUTABLE => Self::Immutable,
             INCORRECT_AUTHORITY => Self::IncorrectAuthority,
-            NEGATIVE_ACCOUNT_LAMPORTS => Self::NegativeAccountLamports,
-            READONLY_LAMPORT_CHANGE => Self::ReadonlyLamportChange,
-            EXECUTABLE_LAMPORT_CHANGE => Self::ExecutableLamportChange,
-            ACCOUNT_NOT_ANCHORED => Self::AccountNotAnchored,
             _ => {
                 // A valid custom error has no bits set in the upper 32
                 if value >> BUILTIN_BIT_SHIFT == 0 {
@@ -456,6 +394,7 @@ impl From<u64> for InstructionError {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
