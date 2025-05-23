@@ -1,0 +1,8 @@
+[package]
+name = "sanitize"
+version = "0.5.0"
+edition = "2021"
+description = "A Rust library providing sanitization traits and error types for validating over-the-wire messages and data structures. Includes bounds checking, value validation, and recursive sanitization for complex data types."
+license = "MIT"
+
+[dependencies]

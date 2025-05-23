@@ -8,7 +8,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sanitize = { path = "../sanitize" }
+sanitize = "0.5.0"
 
 borsh = { version = "1.4.0", features = ["derive"] }
 bitcode = "0.6.4"
