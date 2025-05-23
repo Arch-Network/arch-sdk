@@ -370,7 +370,13 @@ pub fn get_account_script_pubkey(pubkey: &Pubkey) -> [u8; 34] {
 /// # Returns
 /// * `u64` - The current Bitcoin block height
 pub fn get_bitcoin_block_height() -> u64 {
-    unsafe { crate::syscalls::arch_get_bitcoin_block_height() }
+    #[cfg(target_os = "solana")]
+    unsafe {
+        crate::syscalls::arch_get_bitcoin_block_height()
+    }
+
+    #[cfg(not(target_os = "solana"))]
+    crate::program_stubs::arch_get_bitcoin_block_height()
 }
 
 /// Gets the current clock information from the runtime.
@@ -379,6 +385,13 @@ pub fn get_bitcoin_block_height() -> u64 {
 /// * `Clock` - The current clock state containing timing information
 pub fn get_clock() -> Clock {
     let mut clock = Clock::default();
-    unsafe { crate::syscalls::arch_get_clock(&mut clock) };
+    #[cfg(target_os = "solana")]
+    unsafe {
+        crate::syscalls::arch_get_clock(&mut clock)
+    };
+
+    #[cfg(not(target_os = "solana"))]
+    let _ = crate::program_stubs::arch_get_clock(&mut clock);
+
     clock
 }

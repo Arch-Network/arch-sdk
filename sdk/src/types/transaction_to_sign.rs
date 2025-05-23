@@ -8,12 +8,17 @@ pub struct TransactionToSign {
 
 impl TransactionToSign {
     pub fn from_slice(data: &[u8]) -> Self {
-        let tx_bytes_len =
-            u32::from_le_bytes(data[0..4].try_into().expect("slice with incorrect length"));
-        let tx_bytes = data[4..(4 + tx_bytes_len as usize)].to_vec();
+        let tx_bytes_len = u32::from_le_bytes(
+            data.get(0..4)
+                .unwrap()
+                .try_into()
+                .expect("slice with incorrect length"),
+        );
+        let tx_bytes = data.get(4..(4 + tx_bytes_len as usize)).unwrap().to_vec();
 
         let mut size = tx_bytes_len as usize + 4;
-        let inputs_to_sign_length = u32::from_le_bytes(data[size..(size + 4)].try_into().unwrap());
+        let inputs_to_sign_length: u32 =
+            u32::from_le_bytes(data[size..(size + 4)].try_into().unwrap());
         size += 4;
         let mut inputs_to_sign = vec![];
         for _ in 0..inputs_to_sign_length {

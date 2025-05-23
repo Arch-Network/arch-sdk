@@ -2,14 +2,14 @@
 
 pub const UNIMPLEMENTED: u64 = 0;
 use crate::{
-    account::AccountInfo, entrypoint::ProgramResult, instruction::Instruction, pubkey::Pubkey,
-    utxo::UtxoMeta,
+    account::AccountInfo, clock::Clock, entrypoint::ProgramResult, instruction::Instruction,
+    pubkey::Pubkey, utxo::UtxoMeta,
 };
 
 pub(crate) fn sol_log(message: &str) {
     println!("{message}");
 }
-pub(crate) fn sol_log_64_(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) {
+pub(crate) fn _sol_log_64_(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) {
     sol_log(&format!("{arg1:?}, {arg2:?},{arg3:?},{arg4:?},{arg5:?}"))
 }
 pub(crate) fn sol_memset(_s: *mut u8, _c: u8, _n: usize) {
@@ -24,16 +24,16 @@ pub(crate) fn sol_memcpy(_dst: *mut u8, _src: *const u8, _n: usize) {
 pub(crate) fn sol_memcmp(_s1: *const u8, _s2: *const u8, _n: usize, _result: *mut i32) {
     sol_log("UNAVAILABLE");
 }
-pub(crate) fn sol_set_return_data(_data: *const u8, _length: u64) {
+pub(crate) fn _sol_set_return_data(_data: *const u8, _length: u64) {
     sol_log("UNAVAILABLE");
 }
-pub(crate) fn sol_log_pubkey(_pubkey_addr: *const u8) {
+pub(crate) fn _sol_log_pubkey(_pubkey_addr: *const u8) {
     sol_log("UNAVAILABLE");
 }
-pub(crate) fn sol_log_data(_data: *const u8, _data_len: u64) {
+pub(crate) fn _sol_log_data(_data: *const u8, _data_len: u64) {
     sol_log("UNAVAILABLE");
 }
-pub(crate) fn sol_get_return_data(_data: *mut u8, _length: u64, _program_id: *mut Pubkey) -> u64 {
+pub(crate) fn _sol_get_return_data(_data: *mut u8, _length: u64, _program_id: *mut Pubkey) -> u64 {
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED
 }
@@ -80,5 +80,22 @@ pub(crate) fn sol_secp256k1_recover(
     _result_addr: *mut u8,
 ) -> u64 {
     sol_log("UNAVAILABLE");
+    UNIMPLEMENTED
+}
+
+pub(crate) fn sol_log_compute_units() {
+    sol_log("UNAVAILABLE");
+}
+
+pub(crate) fn sol_remaining_compute_units() -> u64 {
+    sol_log("UNAVAILABLE");
+    UNIMPLEMENTED
+}
+
+pub(crate) fn arch_get_bitcoin_block_height() -> u64 {
+    UNIMPLEMENTED
+}
+
+pub(crate) fn arch_get_clock(_clock: *mut Clock) -> u64 {
     UNIMPLEMENTED
 }

@@ -1,6 +1,10 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
-use crate::{AccountInfoWithPubkey, BlockTransactionFilter, FullBlock};
+use crate::{
+    sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, FullBlock, NOT_FOUND_CODE,
+};
+use bitcoin::key::Keypair;
+use bitcoin::Network;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_str, json, Value};
 use std::time::Duration;
@@ -12,13 +16,10 @@ use crate::types::{
 };
 
 // RPC method constants
-const ASSIGN_AUTHORITY: &str = "assign_authority";
 const READ_ACCOUNT_INFO: &str = "read_account_info";
 const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
-const DEPLOY_PROGRAM: &str = "deploy_program";
 const SEND_TRANSACTION: &str = "send_transaction";
 const SEND_TRANSACTIONS: &str = "send_transactions";
-const GET_PROGRAM: &str = "get_program";
 const GET_BLOCK: &str = "get_block";
 const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
 const GET_BLOCK_COUNT: &str = "get_block_count";
@@ -28,8 +29,6 @@ const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
 const START_DKG: &str = "start_dkg";
-
-pub const NOT_FOUND_CODE: i64 = 404;
 
 /// ArchRpcClient provides a simple interface for making RPC calls to the Arch blockchain
 #[derive(Clone)]
@@ -116,6 +115,57 @@ impl ArchRpcClient {
                 pubkeys
             ))),
         }
+    }
+
+    /// Request an airdrop for a given public key
+    pub fn request_airdrop(&self, pubkey: Pubkey) -> Result<ProcessedTransaction> {
+        let result = self
+            .process_result(self.post_data("request_airdrop", pubkey)?)?
+            .ok_or(ArchError::RpcRequestFailed(
+                "request_airdrop failed".to_string(),
+            ))?;
+        let txid = result.as_str().unwrap();
+        let processed_tx = self.wait_for_processed_transaction(&txid).unwrap();
+        Ok(processed_tx)
+    }
+
+    pub fn create_and_fund_account_with_faucet(
+        &self,
+        keypair: &Keypair,
+        bitcoin_network: Network,
+    ) -> Result<()> {
+        let pubkey = Pubkey::from_slice(&keypair.x_only_public_key().0.serialize());
+
+        if let Ok(_) = self.read_account_info(pubkey) {
+            let _processed_tx = self.request_airdrop(pubkey)?;
+        } else {
+            let result = self
+                .process_result(self.post_data("create_account_with_faucet", pubkey)?)?
+                .ok_or(ArchError::RpcRequestFailed(
+                    "create_account_with_faucet failed".to_string(),
+                ))?;
+            let mut runtime_tx: RuntimeTransaction =
+                serde_json::from_value(result).expect("Unable to decode create_account result");
+
+            let message_hash = runtime_tx.message.hash();
+            let signature = crate::Signature::from_slice(&sign_message_bip322(
+                &keypair,
+                &message_hash,
+                bitcoin_network,
+            ));
+
+            runtime_tx.signatures.push(signature);
+
+            let result = self.send_transaction(runtime_tx)?;
+
+            let _processed_tx = self.wait_for_processed_transaction(&result)?;
+        }
+        let account_info = self.read_account_info(pubkey)?;
+
+        // assert_eq!(account_info.owner, Pubkey::system_program());
+        assert!(account_info.lamports >= 1_000_000_000);
+
+        Ok(())
     }
 
     /// Get a processed transaction by ID
@@ -349,7 +399,7 @@ impl ArchRpcClient {
     }
 
     /// Helper methods for RPC communication
-    fn process_result(&self, response: String) -> Result<Option<Value>> {
+    pub fn process_result(&self, response: String) -> Result<Option<Value>> {
         let result = from_str::<Value>(&response)
             .map_err(|e| ArchError::ParseError(format!("Failed to parse JSON: {}", e)))?;
 
@@ -408,7 +458,11 @@ impl ArchRpcClient {
         }
     }
 
-    fn post_data<T: Serialize + std::fmt::Debug>(&self, method: &str, params: T) -> Result<String> {
+    pub fn post_data<T: Serialize + std::fmt::Debug>(
+        &self,
+        method: &str,
+        params: T,
+    ) -> Result<String> {
         let client = reqwest::blocking::Client::new();
         match client
             .post(&self.url)
@@ -448,6 +502,7 @@ fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
 mod tests {
     use super::*;
     use crate::arch_program::pubkey::Pubkey;
+    use arch_program::{account::MIN_ACCOUNT_LAMPORTS, sanitized::ArchMessage};
     use mockito::Server;
 
     // Helper to create a test client with the mockito server
@@ -566,6 +621,7 @@ mod tests {
 
         // Create account info according to the actual struct definition
         let account_info = AccountInfo {
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: Pubkey::new_unique(),
             data: vec![1, 2, 3, 4],
             utxo: "utxo123".to_string(),
@@ -608,17 +664,13 @@ mod tests {
 
     #[test]
     fn test_is_transaction_finalized_function() {
-        use crate::types::{RollbackStatus, Signature};
-        use arch_program::message::Message;
+        use crate::types::RollbackStatus;
 
         // Create a RuntimeTransaction for testing
         let rt_tx = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: Message {
-                signers: Vec::new(),
-                instructions: Vec::new(),
-            },
+            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
         };
 
         // Test all status variants
@@ -653,16 +705,12 @@ mod tests {
     #[test]
     fn test_send_transaction() {
         let mut server = Server::new();
-        use arch_program::message::Message;
 
         // Create a minimal valid RuntimeTransaction for the test
         let tx = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: Message {
-                signers: Vec::new(),
-                instructions: Vec::new(),
-            },
+            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
         };
 
         let mock = mock_rpc_response_with_params(
@@ -688,6 +736,7 @@ mod tests {
 
         // Create some program accounts for the response
         let account_info = AccountInfo {
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: program_id,
             data: vec![1, 2, 3, 4],
             utxo: "utxo123".to_string(),
@@ -746,6 +795,7 @@ mod tests {
             previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string(),
             timestamp: 1630000000,
+            block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 2,
             merkle_root: "merkle_root_hash".to_string(),
@@ -777,17 +827,13 @@ mod tests {
         let mut server = Server::new();
         let tx_id = "tx_test_12345";
 
-        use crate::types::{RollbackStatus, Signature};
-        use arch_program::message::Message;
+        use crate::types::RollbackStatus;
 
         // Create a sample processed transaction
         let rt_tx = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: Message {
-                signers: Vec::new(),
-                instructions: Vec::new(),
-            },
+            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
         };
 
         let processed_tx = ProcessedTransaction {
@@ -818,25 +864,18 @@ mod tests {
     #[test]
     fn test_send_transactions() {
         let mut server = Server::new();
-        use arch_program::message::Message;
 
         // Create multiple transactions
         let tx1 = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: Message {
-                signers: Vec::new(),
-                instructions: Vec::new(),
-            },
+            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
         };
 
         let tx2 = RuntimeTransaction {
             version: 1,
             signatures: Vec::new(),
-            message: Message {
-                signers: Vec::new(),
-                instructions: Vec::new(),
-            },
+            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
         };
 
         let transactions = vec![tx1, tx2];
@@ -888,6 +927,7 @@ mod tests {
 
         // Test a more complex return type (using AccountInfo as an example)
         let account_info = AccountInfo {
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: Pubkey::new_unique(),
             data: vec![1, 2, 3, 4],
             utxo: "utxo123".to_string(),
@@ -945,6 +985,7 @@ mod tests {
 
         // Create account info for responses
         let account_info1 = AccountInfo {
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: Pubkey::new_unique(),
             data: vec![1, 2, 3, 4],
             utxo: "utxo123".to_string(),
@@ -952,6 +993,7 @@ mod tests {
         };
 
         let account_info2 = AccountInfo {
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: Pubkey::new_unique(),
             data: vec![5, 6, 7, 8],
             utxo: "utxo456".to_string(),
@@ -961,6 +1003,7 @@ mod tests {
         // Updated to match actual struct definition
         let account_with_pubkey1 = AccountInfoWithPubkey {
             key: pubkey1,
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: account_info1.owner,
             data: account_info1.data.clone(),
             utxo: account_info1.utxo.clone(),
@@ -970,6 +1013,7 @@ mod tests {
         // Updated to match actual struct definition
         let account_with_pubkey2 = AccountInfoWithPubkey {
             key: pubkey2,
+            lamports: MIN_ACCOUNT_LAMPORTS,
             owner: account_info2.owner,
             data: account_info2.data.clone(),
             utxo: account_info2.utxo.clone(),
@@ -1015,6 +1059,7 @@ mod tests {
             previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string(),
             timestamp: 1630000000,
+            block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 0,
             merkle_root: "merkle_root_hash".to_string(),
@@ -1063,6 +1108,7 @@ mod tests {
             previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string(),
             timestamp: 1630000000,
+            block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 2,
             merkle_root: "merkle_root_hash".to_string(),
@@ -1100,6 +1146,7 @@ mod tests {
             previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string(),
             timestamp: 1630000000,
+            block_height,
             bitcoin_block_height: 100,
             transaction_count: 0,
             merkle_root: "merkle_root_hash".to_string(),

@@ -1,37 +1,30 @@
-use crate::{
-    arch_program::pubkey::Pubkey,
-    types::{RuntimeTransaction, Signature},
-};
-use arch_program::{instruction::Instruction, message::Message};
-use bitcoin::{key::Keypair, XOnlyPublicKey};
+use crate::{RuntimeTransaction, Signature};
 
 use super::sign_message_bip322;
+use arch_program::sanitized::ArchMessage;
+use bitcoin::{key::Keypair, Network};
 
-/* -------------------------------------------------------------------------- */
-/*                   BUILDS A TRANSACTION FROM INSTRUCTIONS                   */
-/* -------------------------------------------------------------------------- */
-/// Builds a runtime transaction given a set of instructions.
-pub fn build_transaction(
-    signer_key_pairs: Vec<Keypair>,
-    instructions: Vec<Instruction>,
-    network: bitcoin::Network,
+/// Sign and send a transaction
+pub fn build_and_sign_transaction(
+    message: ArchMessage,
+    signers: Vec<Keypair>,
+    bitcoin_network: Network,
 ) -> RuntimeTransaction {
-    let pubkeys = signer_key_pairs
-        .iter()
-        .map(|signer| Pubkey::from_slice(&XOnlyPublicKey::from_keypair(signer).0.serialize()))
-        .collect::<Vec<Pubkey>>();
-
-    let message = Message {
-        signers: pubkeys,
-        instructions,
-    };
-
     let digest_slice = message.hash();
-
-    let signatures = signer_key_pairs
+    let signatures = message
+        .account_keys
         .iter()
-        .map(|signer| {
-            let signature = sign_message_bip322(signer, &digest_slice, network).to_vec();
+        .take(message.header.num_required_signatures as usize)
+        .map(|key| {
+            let signature = sign_message_bip322(
+                signers
+                    .iter()
+                    .find(|signer| signer.x_only_public_key().0.serialize() == key.serialize())
+                    .unwrap(),
+                &digest_slice,
+                bitcoin_network,
+            )
+            .to_vec();
             Signature(signature)
         })
         .collect::<Vec<Signature>>();

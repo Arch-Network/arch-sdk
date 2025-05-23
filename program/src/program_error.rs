@@ -72,6 +72,14 @@ pub enum ProgramError {
     IncorrectAuthority,
     #[error("From hex error")]
     FromHexError,
+    #[error("Account lamports cannot be negative")]
+    NegativeAccountLamports,
+    #[error("Readonly lamport change")]
+    ReadonlyLamportChange,
+    #[error("Executable lamport change")]
+    ExecutableLamportChange,
+    #[error("Account is not anchored")]
+    AccountNotAnchored,
 }
 
 pub trait PrintProgramError {
@@ -123,6 +131,10 @@ impl PrintProgramError for ProgramError {
             Self::Immutable => msg!("Error: Immutable"),
             Self::IncorrectAuthority => msg!("Error: IncorrectAuthority"),
             Self::FromHexError => msg!("Error: FromHexError"),
+            Self::NegativeAccountLamports => msg!("Error: NegativeAccountLamports"),
+            Self::ReadonlyLamportChange => msg!("Error: ReadonlyLamportChange"),
+            Self::ExecutableLamportChange => msg!("Error: ExecutableLamportChange"),
+            Self::AccountNotAnchored => msg!("Error: AccountNotAnchored"),
         }
     }
 }
@@ -162,6 +174,10 @@ pub const ARITHMETIC_OVERFLOW: u64 = to_builtin!(24);
 pub const IMMUTABLE: u64 = to_builtin!(25);
 pub const INCORRECT_AUTHORITY: u64 = to_builtin!(26);
 pub const FROM_HEX_ERROR: u64 = to_builtin!(27);
+pub const NEGATIVE_ACCOUNT_LAMPORTS: u64 = to_builtin!(28);
+pub const READONLY_LAMPORT_CHANGE: u64 = to_builtin!(29);
+pub const EXECUTABLE_LAMPORT_CHANGE: u64 = to_builtin!(30);
+pub const ACCOUNT_NOT_ANCHORED: u64 = to_builtin!(31);
 // Warning: Any new program errors added here must also be:
 // - Added to the below conversions
 // - Added as an equivalent to InstructionError
@@ -201,6 +217,10 @@ impl From<ProgramError> for u64 {
             ProgramError::Immutable => IMMUTABLE,
             ProgramError::IncorrectAuthority => INCORRECT_AUTHORITY,
             ProgramError::FromHexError => FROM_HEX_ERROR,
+            ProgramError::NegativeAccountLamports => NEGATIVE_ACCOUNT_LAMPORTS,
+            ProgramError::ReadonlyLamportChange => READONLY_LAMPORT_CHANGE,
+            ProgramError::ExecutableLamportChange => EXECUTABLE_LAMPORT_CHANGE,
+            ProgramError::AccountNotAnchored => ACCOUNT_NOT_ANCHORED,
             ProgramError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO
@@ -242,6 +262,7 @@ impl From<u64> for ProgramError {
             IMMUTABLE => Self::Immutable,
             INCORRECT_AUTHORITY => Self::IncorrectAuthority,
             FROM_HEX_ERROR => Self::FromHexError,
+            ACCOUNT_NOT_ANCHORED => Self::AccountNotAnchored,
             _ => Self::Custom(error as u32),
         }
     }
