@@ -3,10 +3,10 @@ use std::{
     fmt::{Display, Formatter},
 };
 
+use arch_program::sanitize::{Sanitize, SanitizeError};
 use arch_program::sanitized::ArchMessage;
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
-use sanitize::{Sanitize, SanitizeError};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
@@ -146,9 +146,9 @@ mod tests {
     use super::{RuntimeTransaction, Signature, ALLOWED_VERSIONS};
     use arch_program::{
         pubkey::Pubkey,
+        sanitize::{Sanitize as _, SanitizeError},
         sanitized::{ArchMessage, MessageHeader, SanitizedInstruction},
     };
-    use sanitize::{Sanitize as _, SanitizeError};
 
     fn create_test_transaction(
         version: u32,

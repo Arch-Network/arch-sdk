@@ -70,6 +70,8 @@ pub mod program_stubs;
 pub mod program_utils;
 /// Public key definitions and operations
 pub mod pubkey;
+/// Sanitization trait and error types for validating over-the-wire messages
+pub mod sanitize;
 /// Sanitized transaction processing
 pub mod sanitized;
 /// Secp256k1 signature recovery utilities
