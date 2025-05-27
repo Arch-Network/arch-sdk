@@ -44,13 +44,12 @@ pub fn get_state_transition_tx(accounts: &[AccountInfo]) -> Transaction {
             .iter()
             .filter(|account| account.is_writable)
             .map(|account| {
-                let tx: Transaction = bitcoin::consensus::deserialize(
-                    &get_bitcoin_tx(account.utxo.txid().try_into().unwrap()).unwrap(),
-                )
-                .unwrap();
+                let tx = get_bitcoin_tx(account.utxo.txid().try_into().unwrap()).unwrap();
+
+                let output = tx.output[account.utxo.vout() as usize].clone();
 
                 TxOut {
-                    value: tx.output[account.utxo.vout() as usize].value,
+                    value: output.value,
                     script_pubkey: ScriptBuf::from_bytes(
                         get_account_script_pubkey(account.key).to_vec(),
                     ),
@@ -85,12 +84,12 @@ pub fn add_state_transition(transaction: &mut Transaction, account: &AccountInfo
 
     msg!("account utxo : {:?}", hex::encode(account.utxo.txid()));
 
-    let tx: Transaction = bitcoin::consensus::deserialize(
-        &get_bitcoin_tx(account.utxo.txid().try_into().unwrap()).unwrap(),
-    )
-    .unwrap();
+    let tx = get_bitcoin_tx(account.utxo.txid().try_into().unwrap()).unwrap();
+
+    let output = tx.output[account.utxo.vout() as usize].clone();
+
     transaction.output.push(TxOut {
-        value: tx.output[account.utxo.vout() as usize].value,
+        value: output.value,
         script_pubkey: ScriptBuf::from_bytes(get_account_script_pubkey(account.key).to_vec()),
     });
 }

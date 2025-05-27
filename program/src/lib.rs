@@ -93,8 +93,14 @@ pub mod vote;
 #[macro_use]
 extern crate serde_derive;
 
+/// Rune management
+pub mod rune;
+
 /// Maximum size of a Bitcoin transaction in bytes
 pub const MAX_BTC_TX_SIZE: usize = 3976;
+
+/// Maximum size of a Bitcoin rune output in bytes
+pub const MAX_BTC_RUNE_OUTPUT_SIZE: usize = 2048;
 
 pub mod builtin {
     use super::*;

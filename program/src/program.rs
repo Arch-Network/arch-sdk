@@ -1,15 +1,102 @@
 use bitcoin::Transaction;
+use bitcoin::Transaction as BtcTransactionType;
 
 use crate::instruction::Instruction;
 use crate::program_error::ProgramError;
+use crate::rune::RuneAmount;
 #[cfg(target_os = "solana")]
 use crate::stable_layout::stable_ins::StableInstruction;
-use crate::MAX_BTC_TX_SIZE;
+use crate::{MAX_BTC_RUNE_OUTPUT_SIZE, MAX_BTC_TX_SIZE};
 
 use crate::clock::Clock;
 use crate::transaction_to_sign::TransactionToSign;
 use crate::utxo::UtxoMeta;
 use crate::{account::AccountInfo, entrypoint::ProgramResult, pubkey::Pubkey};
+
+/// A generic wrapper for fixed-size data that avoids heap allocation.
+///
+/// This type holds raw bytes in a fixed-size array and tracks the actual size of the data.
+/// The array size is determined by the const generic parameter `N`.
+#[derive(Debug, Clone)]
+pub struct FixedSizeBuffer<const N: usize> {
+    data: [u8; N],
+    size: usize,
+}
+
+impl<const N: usize> FixedSizeBuffer<N> {
+    /// Creates a new FixedSizeBuffer from a buffer and size.
+    pub fn new(data: [u8; N], size: usize) -> Self {
+        Self { data, size }
+    }
+
+    /// Returns the actual size of the data.
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Returns a slice of the actual data.
+    pub fn as_slice(&self) -> &[u8] {
+        &self.data[..self.size]
+    }
+
+    /// Returns a mutable raw pointer to the underlying buffer (for FFI/syscall writes).
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.data.as_mut_ptr()
+    }
+
+    /// Returns the total capacity of the buffer.
+    pub fn capacity(&self) -> usize {
+        N
+    }
+
+    /// Sets the length of the valid data written into the buffer.
+    ///
+    /// # Safety
+    /// The caller must guarantee that `new_size` bytes starting from the
+    /// pointer returned by `as_mut_ptr` have been initialised.
+    pub unsafe fn set_size(&mut self, new_size: usize) {
+        debug_assert!(
+            new_size <= N,
+            "new_size ({}) exceeds buffer capacity ({})",
+            new_size,
+            N
+        );
+
+        self.size = new_size;
+    }
+}
+
+impl<const N: usize> AsRef<[u8]> for FixedSizeBuffer<N> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl<const N: usize> std::ops::Deref for FixedSizeBuffer<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<const N: usize> Default for FixedSizeBuffer<N> {
+    fn default() -> Self {
+        Self {
+            data: [0u8; N],
+            size: 0,
+        }
+    }
+}
+
+/// Type alias for Bitcoin transaction data with a fixed 3976-byte buffer.
+pub type BitcoinTransaction = FixedSizeBuffer<MAX_BTC_TX_SIZE>;
+
+/// Type alias for Bitcoin rune output data with a fixed 2048-byte buffer.
+pub type BitcoinRuneOutput = FixedSizeBuffer<MAX_BTC_RUNE_OUTPUT_SIZE>;
+
+/// Type alias for Returned Data with a fixed 1024-byte buffer.
+pub type ReturnedData = FixedSizeBuffer<MAX_RETURN_DATA>;
 
 /// Invokes a program instruction through cross-program invocation.
 ///
@@ -233,7 +320,8 @@ pub fn set_return_data(data: &[u8]) {
 /// For more about return data see the [documentation for the return data proposal][rdp].
 ///
 /// [rdp]: https://docs.solanalabs.com/proposals/return-data
-pub fn get_return_data() -> Option<(Pubkey, Vec<u8>)> {
+#[inline(never)]
+pub fn get_return_data() -> Option<(Pubkey, ReturnedData)> {
     use std::cmp::min;
 
     let mut buf = [0u8; MAX_RETURN_DATA];
@@ -247,7 +335,7 @@ pub fn get_return_data() -> Option<(Pubkey, Vec<u8>)> {
         None
     } else {
         let size = min(size as usize, MAX_RETURN_DATA);
-        Some((program_id, buf[..size as usize].to_vec()))
+        Some((program_id, ReturnedData::new(buf, size)))
     }
 }
 
@@ -257,43 +345,47 @@ pub fn get_return_data() -> Option<(Pubkey, Vec<u8>)> {
 /// * `txid` - 32-byte array containing the Bitcoin transaction ID
 ///
 /// # Returns
-/// * `Option<Vec<u8>>` - The raw transaction bytes if found, None if not found
-pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<Vec<u8>> {
-    use std::cmp::min;
-    if txid == [0u8; 32] {
-        return None;
-    }
-
-    let mut buf = [0u8; MAX_BTC_TX_SIZE];
-
+/// * `Option<BitcoinTransaction>` - The transaction if found, None if not found
+#[inline(never)]
+pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<BtcTransactionType> {
+    let mut buf: BitcoinTransaction = Default::default();
     #[cfg(target_os = "solana")]
-    let size =
-        unsafe { crate::syscalls::arch_get_bitcoin_tx(buf.as_mut_ptr(), buf.len() as u64, &txid) };
-
+    let size = unsafe {
+        crate::syscalls::arch_get_bitcoin_tx(buf.as_mut_ptr(), buf.capacity() as u64, &txid)
+    };
     #[cfg(not(target_os = "solana"))]
-    let size = crate::program_stubs::arch_get_bitcoin_tx(buf.as_mut_ptr(), buf.len(), &txid);
+    let size = crate::program_stubs::arch_get_bitcoin_tx(buf.as_mut_ptr(), buf.capacity(), &txid);
 
     if size == 0 {
-        None
-    } else {
-        let size = min(size as usize, MAX_BTC_TX_SIZE);
-        Some(buf[..size as usize].to_vec())
+        return None;
     }
+    unsafe { buf.set_size(core::cmp::min(size as usize, MAX_BTC_TX_SIZE)) };
+
+    bitcoin::consensus::deserialize::<BtcTransactionType>(buf.as_slice()).ok()
 }
 
-pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<u8>> {
+/// Retrieves the runes from a Bitcoin output by its transaction ID and output index.
+///
+/// # Arguments
+/// * `txid` - 32-byte array containing the Bitcoin transaction ID
+/// * `output_index` - The output index to retrieve
+///
+/// # Returns
+/// * `Option<Vec<RuneAmount>>` - The runes if found, None if not found
+#[inline(never)]
+pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<RuneAmount>> {
     use std::cmp::min;
     if txid == [0u8; 32] {
         return None;
     }
 
-    let mut buf = [0u8; MAX_BTC_TX_SIZE];
+    let mut result: BitcoinRuneOutput = Default::default();
 
     #[cfg(target_os = "solana")]
     let size = unsafe {
         crate::syscalls::arch_get_runes_from_output(
-            buf.as_mut_ptr(),
-            buf.len() as u64,
+            result.as_mut_ptr(),
+            result.capacity() as u64,
             &txid,
             output_index,
         )
@@ -301,8 +393,8 @@ pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<u8
 
     #[cfg(not(target_os = "solana"))]
     let size = crate::program_stubs::arch_get_runes_from_output(
-        buf.as_mut_ptr(),
-        buf.len(),
+        result.as_mut_ptr(),
+        result.capacity(),
         &txid,
         output_index,
     );
@@ -310,8 +402,8 @@ pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<u8
     if size == 0 {
         None
     } else {
-        let size = min(size as usize, MAX_BTC_TX_SIZE);
-        Some(buf[..size as usize].to_vec())
+        unsafe { result.set_size(min(size as usize, MAX_BTC_RUNE_OUTPUT_SIZE)) };
+        borsh::from_slice::<Vec<RuneAmount>>(result.as_slice()).ok()
     }
 }
 
