@@ -1,5 +1,3 @@
-use std::{cell::RefCell, collections::HashSet};
-
 use crate::sanitize::{Sanitize, SanitizeError};
 use crate::{compiled_keys::CompiledKeys, instruction::Instruction, pubkey::Pubkey};
 use anyhow::{anyhow, Result};
@@ -7,6 +5,7 @@ use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
+use std::collections::HashSet;
 /// A sanitized message that has been checked for validity and processed to improve
 /// runtime performance.
 ///

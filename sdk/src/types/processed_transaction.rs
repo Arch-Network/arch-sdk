@@ -21,6 +21,9 @@ pub enum ParseProcessedTransactionError {
 
     #[error("runtime transaction error: {0}")]
     RuntimeTransactionError(#[from] RuntimeTransactionError),
+
+    #[error("rollback message too long")]
+    RollbackMessageTooLong,
 }
 
 impl From<TryFromSliceError> for ParseProcessedTransactionError {
@@ -39,6 +42,7 @@ impl From<TryFromSliceError> for ParseProcessedTransactionError {
     PartialEq,
     Encode,
     Decode,
+    Eq,
 )]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type", content = "message")]
@@ -76,12 +80,46 @@ impl Status {
     BorshDeserialize,
     Encode,
     Decode,
+    Eq,
 )]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type", content = "message")]
 pub enum RollbackStatus {
     Rolledback(String),
     NotRolledback,
+}
+
+impl RollbackStatus {
+    pub fn to_fixed_array(
+        &self,
+    ) -> Result<[u8; ROLLBACK_MESSAGE_BUFFER_SIZE], ParseProcessedTransactionError> {
+        let mut buffer = [0; ROLLBACK_MESSAGE_BUFFER_SIZE];
+
+        if let RollbackStatus::Rolledback(msg) = self {
+            buffer[0] = 1;
+            let message_bytes = msg.as_bytes();
+            buffer[1..9].copy_from_slice(&(msg.len() as u64).to_le_bytes());
+
+            if message_bytes.len() > ROLLBACK_MESSAGE_BUFFER_SIZE - 9 {
+                return Err(ParseProcessedTransactionError::RollbackMessageTooLong);
+            }
+            buffer[9..(9 + message_bytes.len())].copy_from_slice(message_bytes);
+        }
+
+        Ok(buffer)
+    }
+
+    pub fn from_fixed_array(
+        data: &[u8; ROLLBACK_MESSAGE_BUFFER_SIZE],
+    ) -> Result<Self, ParseProcessedTransactionError> {
+        if data[0] == 1 {
+            let msg_len = u64::from_le_bytes(data[1..9].try_into()?) as usize;
+            let msg = String::from_utf8(data[9..(9 + msg_len)].to_vec())?;
+            Ok(RollbackStatus::Rolledback(msg))
+        } else {
+            Ok(RollbackStatus::NotRolledback)
+        }
+    }
 }
 
 #[derive(
@@ -94,6 +132,7 @@ pub enum RollbackStatus {
     BorshDeserialize,
     Encode,
     Decode,
+    Eq,
 )]
 pub struct ProcessedTransaction {
     pub runtime_transaction: RuntimeTransaction,
@@ -103,6 +142,8 @@ pub struct ProcessedTransaction {
     pub rollback_status: RollbackStatus,
 }
 
+const ROLLBACK_MESSAGE_BUFFER_SIZE: usize = 1033;
+
 impl ProcessedTransaction {
     pub fn txid(&self) -> String {
         self.runtime_transaction.txid()
@@ -110,6 +151,8 @@ impl ProcessedTransaction {
 
     pub fn to_vec(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
         let mut serialized = vec![];
+
+        serialized.extend(self.rollback_status.to_fixed_array()?);
 
         serialized.extend((self.runtime_transaction.serialize().len() as u64).to_le_bytes());
         serialized.extend(self.runtime_transaction.serialize());
@@ -129,16 +172,6 @@ impl ProcessedTransaction {
             serialized.extend(log.as_bytes());
         }
 
-        serialized.extend(match &self.rollback_status {
-            RollbackStatus::NotRolledback => vec![0_u8],
-            RollbackStatus::Rolledback(msg) => {
-                let mut result = vec![1_u8];
-                result.extend((msg.len() as u64).to_le_bytes());
-                result.extend(msg.as_bytes());
-                result
-            }
-        });
-
         serialized.extend(match &self.status {
             Status::Queued => vec![0_u8],
             Status::Processed => vec![1_u8],
@@ -153,9 +186,18 @@ impl ProcessedTransaction {
     }
 
     pub fn from_vec(data: &[u8]) -> Result<Self, ParseProcessedTransactionError> {
-        let data_bytes = data[..8].try_into()?;
+        let mut size = 0;
+
+        let rollback_buffer: [u8; ROLLBACK_MESSAGE_BUFFER_SIZE] = data
+            [size..(size + ROLLBACK_MESSAGE_BUFFER_SIZE)]
+            .try_into()
+            .map_err(|_| ParseProcessedTransactionError::TryFromSliceError)?;
+        let rollback_status = RollbackStatus::from_fixed_array(&rollback_buffer)?;
+
+        size += ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let data_bytes = data[size..(size + 8)].try_into()?;
         let runtime_transaction_len = u64::from_le_bytes(data_bytes) as usize;
-        let mut size = 8;
+        size += 8;
         let runtime_transaction =
             RuntimeTransaction::from_slice(&data[size..(size + runtime_transaction_len)])?;
         size += runtime_transaction_len;
@@ -180,22 +222,6 @@ impl ProcessedTransaction {
             logs.push(String::from_utf8(data[size..(size + log_len)].to_vec()).unwrap());
             size += log_len;
         }
-
-        let rollback_status = match data[size] {
-            0 => {
-                size += 1;
-                RollbackStatus::NotRolledback
-            }
-            1 => {
-                size += 1;
-                let msg_len = u64::from_le_bytes(data[size..(size + 8)].try_into()?) as usize;
-                size += 8;
-                let msg = String::from_utf8(data[size..(size + msg_len)].to_vec())?;
-                size += msg_len;
-                RollbackStatus::Rolledback(msg)
-            }
-            _ => unreachable!("rollback status doesn't exist"),
-        };
 
         let status = match data[size] {
             0 => Status::Queued,
@@ -289,4 +315,109 @@ mod tests {
     //             assert_eq!(serialized, reserialized);
     //         }
     //     }
+
+    use arch_program::sanitized::{ArchMessage, MessageHeader};
+
+    use crate::{
+        types::processed_transaction::ROLLBACK_MESSAGE_BUFFER_SIZE, RollbackStatus, Status,
+    };
+
+    use super::ProcessedTransaction;
+
+    #[test]
+    fn test_rollback_with_message() {
+        let rollback_message = "a".repeat(ROLLBACK_MESSAGE_BUFFER_SIZE - 10);
+        let processed_transaction = ProcessedTransaction {
+            runtime_transaction: crate::RuntimeTransaction {
+                version: 1,
+                signatures: vec![],
+                message: ArchMessage {
+                    header: MessageHeader {
+                        num_readonly_signed_accounts: 0,
+                        num_readonly_unsigned_accounts: 0,
+                        num_required_signatures: 0,
+                    },
+                    account_keys: vec![],
+                    instructions: vec![],
+                    recent_blockhash:
+                        "0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_string(),
+                },
+            },
+            status: Status::Processed,
+            bitcoin_txid: None,
+            logs: vec![],
+            rollback_status: RollbackStatus::Rolledback(rollback_message),
+        };
+
+        let serialized = processed_transaction.to_vec().unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
+        assert_eq!(processed_transaction, deserialized);
+    }
+
+    #[test]
+    fn test_rollback_with_message_too_long() {
+        let rollback_message = "a".repeat(ROLLBACK_MESSAGE_BUFFER_SIZE);
+        let processed_transaction = ProcessedTransaction {
+            runtime_transaction: crate::RuntimeTransaction {
+                version: 1,
+                signatures: vec![],
+                message: ArchMessage {
+                    header: MessageHeader {
+                        num_readonly_signed_accounts: 0,
+                        num_readonly_unsigned_accounts: 0,
+                        num_required_signatures: 0,
+                    },
+                    account_keys: vec![],
+                    instructions: vec![],
+                    recent_blockhash:
+                        "0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_string(),
+                },
+            },
+            status: Status::Processed,
+            bitcoin_txid: None,
+            logs: vec![],
+            rollback_status: RollbackStatus::Rolledback(rollback_message),
+        };
+
+        let serialized = processed_transaction.to_vec();
+        assert_eq!(serialized.is_err(), true);
+    }
+
+    #[test]
+    fn test_serialization_not_rolledback() {
+        let processed_transaction = ProcessedTransaction {
+            runtime_transaction: crate::RuntimeTransaction {
+                version: 1,
+                signatures: vec![],
+                message: ArchMessage {
+                    header: MessageHeader {
+                        num_readonly_signed_accounts: 0,
+                        num_readonly_unsigned_accounts: 0,
+                        num_required_signatures: 0,
+                    },
+                    account_keys: vec![],
+                    instructions: vec![],
+                    recent_blockhash:
+                        "0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_string(),
+                },
+            },
+            status: Status::Processed,
+            bitcoin_txid: None,
+            logs: vec![],
+            rollback_status: RollbackStatus::NotRolledback,
+        };
+
+        let serialized = processed_transaction.to_vec().unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
+        assert_eq!(processed_transaction, deserialized);
+    }
+
+    #[test]
+    fn rollback_default_message_size() {
+        let message = "Transaction rolled back in Bitcoin";
+        println!("Message size as bytes : {}", message.as_bytes().len());
+    }
 }

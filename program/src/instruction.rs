@@ -1,4 +1,3 @@
-use core::fmt;
 /// This module defines the instruction data structure and related error types.
 /// Instructions are the fundamental unit of program execution in the Arch Network,
 /// containing the program to call, accounts to interact with, and instruction data.

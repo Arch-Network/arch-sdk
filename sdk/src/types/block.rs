@@ -26,6 +26,7 @@ pub enum BlockParseError {
     PartialEq,
     Encode,
     Decode,
+    Eq,
 )]
 pub struct Block {
     pub transactions: Vec<String>,
