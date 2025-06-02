@@ -21,7 +21,6 @@ define_syscall!(fn sol_create_program_address(seeds_addr: *const u8, seeds_len: 
 
 define_syscall!(fn arch_set_transaction_to_sign(transaction_to_sign: *const u8, length: u64) -> u64);
 define_syscall!(fn arch_get_bitcoin_tx(data: *mut u8, length: u64, txid: &[u8; 32]) -> u64);
-define_syscall!(fn arch_get_bitcoin_tx_confirmation(data: *mut u8, length: u64, txid: &[u8; 32]) -> u64);
 define_syscall!(fn arch_get_runes_from_output(data: *mut u8, length: u64, txid: &[u8; 32], output_index: u32) -> u64);
 define_syscall!(fn arch_get_network_xonly_pubkey(data: *mut u8) -> u64);
 define_syscall!(fn arch_validate_utxo_ownership(utxo: *const UtxoMeta, owner: *const Pubkey) -> u64);

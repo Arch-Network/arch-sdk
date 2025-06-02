@@ -364,32 +364,6 @@ pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<BtcTransactionType> {
     bitcoin::consensus::deserialize::<BtcTransactionType>(buf.as_slice()).ok()
 }
 
-/// Retrieves the confirmation status of a Bitcoin transaction by its transaction ID.
-///
-/// # Arguments
-/// * `txid` - 32-byte array containing the Bitcoin transaction ID
-///
-/// # Returns
-/// * `bool` - The confirmation status of the transaction, false if not found
-pub fn get_bitcoin_tx_confirmation(txid: [u8; 32]) -> bool {
-    let mut buf = [0u8; 1];
-
-    #[cfg(target_os = "solana")]
-    let size = unsafe {
-        crate::syscalls::arch_get_bitcoin_tx_confirmation(buf.as_mut_ptr(), buf.len() as u64, &txid)
-    };
-
-    #[cfg(not(target_os = "solana"))]
-    let size =
-        crate::program_stubs::arch_get_bitcoin_tx_confirmation(buf.as_mut_ptr(), buf.len(), &txid);
-
-    if size == 0 {
-        false
-    } else {
-        buf[0] == 1
-    }
-}
-
 /// Retrieves the runes from a Bitcoin output by its transaction ID and output index.
 ///
 /// # Arguments

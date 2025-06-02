@@ -45,14 +45,6 @@ pub(crate) fn arch_get_bitcoin_tx(_buf: *const u8, _buf_len: usize, _txid: &[u8;
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED
 }
-pub(crate) fn arch_get_bitcoin_tx_confirmation(
-    _buf: *const u8,
-    _buf_len: usize,
-    _txid: &[u8; 32],
-) -> u64 {
-    sol_log("UNAVAILABLE");
-    UNIMPLEMENTED
-}
 pub(crate) fn arch_get_runes_from_output(
     _buf: *const u8,
     _buf_len: usize,
