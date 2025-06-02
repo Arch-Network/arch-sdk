@@ -49,6 +49,7 @@ pub mod helper;
 pub mod input_to_sign;
 /// Instruction definitions and processing
 pub mod instruction;
+pub mod keccak;
 pub mod loader_instruction;
 /// Logging functionality for on-chain programs
 pub mod log;
