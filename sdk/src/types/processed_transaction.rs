@@ -244,10 +244,6 @@ impl ProcessedTransaction {
             rollback_status,
         })
     }
-
-    pub fn compute_units_consumed(&self) -> Option<&str> {
-        self.logs[self.logs.len() - 2].get(82..86)
-    }
 }
 
 #[cfg(test)]

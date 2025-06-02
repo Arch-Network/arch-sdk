@@ -8,7 +8,6 @@ license = "MIT"
 [dependencies]
 arch_program = "0.5.0"
 arch_sdk = { path = "../sdk" }
-apl-token = { path = "../token"}
 bitcode = "0.6.4"
 borsh = { version = "1.5.1" }
 proptest = "1.5.0"
