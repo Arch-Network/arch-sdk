@@ -231,14 +231,14 @@ impl From<FullBlock> for Block {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const GENESIS_BLOCK_HASH: &str =
+    const GENESIS_BLOCK_PREVIOUS_HASH: &str =
         "0000000000000000000000000000000000000000000000000000000000000000";
 
     #[test]
     fn test_block_serialization_deserialization() {
         let original_block = Block {
             transactions: vec!["tx1".to_string(), "tx2".to_string()],
-            previous_block_hash: GENESIS_BLOCK_HASH.to_string(),
+            previous_block_hash: GENESIS_BLOCK_PREVIOUS_HASH.to_string(),
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
@@ -266,7 +266,7 @@ mod tests {
     fn test_block_hash() {
         let block = Block {
             transactions: vec!["tx1".to_string(), "tx2".to_string()],
-            previous_block_hash: GENESIS_BLOCK_HASH.to_string(),
+            previous_block_hash: GENESIS_BLOCK_PREVIOUS_HASH.to_string(),
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
