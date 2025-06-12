@@ -1,12 +1,12 @@
 [package]
 name = "arch_sdk"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 description = "A Rust SDK for building applications on the Arch Network blockchain platform. Provides tools and interfaces for developing, testing, and deploying programs with native Bitcoin integration."
 license = "MIT"
 
 [dependencies]
-arch_program = "0.5.1"
+arch_program = "0.5.2"
 
 bitcode = "0.6.4"
 borsh = { version = "1.5.1" }
