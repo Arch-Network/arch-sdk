@@ -7,14 +7,14 @@ license = "MIT"
 
 [dependencies]
 arch_program = "0.5.1"
-arch_sdk = { path = "../sdk" }
-apl-token = { path = "../token", features = ["no-entrypoint"] }
+arch_sdk = "0.5.1"
+apl-token = { version = "0.5.1", features = ["no-entrypoint"] }
 bitcode = "0.6.4"
 borsh = { version = "1.5.1" }
 proptest = "1.5.0"
 serde = { version = "1.0.197" }
 sha256 = { version = "1.5.0" }
-anyhow = { workspace = true }
+anyhow = { version = "1", features = ["backtrace"] }
 hex = { version = "0.4.3" }
 serde_json = { version = "1.0.114" }
 bitcoincore-rpc = "0.19.0"
