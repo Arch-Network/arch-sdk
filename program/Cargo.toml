@@ -26,8 +26,8 @@ anyhow = { version = "1", features = ["backtrace"] }
 bs58 = "0.5.1"
 serde_derive = "1.0.210"
 serde_bytes = "0.11.15"
-sha3 = { workspace = true }
-solana-sanitize = { workspace = true }
+sha3 = "0.10"
+solana-sanitize = "2.2.1"
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 libsecp256k1 = { version = "0.7.0", default-features = false, features = [
