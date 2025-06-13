@@ -6,6 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 use std::collections::HashSet;
+const MAX_INSTRUCTION_COUNT_PER_TRANSACTION: usize = u8::MAX as usize;
 /// A sanitized message that has been checked for validity and processed to improve
 /// runtime performance.
 ///
@@ -331,6 +332,11 @@ impl ArchMessage {
             pos += 32;
         }
 
+        if bytes.len() < pos + 32 {
+            return Err(anyhow!(
+                "Invalid message length: insufficient bytes for recent blockhash"
+            ));
+        }
         let recent_blockhash = hex::encode(&bytes[pos..pos + 32]);
         pos += 32;
 
@@ -346,6 +352,14 @@ impl ArchMessage {
                 .map_err(|_| anyhow!("Invalid byte conversion for instructions length"))?,
         );
         pos += 4;
+
+        if num_instructions as usize > MAX_INSTRUCTION_COUNT_PER_TRANSACTION {
+            return Err(anyhow!(
+                "Invalid message length: too many instructions: {} > {}",
+                num_instructions,
+                MAX_INSTRUCTION_COUNT_PER_TRANSACTION
+            ));
+        }
 
         let mut instructions = Vec::with_capacity(num_instructions as usize);
         for _ in 0..num_instructions {

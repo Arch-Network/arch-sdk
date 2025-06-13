@@ -105,20 +105,40 @@ impl RuntimeTransaction {
     }
 
     pub fn from_slice(data: &[u8]) -> Result<Self, RuntimeTransactionError> {
-        let mut size = 4;
-        let signatures_len = data[size] as usize;
-        size += 1;
-        let mut signatures = Vec::with_capacity(data[size] as usize);
+        let mut cursor: usize = 0;
+        let version_size = size_of::<u32>();
+        if data.len() < version_size {
+            return Err(RuntimeTransactionError::TryFromSliceError);
+        }
+        let version = u32::from_le_bytes(data[..version_size].try_into()?);
+        cursor += version_size;
+
+        if data.len() < cursor + size_of::<u8>() {
+            return Err(RuntimeTransactionError::TryFromSliceError);
+        }
+
+        let signatures_len = data[cursor] as usize;
+        cursor += size_of::<u8>();
+
+        let signature_size = 64;
+
+        let mut signatures = Vec::with_capacity(signatures_len);
 
         for _ in 0..signatures_len {
-            signatures.push(Signature::from_slice(&data[size..(size + 64)]));
-            size += 64;
+            if data.len() < cursor + signature_size {
+                return Err(RuntimeTransactionError::TryFromSliceError);
+            }
+            signatures.push(Signature::from_slice(
+                &data[cursor..(cursor + signature_size)],
+            ));
+            cursor += signature_size;
         }
-        let message = ArchMessage::deserialize(&data[size..])
+
+        let message = ArchMessage::deserialize(&data[cursor..])
             .map_err(|_| RuntimeTransactionError::TryFromSliceError)?;
 
         Ok(Self {
-            version: u32::from_le_bytes(data[..4].try_into()?),
+            version,
             signatures,
             message,
         })

@@ -2,11 +2,6 @@
 name = "apl-token"
 version = "0.5.2"
 edition = "2021"
-description = "A token program for the Arch blockchain, providing ERC20-like functionality including minting, transferring, and burning tokens with support for authority management and account freezing."
-license = "MIT"
-repository = "https://github.com/Arch-Network/arch-sdk"
-homepage = "https://arch.network"
-documentation = "https://docs.rs/apl-token"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
