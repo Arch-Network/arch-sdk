@@ -87,7 +87,7 @@ pub(crate) fn sol_log_compute_units() {
     sol_log("UNAVAILABLE");
 }
 
-pub(crate) fn sol_remaining_compute_units() -> u64 {
+pub(crate) fn get_remaining_compute_units() -> u64 {
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED
 }

@@ -407,6 +407,15 @@ pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<Ru
     }
 }
 
+pub fn get_remaining_compute_units() -> u64 {
+    #[cfg(target_os = "solana")]
+    unsafe {
+        crate::syscalls::get_remaining_compute_units()
+    }
+
+    #[cfg(not(target_os = "solana"))]
+    crate::program_stubs::get_remaining_compute_units()
+}
 /// Retrieves the network's X-only public key.
 ///
 /// This function fetches the X-only public key associated with the current network configuration.
@@ -415,7 +424,12 @@ pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<Ru
 /// * `[u8; 32]` - The 32-byte X-only public key
 pub fn get_network_xonly_pubkey() -> [u8; 32] {
     let mut buf = [0u8; 32];
+
+    #[cfg(target_os = "solana")]
     let _ = unsafe { crate::syscalls::arch_get_network_xonly_pubkey(buf.as_mut_ptr()) };
+
+    #[cfg(not(target_os = "solana"))]
+    crate::program_stubs::arch_get_network_xonly_pubkey(buf.as_mut_ptr());
     buf
 }
 
