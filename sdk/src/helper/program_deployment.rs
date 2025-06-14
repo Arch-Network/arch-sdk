@@ -4,7 +4,6 @@ use crate::build_and_sign_transaction;
 use crate::client::ArchError;
 use crate::client::ArchRpcClient;
 use crate::{
-    helper::utxo::BitcoinHelper,
     types::{RuntimeTransaction, Signature, RUNTIME_TX_SIZE_LIMIT},
     Status,
 };
@@ -14,7 +13,8 @@ use arch_program::bpf_loader::{LoaderState, BPF_LOADER_ID};
 use arch_program::instruction::InstructionError;
 use arch_program::loader_instruction;
 use arch_program::sanitized::ArchMessage;
-use bitcoin::{key::Keypair, Network};
+use bitcoin::key::Keypair;
+use bitcoin::Network;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 use tracing::debug;
@@ -59,43 +59,6 @@ impl From<std::io::Error> for ProgramDeployerError {
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/*                             PROGRAM DEPLOYMENT                             */
-/* -------------------------------------------------------------------------- */
-/// Configuration for program deployment
-#[derive(Debug, Clone)]
-pub struct DeploymentConfig {
-    /// URL of the Arch node
-    pub node_url: String,
-    /// Bitcoin network to use (Mainnet, Testnet, Regtest)
-    pub bitcoin_network: Network,
-    /// Bitcoin node endpoint URL
-    pub bitcoin_node_endpoint: String,
-    /// Bitcoin node username
-    pub bitcoin_node_username: String,
-    /// Bitcoin node password
-    pub bitcoin_node_password: String,
-}
-
-impl DeploymentConfig {
-    /// Create a new deployment configuration
-    pub fn new(
-        node_url: String,
-        bitcoin_network: Network,
-        bitcoin_node_endpoint: String,
-        bitcoin_node_username: String,
-        bitcoin_node_password: String,
-    ) -> Self {
-        Self {
-            node_url,
-            bitcoin_network,
-            bitcoin_node_endpoint,
-            bitcoin_node_username,
-            bitcoin_node_password,
-        }
-    }
-}
-
 pub fn get_state(data: &[u8]) -> Result<&LoaderState, InstructionError> {
     unsafe {
         let data = data
@@ -112,27 +75,16 @@ pub fn get_state(data: &[u8]) -> Result<&LoaderState, InstructionError> {
 
 /// Program deployment service
 pub struct ProgramDeployer {
-    config: DeploymentConfig,
     client: ArchRpcClient,
-    bitcoin_helper: BitcoinHelper,
+    network: Network,
 }
 
 impl ProgramDeployer {
     /// Create a new program deployer
-    pub fn new(config: DeploymentConfig) -> Self {
-        let client = ArchRpcClient::new(&config.node_url);
-        let bitcoin_helper = BitcoinHelper::new(
-            config.bitcoin_node_endpoint.clone(),
-            config.bitcoin_node_username.clone(),
-            config.bitcoin_node_password.clone(),
-            config.bitcoin_network,
-            config.node_url.clone(),
-        );
-
+    pub fn new(node_url: &str, network: Network) -> Self {
         Self {
-            config,
-            client,
-            bitcoin_helper,
+            client: ArchRpcClient::new(node_url),
+            network,
         }
     }
 
@@ -185,7 +137,7 @@ impl ProgramDeployer {
                     recent_blockhash,
                 ),
                 vec![authority_keypair.clone(), program_keypair.clone()],
-                self.config.bitcoin_network,
+                self.network,
             );
 
             let create_account_txid = self.client.send_transaction(create_account_tx)?;
@@ -239,7 +191,7 @@ impl ProgramDeployer {
                 recent_blockhash,
             ),
             vec![authority_keypair.clone()],
-            self.config.bitcoin_network,
+            self.network,
         );
 
         let executability_txid = self.client.send_transaction(executability_tx)?;
@@ -338,7 +290,7 @@ impl ProgramDeployer {
                     recent_blockhash,
                 ),
                 vec![authority_keypair.clone()],
-                self.config.bitcoin_network,
+                self.network,
             );
 
             let retract_txid = self.client.send_transaction(retract_tx)?;
@@ -366,7 +318,7 @@ impl ProgramDeployer {
                     recent_blockhash,
                 ),
                 vec![program_keypair.clone(), authority_keypair.clone()],
-                self.config.bitcoin_network,
+                self.network,
             );
 
             let truncate_txid = self.client.send_transaction(truncate_tx)?;
@@ -398,12 +350,8 @@ impl ProgramDeployer {
                 RuntimeTransaction {
                     version: 0,
                     signatures: vec![Signature(
-                        sign_message_bip322(
-                            &authority_keypair,
-                            &digest_slice,
-                            self.config.bitcoin_network,
-                        )
-                        .to_vec(),
+                        sign_message_bip322(&authority_keypair, &digest_slice, self.network)
+                            .to_vec(),
                     )],
                     message,
                 }

@@ -6,7 +6,7 @@ use arch_program::{
 };
 use arch_sdk::{
     build_and_sign_transaction, generate_new_keypair, AccountInfo, ArchRpcClient, BitcoinHelper,
-    DeploymentConfig, ProcessedTransaction, ProgramDeployer, RuntimeTransaction, Status,
+    ProcessedTransaction, ProgramDeployer, RuntimeTransaction, Status,
 };
 use bitcoin::{
     absolute::LockTime,
@@ -266,33 +266,15 @@ pub fn deploy_program(
     program_keypair: Keypair,
     authority_keypair: Keypair,
 ) -> Pubkey {
-    let deployer = ProgramDeployer::new(DeploymentConfig {
-        bitcoin_network: BITCOIN_NETWORK,
-        bitcoin_node_endpoint: BITCOIN_NODE_ENDPOINT.to_string(),
-        bitcoin_node_username: BITCOIN_NODE_USERNAME.to_string(),
-        bitcoin_node_password: BITCOIN_NODE_PASSWORD.to_string(),
-        node_url: NODE1_ADDRESS.to_string(),
-    });
+    let deployer = ProgramDeployer::new(NODE1_ADDRESS, BITCOIN_NETWORK);
 
     deployer
         .try_deploy_program(program_name, program_keypair, authority_keypair, &elf_path)
         .unwrap()
 }
 
-pub fn deploy_program_elf(
-    program_name: String,
-    elf_path: String,
-    program_keypair: Keypair,
-    authority_keypair: Keypair,
-) {
-    let config = DeploymentConfig {
-        bitcoin_network: BITCOIN_NETWORK,
-        bitcoin_node_endpoint: BITCOIN_NODE_ENDPOINT.to_string(),
-        bitcoin_node_username: BITCOIN_NODE_USERNAME.to_string(),
-        bitcoin_node_password: BITCOIN_NODE_PASSWORD.to_string(),
-        node_url: NODE1_ADDRESS.to_string(),
-    };
-    let deployer = ProgramDeployer::new(config.clone());
+pub fn deploy_program_elf(elf_path: String, program_keypair: Keypair, authority_keypair: Keypair) {
+    let deployer = ProgramDeployer::new(NODE1_ADDRESS, BITCOIN_NETWORK);
 
     let elf = fs::read(elf_path).expect("elf path should be available");
 
