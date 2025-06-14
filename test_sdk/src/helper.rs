@@ -38,7 +38,7 @@ pub fn prepare_fees() -> String {
         BITCOIN_NODE_PASSWORD.to_string(),
     );
     let rpc =
-        Client::new(BITCOIN_NODE_ENDPOINT, userpass).expect("rpc shouldn not fail to be initiated");
+        Client::new(BITCOIN_NODE_ENDPOINT, userpass).expect("rpc should not fail to be initiated");
 
     let caller = CallerInfo::with_secret_key_file(CALLER_FILE_PATH)
         .expect("getting caller info should not fail");

@@ -43,12 +43,12 @@ pub fn sign_message_bip322(
                     create_message_signature_taproot(&to_spend, &to_sign, private_key)
                 }
                 _ => {
-                    panic!("unsuported address");
+                    panic!("unsupported address");
                 }
             }
         }
         None => {
-            panic!("unsuported address");
+            panic!("unsupported address");
         }
     };
 
