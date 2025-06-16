@@ -5,8 +5,8 @@ use arch_program::{
     system_program::SYSTEM_PROGRAM_ID,
 };
 use arch_sdk::{
-    build_and_sign_transaction, generate_new_keypair, AccountInfo, ArchRpcClient, BitcoinHelper,
-    ProcessedTransaction, ProgramDeployer, RuntimeTransaction, Status,
+    build_and_sign_transaction, generate_new_keypair, AccountInfo, ArchRpcClient,
+    ProcessedTransaction, ProgramDeployer, RuntimeTransaction, Status, {BitcoinHelper, Config},
 };
 use bitcoin::{
     absolute::LockTime,
@@ -247,13 +247,15 @@ pub fn prepare_fees_with_extra_utxo(rune_txid: String, rune_vout: u32) -> String
 /// Used to send a utxo the taptweaked account address corresponding to the
 /// network's joint pubkey
 pub fn send_utxo(pubkey: Pubkey) -> (String, u32) {
-    let bitcoin_helper = BitcoinHelper::new(
-        BITCOIN_NODE_ENDPOINT.to_string(),
-        BITCOIN_NODE_USERNAME.to_string(),
-        BITCOIN_NODE_PASSWORD.to_string(),
-        BITCOIN_NETWORK,
-        NODE1_ADDRESS.to_string(),
-    );
+    let bitcoin_config = Config {
+        node_endpoint: BITCOIN_NODE_ENDPOINT.to_string(),
+        node_username: BITCOIN_NODE_USERNAME.to_string(),
+        node_password: BITCOIN_NODE_PASSWORD.to_string(),
+        network: BITCOIN_NETWORK,
+        arch_node_url: NODE1_ADDRESS.to_string(),
+    };
+
+    let bitcoin_helper = BitcoinHelper::new(&bitcoin_config);
 
     let (txid, vout) = bitcoin_helper.send_utxo(pubkey).unwrap();
 

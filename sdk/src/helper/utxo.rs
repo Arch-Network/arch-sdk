@@ -1,39 +1,55 @@
+use crate::arch_program::pubkey::Pubkey;
+use crate::client::ArchRpcClient;
 use bitcoin::{address::Address, Amount, Network};
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
-use crate::arch_program::pubkey::Pubkey;
-use crate::client::ArchRpcClient;
+#[derive(Clone)]
+pub struct Config {
+    pub node_endpoint: String,
+    pub node_username: String,
+    pub node_password: String,
+    pub network: Network,
+    pub arch_node_url: String,
+}
+impl Config {
+    pub fn localnet() -> Self {
+        Self {
+            node_endpoint: "http://127.0.0.1:18443/wallet/testwallet".to_string(),
+            node_username: "bitcoin".to_string(),
+            node_password: "bitcoinpass".to_string(),
+            network: Network::Regtest,
+            arch_node_url: "http://localhost:9002/".to_string(),
+        }
+    }
+    // TODO: Add devnet, testnet and mainnet configs
+}
 
 /// Helper struct for Bitcoin operations
+#[derive(Clone)]
 pub struct BitcoinHelper {
     /// Bitcoin network (Mainnet, Testnet, Regtest)
     network: Network,
     /// Bitcoin RPC client
-    rpc_client: Client,
+    rpc_client: Arc<Client>,
     /// Arch RPC client
     arch_client: ArchRpcClient,
 }
 
 impl BitcoinHelper {
     /// Create a new BitcoinHelper
-    pub fn new(
-        node_endpoint: String,
-        node_username: String,
-        node_password: String,
-        network: Network,
-        arch_node_url: String,
-    ) -> Self {
-        let userpass = Auth::UserPass(node_username.clone(), node_password.clone());
-        let rpc_client =
-            Client::new(&node_endpoint, userpass).expect("Failed to initialize Bitcoin RPC client");
-
-        let arch_client = ArchRpcClient::new(&arch_node_url);
-
+    pub fn new(config: &Config) -> Self {
+        let userpass = Auth::UserPass(config.node_username.clone(), config.node_password.clone());
+        let rpc_client = Arc::new(
+            Client::new(&config.node_endpoint, userpass)
+                .expect("Failed to initialize Bitcoin RPC client"),
+        );
+        let arch_client = ArchRpcClient::new(&config.arch_node_url);
         Self {
-            network,
+            network: config.network,
             rpc_client,
             arch_client,
         }
