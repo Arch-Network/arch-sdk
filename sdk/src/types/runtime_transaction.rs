@@ -22,16 +22,16 @@ pub enum RuntimeTransactionError {
     #[error("runtime transaction size exceeds limit: {0} > {1}")]
     RuntimeTransactionSizeExceedsLimit(usize, usize),
 
-    #[error("try from slice error")]
-    TryFromSliceError,
+    #[error("failed to deserialize runtime transaction : {0}")]
+    TryFromSliceError(String),
 
     #[error("sanitize error: {0}")]
     SanitizeError(#[from] SanitizeError),
 }
 
 impl From<TryFromSliceError> for RuntimeTransactionError {
-    fn from(_e: TryFromSliceError) -> Self {
-        RuntimeTransactionError::TryFromSliceError
+    fn from(e: TryFromSliceError) -> Self {
+        RuntimeTransactionError::TryFromSliceError(e.to_string())
     }
 }
 
@@ -49,6 +49,7 @@ impl From<TryFromSliceError> for RuntimeTransactionError {
     Encode,
     Decode,
 )]
+
 pub struct RuntimeTransaction {
     pub version: u32,
     pub signatures: Vec<Signature>,
@@ -108,13 +109,17 @@ impl RuntimeTransaction {
         let mut cursor: usize = 0;
         let version_size = size_of::<u32>();
         if data.len() < version_size {
-            return Err(RuntimeTransactionError::TryFromSliceError);
+            return Err(RuntimeTransactionError::TryFromSliceError(
+                "Insufficient bytes for version".to_string(),
+            ));
         }
         let version = u32::from_le_bytes(data[..version_size].try_into()?);
         cursor += version_size;
 
         if data.len() < cursor + size_of::<u8>() {
-            return Err(RuntimeTransactionError::TryFromSliceError);
+            return Err(RuntimeTransactionError::TryFromSliceError(
+                "Insufficient bytes for signatures length".to_string(),
+            ));
         }
 
         let signatures_len = data[cursor] as usize;
@@ -126,7 +131,9 @@ impl RuntimeTransaction {
 
         for _ in 0..signatures_len {
             if data.len() < cursor + signature_size {
-                return Err(RuntimeTransactionError::TryFromSliceError);
+                return Err(RuntimeTransactionError::TryFromSliceError(
+                    "Insufficient bytes for signatures".to_string(),
+                ));
             }
             signatures.push(Signature::from_slice(
                 &data[cursor..(cursor + signature_size)],
@@ -135,7 +142,7 @@ impl RuntimeTransaction {
         }
 
         let message = ArchMessage::deserialize(&data[cursor..])
-            .map_err(|_| RuntimeTransactionError::TryFromSliceError)?;
+            .map_err(|e| RuntimeTransactionError::TryFromSliceError(e.to_string()))?;
 
         Ok(Self {
             version,

@@ -328,6 +328,12 @@ impl ArchMessage {
 
         let mut account_keys = Vec::with_capacity(num_keys as usize);
         for _ in 0..num_keys {
+            if bytes.len() < pos + 32 {
+                return Err(anyhow!(
+                    "Invalid message length: insufficient bytes for {} account keys",
+                    num_keys
+                ));
+            }
             account_keys.push(Pubkey::from_slice(&bytes[pos..pos + 32]));
             pos += 32;
         }
