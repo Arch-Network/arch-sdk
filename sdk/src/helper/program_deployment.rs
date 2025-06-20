@@ -107,6 +107,9 @@ impl ProgramDeployer {
             Pubkey::from_slice(&authority_keypair.x_only_public_key().0.serialize());
 
         if let Ok(account_info_result) = self.client.read_account_info(program_pubkey) {
+            println!(
+                "\x1b[32m Step 1/3 Successful :\x1b[0m Account already exists, skipping account creation\x1b[0m"
+            );
             if account_info_result.data.len() < LoaderState::program_data_offset() {
                 println!("\x1b[33m Account is not initialized ! Redeploying \x1b[0m");
             } else if account_info_result.data[LoaderState::program_data_offset()..] == elf {
@@ -156,7 +159,7 @@ impl ProgramDeployer {
             }
 
             println!(
-                "\x1b[32m Step 2/4 Successful :\x1b[0m Program account creation transaction successfully processed ! Tx Id : {}.\x1b[0m",
+                "\x1b[32m Step 1/3 Successful :\x1b[0m Program account creation transaction successfully processed ! Tx Id : {}.\x1b[0m",
                 create_account_txid
             );
         }
@@ -164,12 +167,6 @@ impl ProgramDeployer {
         self.deploy_program_elf(program_keypair.clone(), authority_keypair.clone(), &elf)?;
 
         let program_info_after_deployment = self.client.read_account_info(program_pubkey)?;
-
-        println!(
-            "program_info_after_deployment length {:?} elf length {:?}",
-            program_info_after_deployment.data.len(),
-            elf.len()
-        );
 
         assert!(program_info_after_deployment.data[LoaderState::program_data_offset()..] == elf);
 
@@ -181,32 +178,39 @@ impl ProgramDeployer {
             program_info_after_deployment.is_executable
         );
 
-        println!("\x1b[32m Step 3/4 Successful :\x1b[0m Sent ELF file as transactions, and verified program account's content against local ELF file!");
+        println!("\x1b[32m Step 2/3 Successful :\x1b[0m Sent ELF file as transactions, and verified program account's content against local ELF file!");
 
-        let recent_blockhash = self.client.get_best_block_hash()?;
-        let executability_tx = build_and_sign_transaction(
-            ArchMessage::new(
-                &[loader_instruction::deploy(program_pubkey, authority_pubkey)],
-                Some(authority_pubkey),
-                recent_blockhash,
-            ),
-            vec![authority_keypair.clone()],
-            self.network,
-        );
+        if program_info_after_deployment.is_executable {
+            println!(
+                "\x1b[32m Step 3/3 Successful :\x1b[0m Program account is already executable !"
+            );
+        } else {
+            let recent_blockhash = self.client.get_best_block_hash()?;
+            let executability_tx = build_and_sign_transaction(
+                ArchMessage::new(
+                    &[loader_instruction::deploy(program_pubkey, authority_pubkey)],
+                    Some(authority_pubkey),
+                    recent_blockhash,
+                ),
+                vec![authority_keypair.clone()],
+                self.network,
+            );
 
-        let executability_txid = self.client.send_transaction(executability_tx)?;
-        let tx = self
-            .client
-            .wait_for_processed_transaction(&executability_txid)?;
+            let executability_txid = self.client.send_transaction(executability_tx)?;
+            let tx = self
+                .client
+                .wait_for_processed_transaction(&executability_txid)?;
 
-        match tx.status {
-            Status::Failed(e) => {
-                return Err(ProgramDeployerError::TransactionError(format!(
-                    "Program account creation transaction failed: {}",
-                    e.to_string()
-                )));
+            match tx.status {
+                Status::Failed(e) => {
+                    return Err(ProgramDeployerError::TransactionError(format!(
+                        "Program account creation transaction failed: {}",
+                        e.to_string()
+                    )));
+                }
+                _ => {}
             }
-            _ => {}
+            println!("\x1b[32m Step 3/3 Successful :\x1b[0m Made program account executable!");
         }
 
         let program_info_after_making_executable = self.client.read_account_info(program_pubkey)?;
@@ -221,8 +225,6 @@ impl ProgramDeployer {
         );
 
         assert!(program_info_after_making_executable.is_executable);
-
-        println!("\x1b[32m Step 4/4 Successful :\x1b[0m Made program account executable!");
 
         print_title(
             &format!(
@@ -271,12 +273,6 @@ impl ProgramDeployer {
             Pubkey::from_slice(&authority_keypair.x_only_public_key().0.serialize());
 
         let account_info = self.client.read_account_info(program_pubkey)?;
-        println!(
-            "account_info is_executable {:?}",
-            account_info.is_executable
-        );
-
-        println!("account_info data {:?}", get_state(&account_info.data));
 
         if account_info.is_executable {
             let recent_blockhash = self.client.get_best_block_hash()?;
@@ -294,15 +290,8 @@ impl ProgramDeployer {
             );
 
             let retract_txid = self.client.send_transaction(retract_tx)?;
-            let processed_tx = self.client.wait_for_processed_transaction(&retract_txid)?;
-
-            println!("processed_tx {:?}", processed_tx);
+            let _processed_tx = self.client.wait_for_processed_transaction(&retract_txid)?;
         }
-
-        println!(
-            "account_info.data.len() > LoaderState::program_data_offset() + elf.len() {:?}",
-            account_info.data.len() > LoaderState::program_data_offset() + elf.len()
-        );
 
         if account_info.data.len() != LoaderState::program_data_offset() + elf.len() {
             println!("Truncating program account to size of ELF file");
@@ -322,9 +311,7 @@ impl ProgramDeployer {
             );
 
             let truncate_txid = self.client.send_transaction(truncate_tx)?;
-            let processed_tx = self.client.wait_for_processed_transaction(&truncate_txid)?;
-
-            println!("processed_tx {:?}", processed_tx);
+            let _processed_tx = self.client.wait_for_processed_transaction(&truncate_txid)?;
         }
 
         let txs = elf
@@ -362,7 +349,7 @@ impl ProgramDeployer {
         pb.set_style(
             ProgressStyle::default_bar()
                 .template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+                    "{spinner:.green} [{elapsed_precise}] Sending ELF file as transactions [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
                 )
                 .expect("Failed to set progress bar style")
                 .progress_chars("#>-"),
@@ -373,11 +360,7 @@ impl ProgramDeployer {
         let tx_ids = self.client.send_transactions(txs)?;
 
         for tx_id in tx_ids.iter() {
-            let processed_tx = self.client.wait_for_processed_transaction(tx_id)?;
-            println!("processed_tx status {:?}", processed_tx.status);
-            for log in processed_tx.logs {
-                println!("log {:?}", log);
-            }
+            let _processed_tx = self.client.wait_for_processed_transaction(tx_id)?;
             pb.inc(1);
         }
 
