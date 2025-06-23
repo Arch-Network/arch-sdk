@@ -1,6 +1,6 @@
 //! A trait for sanitizing values and members of over the wire messages.
 
-use {core::fmt, std::error::Error};
+use {crate::pubkey::Pubkey, bitcoin::hex::DisplayHex, core::fmt, std::error::Error};
 
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub enum SanitizeError {
@@ -10,6 +10,7 @@ pub enum SanitizeError {
     InvalidVersion,
     SignatureCountMismatch { expected: usize, actual: usize },
     InvalidRecentBlockhash,
+    DuplicateAccount,
 }
 
 impl Error for SanitizeError {}
@@ -29,6 +30,7 @@ impl fmt::Display for SanitizeError {
                 )
             }
             SanitizeError::InvalidRecentBlockhash => f.write_str("invalid recent blockhash"),
+            SanitizeError::DuplicateAccount => f.write_str("duplicate accounts detected"),
         }
     }
 }

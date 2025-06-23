@@ -134,6 +134,8 @@ impl Sanitize for ArchMessage {
         }
 
         for ci in &self.instructions {
+            let mut seen_accts = HashSet::new();
+            let mut unsanitized_accts = Vec::new();
             if ci.program_id_index as usize >= self.account_keys.len() {
                 return Err(SanitizeError::IndexOutOfBounds);
             }
@@ -145,6 +147,12 @@ impl Sanitize for ArchMessage {
                 if *ai as usize >= self.account_keys.len() {
                     return Err(SanitizeError::IndexOutOfBounds);
                 }
+                // safe to unwrap at this point as we checked for bounds
+                let acct_key = self.get_account_key(*ai as usize).unwrap();
+                unsanitized_accts.push(acct_key);
+            }
+            if unsanitized_accts.iter().any(|x| !seen_accts.insert(x)) {
+                return Err(SanitizeError::DuplicateAccount);
             }
         }
         Ok(())
@@ -1105,5 +1113,62 @@ mod sanitize_tests {
         };
 
         assert!(message.sanitize().is_ok());
+    }
+
+    #[test]
+    fn test_duplicate_account_in_instr() {
+        let message = ArchMessage {
+            header: MessageHeader {
+                num_required_signatures: 2,
+                num_readonly_signed_accounts: 1,
+                num_readonly_unsigned_accounts: 1,
+            },
+            account_keys: vec![
+                Pubkey::new_unique(), // fee-payer (writable, signer)
+                Pubkey::new_unique(), // readonly signer
+                Pubkey::new_unique(), // program
+                Pubkey::new_unique(), // writable non-signer
+                Pubkey::new_unique(), // readonly non-signer
+            ],
+            recent_blockhash: hex::encode([0; 32]),
+            instructions: vec![SanitizedInstruction {
+                program_id_index: 2,
+                accounts: vec![0, 1, 3, 3],
+                data: vec![1, 2, 3],
+            }],
+        };
+        assert_eq!(
+            message.sanitize().unwrap_err(),
+            SanitizeError::DuplicateAccount
+        );
+    }
+
+    #[test]
+    fn test_duplicate_account_in_keys_list() {
+        let malicious = Pubkey::new_unique();
+        let message = ArchMessage {
+            header: MessageHeader {
+                num_required_signatures: 2,
+                num_readonly_signed_accounts: 1,
+                num_readonly_unsigned_accounts: 1,
+            },
+            account_keys: vec![
+                Pubkey::new_unique(), // fee-payer (writable, signer)
+                Pubkey::new_unique(), // readonly signer
+                Pubkey::new_unique(), // program
+                malicious,
+                malicious,
+            ],
+            recent_blockhash: hex::encode([0; 32]),
+            instructions: vec![SanitizedInstruction {
+                program_id_index: 2,
+                accounts: vec![0, 1, 3, 4],
+                data: vec![1, 2, 3],
+            }],
+        };
+        assert_eq!(
+            message.sanitize().unwrap_err(),
+            SanitizeError::DuplicateAccount
+        );
     }
 }
