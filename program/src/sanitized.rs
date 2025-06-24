@@ -395,6 +395,21 @@ impl ArchMessage {
         let first_hash = digest(serialized_message);
         digest(first_hash.as_bytes()).as_bytes().to_vec()
     }
+
+    /// Program instructions iterator which includes each instruction's program
+    /// id.
+    pub fn program_instructions_iter(
+        &self,
+    ) -> impl Iterator<Item = (&Pubkey, &SanitizedInstruction)> {
+        self.instructions.iter().map(|ix| {
+            (
+                self.account_keys
+                    .get(usize::from(ix.program_id_index))
+                    .expect("program id index is sanitized"),
+                ix,
+            )
+        })
+    }
 }
 
 fn position(keys: &[Pubkey], key: &Pubkey) -> u8 {

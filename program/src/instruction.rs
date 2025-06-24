@@ -125,6 +125,19 @@ impl Instruction {
             data: bincode::serialize(&data).unwrap(),
         }
     }
+
+    pub fn new_with_borsh<T: borsh::BorshSerialize>(
+        program_id: Pubkey,
+        data: &T,
+        accounts: Vec<AccountMeta>,
+    ) -> Self {
+        let data = borsh::to_vec(data).unwrap();
+        Self {
+            program_id,
+            accounts,
+            data,
+        }
+    }
 }
 
 /// Errors that can be returned by programs when processing instructions.

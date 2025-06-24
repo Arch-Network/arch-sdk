@@ -37,6 +37,8 @@ pub mod bpf_loader;
 /// Time-related functionality for on-chain programs
 pub mod clock;
 pub mod compiled_keys;
+/// Compute budget instruction definitions and processing
+pub mod compute_budget;
 /// Utilities for debugging account data
 pub mod debug_account_data;
 /// Error handling for decoding operations
