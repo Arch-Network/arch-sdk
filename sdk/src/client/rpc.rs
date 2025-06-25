@@ -798,7 +798,6 @@ mod tests {
             block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 2,
-            merkle_root: "merkle_root_hash".to_string(),
         };
 
         let mock = mock_rpc_response_with_params(
@@ -1062,7 +1061,6 @@ mod tests {
             block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 0,
-            merkle_root: "merkle_root_hash".to_string(),
         };
 
         // Mock response with the correct parameters (block_hash and BlockTransactionFilter::Full)
@@ -1092,7 +1090,6 @@ mod tests {
             returned_block.bitcoin_block_height,
             full_block.bitcoin_block_height
         );
-        assert_eq!(returned_block.merkle_root, full_block.merkle_root);
 
         mock.assert();
     }
@@ -1111,7 +1108,6 @@ mod tests {
             block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 2,
-            merkle_root: "merkle_root_hash".to_string(),
         };
 
         let mock = mock_rpc_response_with_params(
@@ -1149,7 +1145,6 @@ mod tests {
             block_height,
             bitcoin_block_height: 100,
             transaction_count: 0,
-            merkle_root: "merkle_root_hash".to_string(),
         };
 
         // Mock response with the correct parameters (block_height and BlockTransactionFilter::Full)
@@ -1179,7 +1174,6 @@ mod tests {
             returned_block.bitcoin_block_height,
             full_block.bitcoin_block_height
         );
-        assert_eq!(returned_block.merkle_root, full_block.merkle_root);
 
         mock.assert();
     }

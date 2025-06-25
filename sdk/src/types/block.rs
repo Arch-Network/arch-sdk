@@ -42,7 +42,6 @@ pub struct Block {
     pub block_height: u64,
     pub bitcoin_block_height: u64,
     pub transaction_count: u64,
-    pub merkle_root: String,
 }
 
 impl Block {
@@ -69,10 +68,6 @@ impl Block {
 
         // Serialize transaction_count
         serialized.extend_from_slice(&self.transaction_count.to_le_bytes());
-
-        // Serialize merkle_root
-        serialized.extend_from_slice(self.merkle_root.as_bytes());
-        serialized.push(0); // Null terminator
 
         // Serialize transactions
         serialized.extend_from_slice(&(self.transactions.len() as u64).to_le_bytes());
@@ -102,9 +97,6 @@ impl Block {
         // Deserialize transaction_count
         let transaction_count = read_u64(data, &mut cursor)?;
 
-        // Deserialize merkle_root
-        let merkle_root = read_string(data, &mut cursor)?;
-
         // Deserialize transactions
         let transactions_len = read_u64(data, &mut cursor)?;
 
@@ -123,7 +115,6 @@ impl Block {
             block_height,
             bitcoin_block_height,
             transaction_count,
-            merkle_root,
         })
     }
 }
@@ -178,7 +169,6 @@ pub struct FullBlock {
     pub block_height: u64,
     pub bitcoin_block_height: u64,
     pub transaction_count: u64,
-    pub merkle_root: String,
 }
 
 impl From<(Block, Vec<ProcessedTransaction>)> for FullBlock {
@@ -190,7 +180,6 @@ impl From<(Block, Vec<ProcessedTransaction>)> for FullBlock {
             block_height: value.0.block_height,
             bitcoin_block_height: value.0.bitcoin_block_height,
             transaction_count: value.0.transaction_count,
-            merkle_root: value.0.merkle_root,
         }
     }
 }
@@ -204,7 +193,6 @@ impl FullBlock {
             timestamp: self.timestamp,
             bitcoin_block_height: self.bitcoin_block_height,
             transaction_count: self.transaction_count,
-            merkle_root: self.merkle_root.clone(),
             block_height: self.block_height,
         };
         block.hash()
@@ -218,7 +206,6 @@ impl FullBlock {
             timestamp: self.timestamp,
             bitcoin_block_height: self.bitcoin_block_height,
             transaction_count: self.transaction_count,
-            merkle_root: self.merkle_root.clone(),
             block_height: self.block_height,
         };
         block.to_vec()
@@ -233,7 +220,6 @@ impl From<FullBlock> for Block {
             timestamp: value.timestamp,
             bitcoin_block_height: value.bitcoin_block_height,
             transaction_count: value.transaction_count,
-            merkle_root: value.merkle_root,
             block_height: value.block_height,
         }
     }
@@ -254,7 +240,6 @@ mod tests {
             block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 2,
-            merkle_root: "merkle_root_hash".to_string(),
         };
 
         let serialized_data = original_block.to_vec();
@@ -270,7 +255,6 @@ mod tests {
             original_block.transaction_count,
             deserialized_block.transaction_count
         );
-        assert_eq!(original_block.merkle_root, deserialized_block.merkle_root);
     }
 
     #[test]
@@ -282,7 +266,6 @@ mod tests {
             block_height: 100,
             bitcoin_block_height: 100,
             transaction_count: 2,
-            merkle_root: "merkle_root_hash".to_string(),
         };
 
         let hash = block.hash();
