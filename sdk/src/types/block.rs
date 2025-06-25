@@ -1,8 +1,11 @@
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 
 use super::ProcessedTransaction;
+pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 1024;
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq)]
 pub enum BlockParseError {
@@ -14,6 +17,8 @@ pub enum BlockParseError {
     InvalidU64,
     #[error("Invalid u128")]
     InvalidU128,
+    #[error("Invalid transactions length")]
+    InvalidTransactionsLength,
 }
 
 #[derive(
@@ -28,6 +33,8 @@ pub enum BlockParseError {
     Decode,
     Eq,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+
 pub struct Block {
     pub transactions: Vec<String>,
     pub previous_block_hash: String,
@@ -100,6 +107,10 @@ impl Block {
 
         // Deserialize transactions
         let transactions_len = read_u64(data, &mut cursor)?;
+
+        if transactions_len > MAX_TRANSACTIONS_PER_BLOCK as u64 {
+            return Err(BlockParseError::InvalidTransactionsLength);
+        }
         let mut transactions = Vec::with_capacity(transactions_len as usize);
         for _ in 0..transactions_len {
             transactions.push(read_string(data, &mut cursor)?);

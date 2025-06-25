@@ -7,6 +7,8 @@ use crate::pubkey::Pubkey;
 
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
@@ -26,6 +28,7 @@ use sha256::digest;
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct Message {
     /// List of public keys that have signed this message.
     pub signers: Vec<Pubkey>,

@@ -1,8 +1,12 @@
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 
 use super::AccountInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+
 pub enum AccountFilter {
     DataSize(usize),
     DataContent { offset: usize, bytes: Vec<u8> },

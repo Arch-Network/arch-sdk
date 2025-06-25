@@ -7,6 +7,8 @@ use arch_program::sanitize::{Sanitize, SanitizeError};
 use arch_program::sanitized::ArchMessage;
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
@@ -27,6 +29,9 @@ pub enum RuntimeTransactionError {
 
     #[error("sanitize error: {0}")]
     SanitizeError(#[from] SanitizeError),
+
+    #[error("invalid recent blockhash")]
+    InvalidRecentBlockhash,
 }
 
 impl From<TryFromSliceError> for RuntimeTransactionError {
@@ -49,6 +54,7 @@ impl From<TryFromSliceError> for RuntimeTransactionError {
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 
 pub struct RuntimeTransaction {
     pub version: u32,

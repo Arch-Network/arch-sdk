@@ -3,6 +3,8 @@ use crate::{compiled_keys::CompiledKeys, instruction::Instruction, pubkey::Pubke
 use anyhow::{anyhow, Result};
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 use std::collections::HashSet;
@@ -99,6 +101,8 @@ impl SanitizedMessage {
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+
 pub struct ArchMessage {
     /// Header containing metadata about the message
     pub header: MessageHeader,
@@ -450,6 +454,8 @@ fn compile_instructions(ixs: &[Instruction], keys: &[Pubkey]) -> Vec<SanitizedIn
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+
 pub struct SanitizedInstruction {
     /// The public key of the program that will process this instruction
     pub program_id_index: u8,
@@ -475,6 +481,8 @@ pub struct SanitizedInstruction {
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+
 pub struct MessageHeader {
     /// The number of signatures required for this message to be considered
     /// valid

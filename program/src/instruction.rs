@@ -3,6 +3,8 @@
 /// containing the program to call, accounts to interact with, and instruction data.
 use std::mem::size_of;
 
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use thiserror::Error;
 
 use crate::program_error::*;
@@ -35,6 +37,7 @@ use sha256::digest;
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct Instruction {
     /// Program ID that executes this instruction
     pub program_id: Pubkey,

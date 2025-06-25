@@ -8,6 +8,8 @@
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytemuck::{Pod, Zeroable};
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 
 /// Number of bytes in a pubkey
@@ -38,6 +40,8 @@ pub const PUBKEY_BYTES: usize = 32;
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+
 pub struct Pubkey(pub [u8; 32]);
 
 impl Pubkey {

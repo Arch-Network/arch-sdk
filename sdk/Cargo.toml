@@ -36,7 +36,13 @@ tokio-tungstenite = "0.26.1"
 tokio = { version = "1.38.0", features = ["full", "rt-multi-thread"] }
 futures = { version = "0.3", default-features = false }
 rand = "0.8.5"
+
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"], optional = true }
 uuid = { version = "1.10", features = ["v4"] }
 
 [dev-dependencies]
 mockito = "1.2"
+
+[features]
+default = []
+fuzzing = ["libfuzzer-sys"]

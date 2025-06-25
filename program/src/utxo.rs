@@ -5,6 +5,9 @@
 //! which combines a transaction ID (txid) and output index (vout) to uniquely identify
 //! a specific Bitcoin UTXO.
 
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
+
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -15,6 +18,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 /// - First 32 bytes: transaction ID (txid)
 /// - Last 4 bytes: output index (vout) in little-endian format
 #[derive(Clone, Debug, PartialEq, Hash, Eq, Encode, Decode)]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[repr(C)]
 pub struct UtxoMeta([u8; 36]);
 

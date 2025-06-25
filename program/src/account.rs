@@ -3,6 +3,8 @@ use crate::{msg, pubkey::Pubkey, utxo::UtxoMeta};
 
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 
 pub const MIN_ACCOUNT_LAMPORTS: u64 = 1024;
@@ -39,6 +41,7 @@ pub struct AccountInfo<'a> {
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[repr(C)]
 pub struct AccountMeta {
     pub pubkey: Pubkey,

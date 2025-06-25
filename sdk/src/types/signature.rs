@@ -1,5 +1,7 @@
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -14,6 +16,8 @@ use serde::{Deserialize, Serialize};
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
+
 pub struct Signature(pub Vec<u8>);
 
 impl Signature {
