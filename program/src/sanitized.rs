@@ -116,6 +116,14 @@ pub struct ArchMessage {
 
 impl Sanitize for ArchMessage {
     fn sanitize(&self) -> Result<(), SanitizeError> {
+        // Check for duplicate account keys
+        let mut unique_keys = HashSet::new();
+        for key in &self.account_keys {
+            if !unique_keys.insert(key) {
+                return Err(SanitizeError::DuplicateAccount);
+            }
+        }
+
         // signing area and read-only non-signing area should not overlap
         if self.header.num_required_signatures as usize
             + self.header.num_readonly_unsigned_accounts as usize
@@ -138,8 +146,6 @@ impl Sanitize for ArchMessage {
         }
 
         for ci in &self.instructions {
-            let mut seen_accts = HashSet::new();
-            let mut unsanitized_accts = Vec::new();
             if ci.program_id_index as usize >= self.account_keys.len() {
                 return Err(SanitizeError::IndexOutOfBounds);
             }
@@ -151,12 +157,6 @@ impl Sanitize for ArchMessage {
                 if *ai as usize >= self.account_keys.len() {
                     return Err(SanitizeError::IndexOutOfBounds);
                 }
-                // safe to unwrap at this point as we checked for bounds
-                let acct_key = self.get_account_key(*ai as usize).unwrap();
-                unsanitized_accts.push(acct_key);
-            }
-            if unsanitized_accts.iter().any(|x| !seen_accts.insert(x)) {
-                return Err(SanitizeError::DuplicateAccount);
             }
         }
         Ok(())
@@ -1160,10 +1160,8 @@ mod sanitize_tests {
                 data: vec![1, 2, 3],
             }],
         };
-        assert_eq!(
-            message.sanitize().unwrap_err(),
-            SanitizeError::DuplicateAccount
-        );
+        // Duplicate index are allowed in instructions
+        assert!(message.sanitize().is_ok());
     }
 
     #[test]
