@@ -98,6 +98,7 @@ impl SanitizedMessage {
     BorshSerialize,
     BorshDeserialize,
     Default,
+    Hash,
     Encode,
     Decode,
 )]
@@ -451,6 +452,7 @@ fn compile_instructions(ixs: &[Instruction], keys: &[Pubkey]) -> Vec<SanitizedIn
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    Hash,
     Encode,
     Decode,
 )]
@@ -478,6 +480,7 @@ pub struct SanitizedInstruction {
     BorshSerialize,
     BorshDeserialize,
     Default,
+    Hash,
     Encode,
     Decode,
 )]

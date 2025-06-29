@@ -53,6 +53,7 @@ impl From<TryFromSliceError> for RuntimeTransactionError {
     BorshDeserialize,
     Encode,
     Decode,
+    Hash,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 

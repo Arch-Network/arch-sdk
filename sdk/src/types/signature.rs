@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    Hash,
     Encode,
     Decode,
 )]
