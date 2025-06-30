@@ -342,7 +342,8 @@ impl ProgramDeployer {
                     version: 0,
                     signatures: vec![Signature(
                         sign_message_bip322(&authority_keypair, &digest_slice, self.network)
-                            .to_vec(),
+                            .try_into()
+                            .expect("sign_message_bip322 should return exactly 64 bytes"),
                     )],
                     message,
                 }
@@ -396,7 +397,7 @@ pub fn extend_bytes_max_len() -> usize {
     RUNTIME_TX_SIZE_LIMIT
         - RuntimeTransaction {
             version: 0,
-            signatures: vec![Signature([0_u8; 64].to_vec())],
+            signatures: vec![Signature([0_u8; 64])],
             message,
         }
         .serialize()

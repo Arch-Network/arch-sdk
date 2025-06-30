@@ -149,7 +149,7 @@ impl ArchRpcClient {
                 serde_json::from_value(result).expect("Unable to decode create_account result");
 
             let message_hash = runtime_tx.message.hash();
-            let signature = crate::Signature::from_slice(&sign_message_bip322(
+            let signature = crate::Signature::from(sign_message_bip322(
                 &keypair,
                 &message_hash,
                 bitcoin_network,

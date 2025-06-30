@@ -107,7 +107,7 @@ impl RuntimeTransaction {
         serilized.extend(self.version.to_le_bytes());
         serilized.push(self.signatures.len() as u8);
         for signature in self.signatures.iter() {
-            serilized.extend(&signature.serialize());
+            serilized.extend(&signature.0);
         }
         serilized.extend(self.message.serialize());
 
@@ -144,9 +144,15 @@ impl RuntimeTransaction {
                     "Insufficient bytes for signatures".to_string(),
                 ));
             }
-            signatures.push(Signature::from_slice(
-                &data[cursor..(cursor + signature_size)],
-            ));
+            let sig_array: [u8; 64] =
+                data[cursor..(cursor + signature_size)]
+                    .try_into()
+                    .map_err(|_| {
+                        RuntimeTransactionError::TryFromSliceError(
+                            "Signature must be exactly 64 bytes".to_string(),
+                        )
+                    })?;
+            signatures.push(Signature::from(sig_array));
             cursor += signature_size;
         }
 
@@ -195,7 +201,7 @@ mod tests {
     ) -> RuntimeTransaction {
         RuntimeTransaction {
             version,
-            signatures: vec![Signature::from_slice(&[1; 64]); num_signatures],
+            signatures: vec![Signature::from([1; 64]); num_signatures],
             message: ArchMessage {
                 header: MessageHeader {
                     num_required_signatures: 2,
