@@ -45,6 +45,8 @@ pub mod debug_account_data;
 pub mod decode_error;
 /// Program entrypoint definitions and processing
 pub mod entrypoint;
+/// Hash type for 32-byte cryptographic hashes
+pub mod hash;
 /// Helper functions for common operations
 pub mod helper;
 /// Bitcoin transaction input signing utilities

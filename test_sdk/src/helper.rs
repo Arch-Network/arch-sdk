@@ -1,8 +1,8 @@
 use std::{fs, str::FromStr};
 
 use arch_program::{
-    account::MIN_ACCOUNT_LAMPORTS, pubkey::Pubkey, sanitized::ArchMessage, system_instruction,
-    system_program::SYSTEM_PROGRAM_ID,
+    account::MIN_ACCOUNT_LAMPORTS, hash::Hash, pubkey::Pubkey, sanitized::ArchMessage,
+    system_instruction, system_program::SYSTEM_PROGRAM_ID,
 };
 use arch_sdk::{
     build_and_sign_transaction, generate_new_keypair, AccountInfo, ArchRpcClient,
@@ -364,7 +364,7 @@ pub fn assign_ownership_to_program(
     program_pubkey: Pubkey,
     account_to_transfer_pubkey: Pubkey,
     current_owner_keypair: Keypair,
-) -> String {
+) -> Hash {
     let arch_rpc_client = ArchRpcClient::new(&NODE1_ADDRESS.to_string());
 
     let assign_instruction =

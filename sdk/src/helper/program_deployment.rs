@@ -10,6 +10,8 @@ use crate::{
 use anyhow::Result;
 use arch_program::account::MIN_ACCOUNT_LAMPORTS;
 use arch_program::bpf_loader::{LoaderState, BPF_LOADER_ID};
+use arch_program::hash::Hash;
+use arch_program::hash::HashError;
 use arch_program::instruction::InstructionError;
 use arch_program::loader_instruction;
 use arch_program::sanitized::ArchMessage;
@@ -51,6 +53,8 @@ pub enum ProgramDeployerError {
     /// Generic error that doesn't fit other categories
     #[error("Error: {0}")]
     Other(String),
+    #[error("Hash error: {0}")]
+    HashError(#[from] HashError),
 }
 
 impl From<std::io::Error> for ProgramDeployerError {
@@ -386,7 +390,7 @@ pub fn extend_bytes_max_len() -> usize {
             vec![0_u8; 256],
         )],
         None,
-        hex::encode([0; 32]),
+        Hash::from([0; 32]),
     );
 
     RUNTIME_TX_SIZE_LIMIT

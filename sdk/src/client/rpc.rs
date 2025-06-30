@@ -3,6 +3,7 @@ use crate::client::error::{ArchError, Result};
 use crate::{
     sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, FullBlock, NOT_FOUND_CODE,
 };
+use arch_program::hash::Hash;
 use bitcoin::key::Keypair;
 use bitcoin::Network;
 use serde::{de::DeserializeOwned, Serialize};
@@ -124,7 +125,7 @@ impl ArchRpcClient {
             .ok_or(ArchError::RpcRequestFailed(
                 "request_airdrop failed".to_string(),
             ))?;
-        let txid = result.as_str().unwrap();
+        let txid = Hash::from_str(result.as_str().unwrap()).unwrap();
         let processed_tx = self.wait_for_processed_transaction(&txid).unwrap();
         Ok(processed_tx)
     }
@@ -169,13 +170,13 @@ impl ArchRpcClient {
     }
 
     /// Get a processed transaction by ID
-    pub fn get_processed_transaction(&self, tx_id: &str) -> Result<Option<ProcessedTransaction>> {
-        self.call_method_with_params(GET_PROCESSED_TRANSACTION, tx_id)
+    pub fn get_processed_transaction(&self, tx_id: &Hash) -> Result<Option<ProcessedTransaction>> {
+        self.call_method_with_params(GET_PROCESSED_TRANSACTION, tx_id.to_string())
     }
 
     /// Waits for a transaction to be processed, polling until it reaches "Processed" or "Failed" status
     /// Will timeout after 60 seconds
-    pub fn wait_for_processed_transaction(&self, tx_id: &str) -> Result<ProcessedTransaction> {
+    pub fn wait_for_processed_transaction(&self, tx_id: &Hash) -> Result<ProcessedTransaction> {
         let mut wait_time = 1;
 
         // First try to get the transaction, retry if null
@@ -235,7 +236,7 @@ impl ArchRpcClient {
     /// Returns a vector of processed transactions in the same order as the input transaction IDs
     pub fn wait_for_processed_transactions(
         &self,
-        tx_ids: Vec<String>,
+        tx_ids: Vec<Hash>,
     ) -> Result<Vec<ProcessedTransaction>> {
         let mut processed_transactions: Vec<ProcessedTransaction> =
             Vec::with_capacity(tx_ids.len());
@@ -256,11 +257,14 @@ impl ArchRpcClient {
     }
 
     /// Get the best block hash
-    pub fn get_best_block_hash(&self) -> Result<String> {
+    pub fn get_best_block_hash(&self) -> Result<Hash> {
         match self.call_method_raw(GET_BEST_BLOCK_HASH)? {
-            Some(value) => value.as_str().map(|s| s.to_string()).ok_or_else(|| {
-                ArchError::ParseError("Failed to get best block hash as string".to_string())
-            }),
+            Some(value) => value
+                .as_str()
+                .map(|s| Hash::from_str(s).unwrap())
+                .ok_or_else(|| {
+                    ArchError::ParseError("Failed to get best block hash as string".to_string())
+                }),
             None => Err(ArchError::NotFound("Best block hash not found".to_string())),
         }
     }
@@ -377,11 +381,17 @@ impl ArchRpcClient {
     }
 
     /// Send a single transaction
-    pub fn send_transaction(&self, transaction: RuntimeTransaction) -> Result<String> {
+    pub fn send_transaction(&self, transaction: RuntimeTransaction) -> Result<Hash> {
         match self.process_result(self.post_data(SEND_TRANSACTION, transaction)?)? {
-            Some(value) => value.as_str().map(|s| s.to_string()).ok_or_else(|| {
-                ArchError::ParseError("Failed to get transaction ID as string".to_string())
-            }),
+            Some(value) => {
+                let tx_id = value
+                    .as_str()
+                    .map(|s| Hash::from_str(s).unwrap())
+                    .ok_or_else(|| {
+                        ArchError::ParseError("Failed to get transaction ID as string".to_string())
+                    })?;
+                Ok(tx_id)
+            }
             None => Err(ArchError::TransactionError(
                 "Failed to send transaction".to_string(),
             )),
@@ -389,9 +399,15 @@ impl ArchRpcClient {
     }
 
     /// Send multiple transactions
-    pub fn send_transactions(&self, transactions: Vec<RuntimeTransaction>) -> Result<Vec<String>> {
-        match self.call_method_with_params(SEND_TRANSACTIONS, transactions)? {
-            Some(tx_ids) => Ok(tx_ids),
+    pub fn send_transactions(&self, transactions: Vec<RuntimeTransaction>) -> Result<Vec<Hash>> {
+        match self.call_method_with_params::<Vec<RuntimeTransaction>, Vec<String>>(
+            SEND_TRANSACTIONS,
+            transactions,
+        )? {
+            Some(tx_ids) => Ok(tx_ids
+                .iter()
+                .map(|id| Hash::from_str(id).unwrap())
+                .collect()),
             None => Err(ArchError::TransactionError(
                 "Failed to send transactions".to_string(),
             )),
@@ -502,6 +518,7 @@ fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
 mod tests {
     use super::*;
     use crate::arch_program::pubkey::Pubkey;
+    use arch_program::hash::Hash;
     use arch_program::{account::MIN_ACCOUNT_LAMPORTS, sanitized::ArchMessage};
     use mockito::Server;
 
@@ -593,12 +610,18 @@ mod tests {
     #[test]
     fn test_get_best_block_hash() {
         let mut server = Server::new();
-        let mock = mock_rpc_response(&mut server, GET_BEST_BLOCK_HASH, json!("0123456789abcdef"));
+
+        let expected_hash = Hash::from([1; 32]);
+        let mock = mock_rpc_response(
+            &mut server,
+            GET_BEST_BLOCK_HASH,
+            json!(expected_hash.to_string()),
+        );
 
         let client = get_test_client(&server);
         let result = client.get_best_block_hash().unwrap();
 
-        assert_eq!(result, "0123456789abcdef");
+        assert_eq!(result, expected_hash);
         mock.assert();
     }
 
@@ -670,7 +693,7 @@ mod tests {
         let rt_tx = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
+            message: ArchMessage::new(&[], None, Hash::from([0; 32])),
         };
 
         // Test all status variants
@@ -710,20 +733,22 @@ mod tests {
         let tx = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
+            message: ArchMessage::new(&[], None, Hash::from([0; 32])),
         };
+
+        let expected_tx_id = Hash::from([0; 32]);
 
         let mock = mock_rpc_response_with_params(
             &mut server,
             SEND_TRANSACTION,
             tx.clone(),
-            json!("tx_id_12345"),
+            json!(expected_tx_id.to_string()),
         );
 
         let client = get_test_client(&server);
         let result = client.send_transaction(tx).unwrap();
 
-        assert_eq!(result, "tx_id_12345");
+        assert_eq!(result, expected_tx_id);
         mock.assert();
     }
 
@@ -791,9 +816,16 @@ mod tests {
 
         // Create a sample block for the response
         let block = Block {
-            transactions: vec!["tx1".to_string(), "tx2".to_string()],
-            previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
-                .to_string(),
+            transactions: vec![
+                Hash::from_str("0000000000000000000000000000000000000000000000000000000000000001")
+                    .unwrap(),
+                Hash::from_str("0000000000000000000000000000000000000000000000000000000000000002")
+                    .unwrap(),
+            ],
+            previous_block_hash: Hash::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
@@ -824,7 +856,7 @@ mod tests {
     #[test]
     fn test_get_processed_transaction() {
         let mut server = Server::new();
-        let tx_id = "tx_test_12345";
+        let tx_id = Hash::from([0; 32]);
 
         use crate::types::RollbackStatus;
 
@@ -832,7 +864,7 @@ mod tests {
         let rt_tx = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
+            message: ArchMessage::new(&[], None, Hash::from([0; 32])),
         };
 
         let processed_tx = ProcessedTransaction {
@@ -846,12 +878,12 @@ mod tests {
         let mock = mock_rpc_response_with_params(
             &mut server,
             GET_PROCESSED_TRANSACTION,
-            tx_id,
+            tx_id.to_string(),
             serde_json::to_value(processed_tx.clone()).unwrap(),
         );
 
         let client = get_test_client(&server);
-        let result = client.get_processed_transaction(tx_id).unwrap();
+        let result = client.get_processed_transaction(&tx_id).unwrap();
 
         assert!(result.is_some());
         let returned_tx = result.unwrap();
@@ -868,23 +900,35 @@ mod tests {
         let tx1 = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
+            message: ArchMessage::new(&[], None, Hash::from([0; 32])),
         };
 
         let tx2 = RuntimeTransaction {
             version: 1,
             signatures: Vec::new(),
-            message: ArchMessage::new(&[], None, hex::encode([0; 32])),
+            message: ArchMessage::new(&[], None, Hash::from([0; 32])),
         };
 
         let transactions = vec![tx1, tx2];
-        let expected_tx_ids = vec!["tx_id_1".to_string(), "tx_id_2".to_string()];
+        let expected_tx_ids = vec![
+            Hash::from([
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1,
+            ]),
+            Hash::from([
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2,
+            ]),
+        ];
 
         let mock = mock_rpc_response_with_params(
             &mut server,
             SEND_TRANSACTIONS,
             transactions.clone(),
-            json!(expected_tx_ids),
+            json!(expected_tx_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<String>>()),
         );
 
         let client = get_test_client(&server);
@@ -1055,8 +1099,10 @@ mod tests {
         // Create a sample full block for the response
         let full_block = FullBlock {
             transactions: vec![], // Simplified for test purposes
-            previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
-                .to_string(),
+            previous_block_hash: Hash::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
@@ -1101,9 +1147,16 @@ mod tests {
 
         // Create a sample block for the response
         let block = Block {
-            transactions: vec!["tx1".to_string(), "tx2".to_string()],
-            previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
-                .to_string(),
+            transactions: vec![
+                Hash::from_str("0000000000000000000000000000000000000000000000000000000000000001")
+                    .unwrap(),
+                Hash::from_str("0000000000000000000000000000000000000000000000000000000000000002")
+                    .unwrap(),
+            ],
+            previous_block_hash: Hash::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
@@ -1139,8 +1192,10 @@ mod tests {
         // Create a sample full block for the response
         let full_block = FullBlock {
             transactions: vec![], // Simplified for test purposes
-            previous_block_hash: "0000000000000000000000000000000000000000000000000000000000000000"
-                .to_string(),
+            previous_block_hash: Hash::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
             timestamp: 1630000000,
             block_height,
             bitcoin_block_height: 100,

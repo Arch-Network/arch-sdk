@@ -3,6 +3,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
+use arch_program::hash::Hash;
 use arch_program::sanitize::{Sanitize, SanitizeError};
 use arch_program::sanitized::ArchMessage;
 use bitcode::{Decode, Encode};
@@ -95,8 +96,9 @@ impl Display for RuntimeTransaction {
 }
 
 impl RuntimeTransaction {
-    pub fn txid(&self) -> String {
-        digest(digest(self.serialize()))
+    pub fn txid(&self) -> Hash {
+        let hash_string = digest(digest(self.serialize()));
+        Hash::from_str(&hash_string).expect("SHA256 always produces valid hex")
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -158,8 +160,9 @@ impl RuntimeTransaction {
         })
     }
 
-    pub fn hash(&self) -> String {
-        digest(digest(self.serialize()))
+    pub fn hash(&self) -> Hash {
+        let hash_string = digest(digest(self.serialize()));
+        Hash::from_str(&hash_string).expect("SHA256 always produces valid hex")
     }
 
     pub fn check_tx_size_limit(&self) -> Result<(), RuntimeTransactionError> {
@@ -178,6 +181,7 @@ impl RuntimeTransaction {
 #[cfg(test)]
 mod tests {
     use super::{RuntimeTransaction, Signature, ALLOWED_VERSIONS};
+    use arch_program::hash::Hash;
     use arch_program::{
         pubkey::Pubkey,
         sanitize::{Sanitize as _, SanitizeError},
@@ -199,7 +203,7 @@ mod tests {
                     num_readonly_unsigned_accounts: 1,
                 },
                 account_keys: (0..num_accounts).map(|_| Pubkey::new_unique()).collect(),
-                recent_blockhash: hex::encode([0; 32]),
+                recent_blockhash: Hash::from([0; 32]),
                 instructions: vec![SanitizedInstruction {
                     program_id_index: 2,
                     accounts: vec![0, 1, 3],

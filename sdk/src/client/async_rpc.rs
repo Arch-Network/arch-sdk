@@ -495,6 +495,7 @@ fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arch_program::hash::Hash;
     use arch_program::{account::MIN_ACCOUNT_LAMPORTS, sanitized::ArchMessage};
     use mockito::Server;
 
@@ -663,7 +664,7 @@ mod tests {
         let tx = RuntimeTransaction {
             version: 0,
             signatures: Vec::new(),
-            message: ArchMessage::new(&[], None, "BLOCK_HASH".to_string()),
+            message: ArchMessage::new(&[], None, Hash::from([0; 32])),
         };
 
         let mock = mock_rpc_response_with_params(

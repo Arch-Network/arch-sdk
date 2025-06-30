@@ -1,3 +1,4 @@
+use arch_program::hash::Hash;
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "fuzzing")]
@@ -36,8 +37,8 @@ pub enum BlockParseError {
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 
 pub struct Block {
-    pub transactions: Vec<String>,
-    pub previous_block_hash: String,
+    pub transactions: Vec<Hash>,
+    pub previous_block_hash: Hash,
     pub timestamp: u128,
     pub block_height: u64,
     pub bitcoin_block_height: u64,
@@ -45,16 +46,17 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn hash(&self) -> String {
+    pub fn hash(&self) -> Hash {
         let serialized_block = self.to_vec();
-        sha256::digest(sha256::digest(serialized_block))
+        let hash_string = sha256::digest(sha256::digest(serialized_block));
+        Hash::from_str(&hash_string).expect("SHA256 always produces valid hex")
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
         let mut serialized = Vec::new();
 
         // Serialize previous_block_hash
-        serialized.extend_from_slice(self.previous_block_hash.as_bytes());
+        serialized.extend_from_slice(self.previous_block_hash.to_string().as_bytes());
         serialized.push(0); // Null terminator
 
         // Serialize timestamp
@@ -72,7 +74,7 @@ impl Block {
         // Serialize transactions
         serialized.extend_from_slice(&(self.transactions.len() as u64).to_le_bytes());
         for transaction in &self.transactions {
-            serialized.extend_from_slice(transaction.as_bytes());
+            serialized.extend_from_slice(transaction.to_string().as_bytes());
             serialized.push(0); // Null terminator
         }
 
@@ -83,7 +85,9 @@ impl Block {
         let mut cursor = 0;
 
         // Deserialize previous_block_hash
-        let previous_block_hash = read_string(data, &mut cursor)?;
+        let previous_block_hash_str = read_string(data, &mut cursor)?;
+        let previous_block_hash =
+            Hash::from_str(&previous_block_hash_str).map_err(|_| BlockParseError::InvalidString)?;
 
         // Deserialize timestamp
         let timestamp = read_u128(data, &mut cursor)?;
@@ -105,7 +109,9 @@ impl Block {
         }
         let mut transactions = Vec::with_capacity(transactions_len as usize);
         for _ in 0..transactions_len {
-            transactions.push(read_string(data, &mut cursor)?);
+            let tx_str = read_string(data, &mut cursor)?;
+            let tx_hash = Hash::from_str(&tx_str).map_err(|_| BlockParseError::InvalidString)?;
+            transactions.push(tx_hash);
         }
 
         Ok(Block {
@@ -164,7 +170,7 @@ fn read_u128(data: &[u8], cursor: &mut usize) -> Result<u128, BlockParseError> {
 )]
 pub struct FullBlock {
     pub transactions: Vec<ProcessedTransaction>,
-    pub previous_block_hash: String,
+    pub previous_block_hash: Hash,
     pub timestamp: u128,
     pub block_height: u64,
     pub bitcoin_block_height: u64,
@@ -185,11 +191,11 @@ impl From<(Block, Vec<ProcessedTransaction>)> for FullBlock {
 }
 
 impl FullBlock {
-    pub fn hash(&self) -> String {
+    pub fn hash(&self) -> Hash {
         // Create Block without cloning the entire FullBlock
         let block = Block {
             transactions: self.transactions.iter().map(|t| t.txid()).collect(),
-            previous_block_hash: self.previous_block_hash.clone(),
+            previous_block_hash: self.previous_block_hash,
             timestamp: self.timestamp,
             bitcoin_block_height: self.bitcoin_block_height,
             transaction_count: self.transaction_count,
@@ -202,7 +208,7 @@ impl FullBlock {
         // Create Block without cloning the entire FullBlock
         let block = Block {
             transactions: self.transactions.iter().map(|t| t.txid()).collect(),
-            previous_block_hash: self.previous_block_hash.clone(),
+            previous_block_hash: self.previous_block_hash,
             timestamp: self.timestamp,
             bitcoin_block_height: self.bitcoin_block_height,
             transaction_count: self.transaction_count,
@@ -234,8 +240,13 @@ mod tests {
     #[test]
     fn test_block_serialization_deserialization() {
         let original_block = Block {
-            transactions: vec!["tx1".to_string(), "tx2".to_string()],
-            previous_block_hash: GENESIS_BLOCK_PREVIOUS_HASH.to_string(),
+            transactions: vec![
+                Hash::from_str("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+                    .unwrap(),
+                Hash::from_str("fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321")
+                    .unwrap(),
+            ],
+            previous_block_hash: Hash::from_str(GENESIS_BLOCK_PREVIOUS_HASH).unwrap(),
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
@@ -260,8 +271,13 @@ mod tests {
     #[test]
     fn test_block_hash() {
         let block = Block {
-            transactions: vec!["tx1".to_string(), "tx2".to_string()],
-            previous_block_hash: GENESIS_BLOCK_PREVIOUS_HASH.to_string(),
+            transactions: vec![
+                Hash::from_str("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+                    .unwrap(),
+                Hash::from_str("fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321")
+                    .unwrap(),
+            ],
+            previous_block_hash: Hash::from_str(GENESIS_BLOCK_PREVIOUS_HASH).unwrap(),
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
@@ -269,7 +285,14 @@ mod tests {
         };
 
         let hash = block.hash();
-        assert!(!hash.is_empty(), "Block hash should not be empty");
-        assert_eq!(hash.len(), 64, "Block hash should be 64 characters long");
+        assert!(
+            !hash.to_string().is_empty(),
+            "Block hash should not be empty"
+        );
+        assert_eq!(
+            hash.to_string().len(),
+            64,
+            "Block hash should be 64 characters long"
+        );
     }
 }

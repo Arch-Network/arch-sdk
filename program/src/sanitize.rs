@@ -1,6 +1,6 @@
 //! A trait for sanitizing values and members of over the wire messages.
 
-use {crate::pubkey::Pubkey, bitcoin::hex::DisplayHex, core::fmt, std::error::Error};
+use {core::fmt, std::error::Error};
 
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub enum SanitizeError {

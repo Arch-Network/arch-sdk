@@ -1,6 +1,7 @@
 use std::{array::TryFromSliceError, string::FromUtf8Error};
 
 use anyhow::Result;
+use arch_program::hash::Hash;
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -137,7 +138,7 @@ impl RollbackStatus {
 pub struct ProcessedTransaction {
     pub runtime_transaction: RuntimeTransaction,
     pub status: Status,
-    pub bitcoin_txid: Option<String>,
+    pub bitcoin_txid: Option<Hash>,
     pub logs: Vec<String>,
     pub rollback_status: RollbackStatus,
 }
@@ -145,7 +146,7 @@ pub struct ProcessedTransaction {
 const ROLLBACK_MESSAGE_BUFFER_SIZE: usize = 1033;
 
 impl ProcessedTransaction {
-    pub fn txid(&self) -> String {
+    pub fn txid(&self) -> Hash {
         self.runtime_transaction.txid()
     }
 
@@ -160,7 +161,7 @@ impl ProcessedTransaction {
         serialized.extend(match &self.bitcoin_txid {
             Some(txid) => {
                 let mut res = vec![1];
-                res.extend(hex::decode(txid)?);
+                res.extend(txid.to_array());
                 res
             }
             None => vec![0],
@@ -204,7 +205,8 @@ impl ProcessedTransaction {
 
         let bitcoin_txid = if data[size] == 1 {
             size += 1;
-            let res = Some(hex::encode(&data[(size)..(size + 32)]));
+            let bytes: [u8; 32] = data[(size)..(size + 32)].try_into()?;
+            let res = Some(Hash::from(bytes));
             size += 32;
             res
         } else {
@@ -320,6 +322,7 @@ mod tests {
     //         }
     //     }
 
+    use arch_program::hash::Hash;
     use arch_program::sanitized::{ArchMessage, MessageHeader};
 
     use crate::{
@@ -343,9 +346,10 @@ mod tests {
                     },
                     account_keys: vec![],
                     instructions: vec![],
-                    recent_blockhash:
-                        "0000000000000000000000000000000000000000000000000000000000000000"
-                            .to_string(),
+                    recent_blockhash: Hash::from_str(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap(),
                 },
             },
             status: Status::Processed,
@@ -374,9 +378,10 @@ mod tests {
                     },
                     account_keys: vec![],
                     instructions: vec![],
-                    recent_blockhash:
-                        "0000000000000000000000000000000000000000000000000000000000000000"
-                            .to_string(),
+                    recent_blockhash: Hash::from_str(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap(),
                 },
             },
             status: Status::Processed,
@@ -403,9 +408,10 @@ mod tests {
                     },
                     account_keys: vec![],
                     instructions: vec![],
-                    recent_blockhash:
-                        "0000000000000000000000000000000000000000000000000000000000000000"
-                            .to_string(),
+                    recent_blockhash: Hash::from_str(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap(),
                 },
             },
             status: Status::Processed,
