@@ -71,7 +71,7 @@ impl Processor {
     }
 
     fn _process_initialize_account(
-        _program_id: &Pubkey,
+        program_id: &Pubkey,
         accounts: &[AccountInfo],
         owner: Option<&Pubkey>,
     ) -> ProgramResult {
@@ -88,6 +88,10 @@ impl Processor {
         if account.is_initialized() {
             return Err(TokenError::AlreadyInUse.into());
         }
+
+        Self::check_account_owner(program_id, mint_info)?;
+        let _ = Mint::unpack(&mint_info.data.borrow_mut())
+            .map_err(|_| Into::<ProgramError>::into(TokenError::InvalidMint))?;
 
         account.mint = *mint_info.key;
         account.owner = *owner;
@@ -515,7 +519,7 @@ impl Processor {
 
         let source_account_info = next_account_info(account_info_iter)?;
         let mint_info = next_account_info(account_info_iter)?;
-        let _authority_info = next_account_info(account_info_iter)?;
+        let authority_info = next_account_info(account_info_iter)?;
 
         let mut source_account = Account::unpack(&source_account_info.data.borrow())?;
         let mut mint = Mint::unpack(&mint_info.data.borrow())?;
@@ -533,6 +537,36 @@ impl Processor {
         if let Some(expected_decimals) = expected_decimals {
             if expected_decimals != mint.decimals {
                 return Err(TokenError::MintDecimalsMismatch.into());
+            }
+        }
+
+        if source_account.owner != SYSTEM_PROGRAM_ID {
+            match source_account.delegate {
+                COption::Some(ref delegate) if Self::cmp_pubkeys(authority_info.key, delegate) => {
+                    Self::validate_owner(
+                        program_id,
+                        delegate,
+                        authority_info,
+                        account_info_iter.as_slice(),
+                    )?;
+
+                    if source_account.delegated_amount < amount {
+                        return Err(TokenError::InsufficientFunds.into());
+                    }
+                    source_account.delegated_amount = source_account
+                        .delegated_amount
+                        .checked_sub(amount)
+                        .ok_or(TokenError::Overflow)?;
+                    if source_account.delegated_amount == 0 {
+                        source_account.delegate = COption::None;
+                    }
+                }
+                _ => Self::validate_owner(
+                    program_id,
+                    &source_account.owner,
+                    authority_info,
+                    account_info_iter.as_slice(),
+                )?,
             }
         }
 
@@ -568,11 +602,15 @@ impl Processor {
         }
 
         let source_account = Account::unpack(&source_account_info.data.borrow())?;
+        if source_account.amount != 0 {
+            return Err(TokenError::NonNativeHasBalance.into());
+        }
+
         let authority = source_account
             .close_authority
             .unwrap_or(source_account.owner);
 
-        if source_account.owner == SYSTEM_PROGRAM_ID {
+        if source_account.owner != SYSTEM_PROGRAM_ID {
             Self::validate_owner(
                 program_id,
                 &authority,

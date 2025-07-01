@@ -1,7 +1,6 @@
 use crate::{
     constants::BITCOIN_NETWORK, helper::send_transactions_and_wait, logging::init_logging,
 };
-use apl_token::state::Mint;
 use arch_program::{
     account::MIN_ACCOUNT_LAMPORTS, program_pack::Pack, pubkey::Pubkey, sanitized::ArchMessage,
     system_instruction::create_account,
@@ -14,6 +13,8 @@ pub fn initialize_mint_token(
     authority_pubkey: Pubkey,
     authority_keypair: Keypair,
     freeze_authority_pubkey: Option<&Pubkey>,
+    size: u64,
+    owner: &Pubkey,
 ) -> (Keypair, Pubkey) {
     init_logging();
 
@@ -23,8 +24,8 @@ pub fn initialize_mint_token(
         &authority_pubkey,
         &token_mint_pubkey,
         MIN_ACCOUNT_LAMPORTS,
-        Mint::LEN as u64,
-        &apl_token::id(),
+        size,
+        owner,
     );
 
     let initialize_mint_instruction = apl_token::instruction::initialize_mint(
@@ -197,14 +198,10 @@ pub fn create_account_helper(
     from_keypair: Keypair,
     to_keypair: Keypair,
     space: u64,
+    owner: &Pubkey,
 ) {
-    let create_account_instruction = create_account(
-        &from_pubkey,
-        &to_pubkey,
-        MIN_ACCOUNT_LAMPORTS,
-        space,
-        &apl_token::id(),
-    );
+    let create_account_instruction =
+        create_account(&from_pubkey, &to_pubkey, MIN_ACCOUNT_LAMPORTS, space, owner);
 
     let transaction = build_and_sign_transaction(
         ArchMessage::new(
