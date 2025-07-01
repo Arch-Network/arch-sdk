@@ -1,4 +1,6 @@
 use arch_program::{input_to_sign::InputToSign, pubkey::Pubkey};
+use std::io::{Error, ErrorKind};
+
 #[cfg(feature = "fuzzing")]
 use libfuzzer_sys::arbitrary;
 
@@ -11,36 +13,52 @@ pub struct TransactionToSign {
 }
 
 impl TransactionToSign {
-    pub fn from_slice(data: &[u8]) -> Self {
-        let tx_bytes_len = u32::from_le_bytes(
-            data.get(0..4)
-                .unwrap()
+    pub fn from_slice(data: &[u8]) -> Result<Self, Error> {
+        fn get_const_slice<'a, const N: usize>(
+            data: &'a [u8],
+            offset: usize,
+        ) -> Result<[u8; N], Error> {
+            let end = offset + N;
+            let slice = data
+                .get(offset..end)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Insufficient data length"))?;
+            let array_ref = slice
                 .try_into()
-                .expect("slice with incorrect length"),
-        );
-        let tx_bytes = data.get(4..(4 + tx_bytes_len as usize)).unwrap().to_vec();
+                .map_err(|_| Error::new(ErrorKind::InvalidData, "Incorrect length"))?;
+            Ok(array_ref)
+        }
 
-        let mut size = tx_bytes_len as usize + 4;
-        let inputs_to_sign_length: u32 =
-            u32::from_le_bytes(data[size..(size + 4)].try_into().unwrap());
-        size += 4;
-        let mut inputs_to_sign = vec![];
+        fn get_slice<'a>(data: &'a [u8], start: usize, len: usize) -> Result<&'a [u8], Error> {
+            data.get(start..start + len)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Insufficient data length"))
+        }
+
+        let tx_bytes_len = u32::from_le_bytes(get_const_slice(data, 0)?) as usize;
+
+        let tx_bytes = get_slice(data, 4, tx_bytes_len)?.to_vec();
+        let mut offset = 4 + tx_bytes_len;
+
+        let inputs_to_sign_length = u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
+        offset += 4;
+
+        let mut inputs_to_sign = Vec::with_capacity(inputs_to_sign_length);
         for _ in 0..inputs_to_sign_length {
-            let index = u32::from_le_bytes(
-                data[size..size + 4]
-                    .try_into()
-                    .expect("slice with incorrect length"),
-            );
-            size += 4;
-            let signer = Pubkey::from_slice(&data[size..size + 32]);
-            size += 32;
+            // Parse input index (4 bytes)
+            let index = u32::from_le_bytes(get_const_slice(data, offset)?);
+            offset += 4;
+
+            // Parse signer public key (32 bytes)
+            let signer_bytes: [u8; 32] = get_const_slice(data, offset)?;
+            offset += 32;
+            let signer = Pubkey::from(signer_bytes);
+
             inputs_to_sign.push(InputToSign { index, signer });
         }
 
-        TransactionToSign {
+        Ok(TransactionToSign {
             tx_bytes,
             inputs_to_sign,
-        }
+        })
     }
 
     pub fn serialise(&self) -> Vec<u8> {
@@ -671,13 +689,18 @@ mod tests {
                 },
             ],
         };
+
         assert_eq!(
             program_return.tx_bytes,
-            TransactionToSign::from_slice(&program_return.serialise()).tx_bytes
+            TransactionToSign::from_slice(&program_return.serialise())
+                .unwrap()
+                .tx_bytes
         );
         assert_eq!(
             program_return.inputs_to_sign,
-            TransactionToSign::from_slice(&program_return.serialise()).inputs_to_sign
+            TransactionToSign::from_slice(&program_return.serialise())
+                .unwrap()
+                .inputs_to_sign
         );
 
         // let program_return = TransactionToSign {
