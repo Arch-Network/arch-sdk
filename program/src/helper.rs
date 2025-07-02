@@ -2,14 +2,13 @@
 use std::str::FromStr;
 
 use bitcoin::{
-    absolute::LockTime, transaction::Version, OutPoint, ScriptBuf, Sequence, Transaction, TxIn,
-    TxOut, Txid, Witness,
+    absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction,
+    TxIn, TxOut, Txid, Witness,
 };
 
 use crate::{
     account::AccountInfo,
-    msg,
-    program::{get_account_script_pubkey, get_bitcoin_tx},
+    program::{get_account_script_pubkey, get_bitcoin_tx_output_value},
 };
 
 /// Creates an Arch transaction representing a state transition from the provided accounts.
@@ -44,12 +43,14 @@ pub fn get_state_transition_tx(accounts: &[AccountInfo]) -> Transaction {
             .iter()
             .filter(|account| account.is_writable)
             .map(|account| {
-                let tx = get_bitcoin_tx(account.utxo.txid().try_into().unwrap()).unwrap();
-
-                let output = tx.output[account.utxo.vout() as usize].clone();
+                let output_value = get_bitcoin_tx_output_value(
+                    account.utxo.txid_big_endian(),
+                    account.utxo.vout(),
+                )
+                .unwrap();
 
                 TxOut {
-                    value: output.value,
+                    value: Amount::from_sat(output_value),
                     script_pubkey: ScriptBuf::from_bytes(
                         get_account_script_pubkey(account.key).to_vec(),
                     ),
@@ -72,9 +73,10 @@ pub fn get_state_transition_tx(accounts: &[AccountInfo]) -> Transaction {
 /// This function will panic if the provided account is not writable.
 pub fn add_state_transition(transaction: &mut Transaction, account: &AccountInfo) {
     assert!(account.is_writable);
+
     transaction.input.push(TxIn {
         previous_output: OutPoint {
-            txid: Txid::from_str(&hex::encode(account.utxo.txid())).unwrap(),
+            txid: account.utxo.to_txid(),
             vout: account.utxo.vout(),
         },
         script_sig: ScriptBuf::new(),
@@ -82,14 +84,11 @@ pub fn add_state_transition(transaction: &mut Transaction, account: &AccountInfo
         witness: Witness::new(),
     });
 
-    msg!("account utxo : {:?}", hex::encode(account.utxo.txid()));
-
-    let tx = get_bitcoin_tx(account.utxo.txid().try_into().unwrap()).unwrap();
-
-    let output = tx.output[account.utxo.vout() as usize].clone();
+    let utxo_value =
+        get_bitcoin_tx_output_value(account.utxo.txid_big_endian(), account.utxo.vout()).unwrap();
 
     transaction.output.push(TxOut {
-        value: output.value,
+        value: Amount::from_sat(utxo_value),
         script_pubkey: ScriptBuf::from_bytes(get_account_script_pubkey(account.key).to_vec()),
     });
 }

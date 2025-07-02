@@ -1,12 +1,15 @@
+use bitcoin::hashes::Hash;
 use bitcoin::Transaction;
-use bitcoin::Transaction as BtcTransactionType;
+use bitcoin_slices::{bsl, Error, Visit, Visitor};
+use borsh::{BorshDeserialize, BorshSerialize};
 
+use crate::input_to_sign::InputToSign;
 use crate::instruction::Instruction;
 use crate::program_error::ProgramError;
 use crate::rune::RuneAmount;
 #[cfg(target_os = "solana")]
 use crate::stable_layout::stable_ins::StableInstruction;
-use crate::{MAX_BTC_RUNE_OUTPUT_SIZE, MAX_BTC_TX_SIZE};
+use crate::{msg, transaction_to_sign, MAX_BTC_RUNE_OUTPUT_SIZE, MAX_BTC_TX_SIZE};
 
 use crate::clock::Clock;
 use crate::transaction_to_sign::TransactionToSign;
@@ -17,7 +20,7 @@ use crate::{account::AccountInfo, entrypoint::ProgramResult, pubkey::Pubkey};
 ///
 /// This type holds raw bytes in a fixed-size array and tracks the actual size of the data.
 /// The array size is determined by the const generic parameter `N`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct FixedSizeBuffer<const N: usize> {
     data: [u8; N],
     size: usize,
@@ -54,7 +57,7 @@ impl<const N: usize> FixedSizeBuffer<N> {
     /// # Safety
     /// The caller must guarantee that `new_size` bytes starting from the
     /// pointer returned by `as_mut_ptr` have been initialised.
-    pub unsafe fn set_size(&mut self, new_size: usize) {
+    pub fn set_size(&mut self, new_size: usize) {
         debug_assert!(
             new_size <= N,
             "new_size ({}) exceeds buffer capacity ({})",
@@ -233,15 +236,23 @@ pub const MAX_TRANSACTION_TO_SIGN: usize = 4 * 1024;
 ///
 /// # Arguments
 /// * `accounts` - Slice of account information required for the transaction
-/// * `transaction_to_sign` - The transaction and metadata needed for signing
+/// * `tx` - The transaction
+/// * `inputs_to_sign` - The inputs to sign
 ///
 /// # Returns
 /// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
-pub fn set_transaction_to_sign(
-    accounts: &[AccountInfo],
-    transaction_to_sign: TransactionToSign,
-) -> ProgramResult {
-    let serialized_transaction_to_sign = &transaction_to_sign.serialise();
+pub fn set_transaction_to_sign<'info, T>(
+    accounts: &'info [T],
+    tx: &Transaction,
+    inputs_to_sign: &[InputToSign],
+) -> ProgramResult
+where
+    T: AsRef<AccountInfo<'info>>,
+{
+    msg!("setting tx to sign");
+    // Use the new method that avoids double allocation
+    let serialized_transaction_to_sign = TransactionToSign::serialise_with_tx(tx, inputs_to_sign);
+
     #[cfg(target_os = "solana")]
     let result = unsafe {
         crate::syscalls::arch_set_transaction_to_sign(
@@ -257,18 +268,18 @@ pub fn set_transaction_to_sign(
 
     match result {
         crate::entrypoint::SUCCESS => {
-            let tx: Transaction = bitcoin::consensus::deserialize(transaction_to_sign.tx_bytes)
-                .expect("failed to deserialize tx_bytes");
-            for input in transaction_to_sign.inputs_to_sign {
-                if let Some(account) = accounts.iter().find(|account| *account.key == input.signer)
+            let txid = tx.compute_txid();
+            let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
+            txid_bytes.reverse();
+
+            for input in inputs_to_sign {
+                if let Some(account) = accounts
+                    .iter()
+                    .find(|account| *account.as_ref().key == input.signer)
                 {
-                    account.set_utxo(&UtxoMeta::from(
-                        hex::decode(tx.compute_txid().to_string())
-                            .expect("failed to decode_hex")
-                            .try_into()
-                            .expect("failed to try_into"),
-                        input.index,
-                    ));
+                    account
+                        .as_ref()
+                        .set_utxo(&UtxoMeta::from(txid_bytes, input.index));
                 }
             }
             Ok(())
@@ -347,8 +358,9 @@ pub fn get_return_data() -> Option<(Pubkey, ReturnedData)> {
 /// # Returns
 /// * `Option<BitcoinTransaction>` - The transaction if found, None if not found
 #[inline(never)]
-pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<BtcTransactionType> {
+pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<BitcoinTransaction> {
     let mut buf: BitcoinTransaction = Default::default();
+
     #[cfg(target_os = "solana")]
     let size = unsafe {
         crate::syscalls::arch_get_bitcoin_tx(buf.as_mut_ptr(), buf.capacity() as u64, &txid)
@@ -359,9 +371,71 @@ pub fn get_bitcoin_tx(txid: [u8; 32]) -> Option<BtcTransactionType> {
     if size == 0 {
         return None;
     }
-    unsafe { buf.set_size(core::cmp::min(size as usize, MAX_BTC_TX_SIZE)) };
 
-    bitcoin::consensus::deserialize::<BtcTransactionType>(buf.as_slice()).ok()
+    buf.set_size(core::cmp::min(size as usize, MAX_BTC_TX_SIZE));
+
+    Some(buf)
+}
+
+/// Extracts the value of a specific output from a serialized Bitcoin transaction.
+///
+/// This function is used to extract the value of a specific output from a serialized Bitcoin transaction.
+///
+/// # Arguments
+/// * `tx` - The transaction bytes
+/// * `output_index` - The output index to retrieve
+///
+/// # Returns
+/// * `Option<u64>` - The output value if found, None if not found
+#[inline(never)]
+pub fn get_bitcoin_tx_output_value(txid: [u8; 32], vout: u32) -> Option<u64> {
+    let mut buf: BitcoinTransaction = Default::default();
+
+    #[cfg(target_os = "solana")]
+    let size = unsafe {
+        crate::syscalls::arch_get_bitcoin_tx(buf.as_mut_ptr(), buf.capacity() as u64, &txid)
+    };
+    #[cfg(not(target_os = "solana"))]
+    let size = crate::program_stubs::arch_get_bitcoin_tx(buf.as_mut_ptr(), buf.capacity(), &txid);
+
+    if size == 0 {
+        return None;
+    }
+
+    buf.set_size(core::cmp::min(size as usize, MAX_BTC_TX_SIZE));
+
+    extract_output_value(buf.as_slice(), vout as usize)
+}
+
+#[inline(never)]
+fn extract_output_value(tx: &[u8], output_index: usize) -> Option<u64> {
+    struct OutputExtractor {
+        target_index: usize,
+        value: Option<u64>,
+    }
+
+    impl Visitor for OutputExtractor {
+        fn visit_tx_out(&mut self, vout: usize, tx_out: &bsl::TxOut) -> core::ops::ControlFlow<()> {
+            if vout == self.target_index {
+                // Calculate the position within the original transaction bytes
+                let value = tx_out.value();
+                self.value = Some(value);
+                return core::ops::ControlFlow::Break(());
+            }
+            core::ops::ControlFlow::Continue(())
+        }
+    }
+
+    let mut extractor = OutputExtractor {
+        target_index: output_index,
+        value: None,
+    };
+
+    // Parse transaction and visit outputs
+    match bsl::Transaction::visit(tx, &mut extractor) {
+        Ok(_) | Err(Error::VisitBreak) => extractor.value,
+        Err(_) => None,
+    }
 }
 
 /// Retrieves the runes from a Bitcoin output by its transaction ID and output index.

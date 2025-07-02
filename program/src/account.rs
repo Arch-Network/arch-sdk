@@ -27,6 +27,12 @@ pub struct AccountInfo<'a> {
     pub is_executable: bool,
 }
 
+impl<'a> AsRef<AccountInfo<'a>> for AccountInfo<'a> {
+    fn as_ref(&self) -> &AccountInfo<'a> {
+        self
+    }
+}
+
 /// Meta information about an account used to define its role in an instruction.
 /// This includes whether the account is a signer and if it's writable.
 #[derive(
@@ -301,12 +307,13 @@ impl<'a> AccountInfo<'a> {
         // Return early if the length increase from the original serialized data
         // length is too large and would result in an out of bounds allocation.
         let original_data_len = unsafe { self.original_data_len() };
-        msg!(
-            "account realloc {} {} {}",
-            new_len,
-            original_data_len,
-            MAX_PERMITTED_DATA_INCREASE
-        );
+        msg!("account realloc");
+        // msg!(
+        //     "account realloc {} {} {}",
+        //     new_len,
+        //     original_data_len,
+        //     MAX_PERMITTED_DATA_INCREASE
+        // );
         if new_len.saturating_sub(original_data_len) > MAX_PERMITTED_DATA_INCREASE {
             return Err(ProgramError::InvalidRealloc);
         }

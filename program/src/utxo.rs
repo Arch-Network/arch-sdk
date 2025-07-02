@@ -5,6 +5,7 @@
 //! which combines a transaction ID (txid) and output index (vout) to uniquely identify
 //! a specific Bitcoin UTXO.
 
+use bitcoin::hashes::Hash;
 #[cfg(feature = "fuzzing")]
 use libfuzzer_sys::arbitrary;
 
@@ -64,7 +65,7 @@ impl UtxoMeta {
     /// A Bitcoin OutPoint representing this UTXO
     pub fn to_outpoint(&self) -> OutPoint {
         OutPoint {
-            txid: Txid::from_str(&hex::encode(self.txid())).unwrap(),
+            txid: self.to_txid(),
             vout: self.vout(),
         }
     }
@@ -89,6 +90,50 @@ impl UtxoMeta {
     /// A slice containing the 32-byte transaction ID
     pub fn txid(&self) -> &[u8] {
         &self.0[..32]
+    }
+
+    /// Returns the txid bytes in big-endian format (display format).
+    ///
+    /// **Use this when:**
+    /// - Comparing with other UtxoMeta instances
+    /// - Calling Arch VM helpers (e.g., get_output_value_from_tx)
+    /// - Creating new UtxoMeta instances from existing ones
+    /// - Displaying txids to users (matches block explorer format)
+    /// - Serializing for APIs or external systems
+    ///
+    /// This is the same as txid() but with clearer semantics about byte order.
+    pub fn txid_big_endian(&self) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&self.0[..32]);
+        bytes
+    }
+
+    /// Returns the txid bytes in little-endian format (Bitcoin internal format).
+    ///
+    /// **Use this when:**
+    /// - Working with Bitcoin protocol functions that expect wire format
+    /// - Interacting with low-level Bitcoin operations
+    ///
+    /// This reverses the stored bytes to match Bitcoin's internal representation.
+    pub fn txid_little_endian(&self) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&self.0[..32]);
+        bytes.reverse(); // Convert from stored big-endian to little-endian
+        bytes
+    }
+
+    /// Returns the txid as a Bitcoin Txid type.
+    ///
+    /// **Use this when:**
+    /// - Converting back to OutPoint
+    /// - Working with Bitcoin library functions that expect Txid type
+    /// - Need to leverage Txid's built-in methods
+    ///
+    /// This properly handles the byte order conversion from UtxoMeta's big-endian
+    /// storage to Bitcoin's internal little-endian representation.
+    pub fn to_txid(&self) -> Txid {
+        let little_endian_bytes = self.txid_little_endian();
+        Txid::from_byte_array(little_endian_bytes)
     }
 
     /// Returns a mutable reference to the transaction ID bytes.

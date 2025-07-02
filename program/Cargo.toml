@@ -15,6 +15,7 @@ memoffset = "0.9.1"
 rustversion = "1.0.14"
 thiserror = "1.0"
 bitcoin = { version = "=0.32.5", features = ["serde"] }
+bitcoin_slices = { version = "0.10.0" }
 sha256 = "1.5.0"
 serde = { version = "1.0.198", features = ["derive"] }
 num-derive = "0.4.0"

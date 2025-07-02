@@ -47,6 +47,50 @@ impl<'a> TransactionToSign<'a> {
         serialized
     }
 
+    /// Serializes a Transaction and inputs_to_sign directly into a single buffer
+    /// without intermediate allocations
+    ///
+    /// # Parameters
+    ///
+    /// * `tx` - A reference to the Bitcoin transaction to serialize.
+    /// * `inputs_to_sign` - A slice of `InputToSign` structs representing the inputs to sign.
+    ///
+    /// # Returns
+    ///
+    /// A vector of bytes containing the serialized transaction.
+    pub fn serialise_with_tx(tx: &bitcoin::Transaction, inputs_to_sign: &[InputToSign]) -> Vec<u8> {
+        use bitcoin::consensus::Encodable;
+
+        // Estimate initial capacity to minimize reallocations
+        let inputs_count = inputs_to_sign.len();
+        let estimated_tx_size = 250; // Conservative estimate for average tx size
+        let total_estimated_size = 4 + estimated_tx_size + 4 + (4 + 32) * inputs_count;
+        let mut serialized = Vec::with_capacity(total_estimated_size);
+
+        // Reserve 4 bytes for tx length (we'll write this after we know the actual length)
+        let tx_len_pos = serialized.len();
+        serialized.extend_from_slice(&[0u8; 4]); // Placeholder for tx length
+
+        // Serialize transaction directly into the buffer
+        let tx_start = serialized.len();
+        tx.consensus_encode(&mut serialized)
+            .expect("Transaction encoding should not fail");
+        let tx_end = serialized.len();
+        let tx_len = tx_end - tx_start;
+
+        // Write the actual tx length back to the reserved space
+        serialized[tx_len_pos..tx_len_pos + 4].copy_from_slice(&(tx_len as u32).to_le_bytes());
+
+        // Serialize inputs_to_sign
+        serialized.extend_from_slice(&(inputs_count as u32).to_le_bytes());
+        for input_to_sign in inputs_to_sign.iter() {
+            serialized.extend_from_slice(&input_to_sign.index.to_le_bytes());
+            serialized.extend_from_slice(&input_to_sign.signer.serialize());
+        }
+
+        serialized
+    }
+
     /// Deserializes a byte slice into a `TransactionToSign`.
     ///
     /// # Parameters
@@ -128,5 +172,61 @@ mod tests {
             assert_eq!(transaction.tx_bytes, deserialized.tx_bytes);
             assert_eq!(transaction.inputs_to_sign, deserialized.inputs_to_sign);
         }
+    }
+
+    #[test]
+    fn test_serialise_with_tx_consistency() {
+        use bitcoin::consensus::serialize;
+        use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness};
+
+        // Create a simple test transaction
+        let tx = Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::default(),
+                script_sig: ScriptBuf::new(),
+                sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(5000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+
+        let inputs_to_sign = vec![
+            InputToSign {
+                index: 0,
+                signer: Pubkey::from([1u8; 32]),
+            },
+            InputToSign {
+                index: 1,
+                signer: Pubkey::from([2u8; 32]),
+            },
+        ];
+
+        // Method 1: Original approach (serialize -> TransactionToSign -> serialise)
+        let tx_bytes = serialize(&tx);
+        let transaction_to_sign = TransactionToSign {
+            tx_bytes: &tx_bytes,
+            inputs_to_sign: &inputs_to_sign,
+        };
+        let serialized1 = transaction_to_sign.serialise();
+
+        // Method 2: New approach (serialise_with_tx)
+        let serialized2 = TransactionToSign::serialise_with_tx(&tx, &inputs_to_sign);
+
+        // They should produce identical results
+        assert_eq!(serialized1, serialized2);
+
+        // Verify both can be deserialized correctly
+        let deserialized1 = TransactionToSign::from_slice(&serialized1);
+        let deserialized2 = TransactionToSign::from_slice(&serialized2);
+
+        assert_eq!(deserialized1.tx_bytes, deserialized2.tx_bytes);
+        assert_eq!(deserialized1.inputs_to_sign, deserialized2.inputs_to_sign);
+        assert_eq!(deserialized1.tx_bytes, &tx_bytes);
+        assert_eq!(deserialized1.inputs_to_sign, &inputs_to_sign);
     }
 }
