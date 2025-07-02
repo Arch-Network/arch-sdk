@@ -82,6 +82,10 @@ impl Hash {
     pub fn to_array(&self) -> [u8; 32] {
         self.0
     }
+
+    pub fn to_string_short(&self) -> String {
+        hex::encode(&self.0[..4])
+    }
 }
 
 #[cfg(test)]
