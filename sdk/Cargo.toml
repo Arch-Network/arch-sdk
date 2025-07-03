@@ -7,7 +7,6 @@ license = "MIT"
 
 [dependencies]
 arch_program = "0.5.4"
-common = { path = "../common" }
 
 bitcode = "0.6.4"
 borsh = { version = "1.5.1" }
