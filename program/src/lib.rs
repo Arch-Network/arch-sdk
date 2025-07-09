@@ -29,6 +29,11 @@ use arch_program::instruction::Instruction;
 
 pub use bitcoin;
 
+// Re-export commonly used functions
+pub use program::{
+    get_bitcoin_block_height, get_clock, get_remaining_compute_units, get_stack_height,
+};
+
 /// Account management and ownership verification
 pub mod account;
 /// Atomic operations for u64 values

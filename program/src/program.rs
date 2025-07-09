@@ -575,3 +575,17 @@ pub fn get_clock() -> Clock {
 
     clock
 }
+
+/// Gets the current stack height from the runtime.
+///
+/// # Returns
+/// * `u64` - The current stack height
+pub fn get_stack_height() -> u64 {
+    #[cfg(target_os = "solana")]
+    unsafe {
+        crate::syscalls::arch_get_stack_height()
+    }
+
+    #[cfg(not(target_os = "solana"))]
+    crate::program_stubs::arch_get_stack_height()
+}
