@@ -23,13 +23,19 @@ use thiserror::Error;
 )]
 pub struct Hash([u8; 32]);
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum HashError {
     #[error("Invalid hash length {0}")]
     InvalidLength(usize),
 
     #[error("Invalid hex string {0}")]
-    InvalidHex(#[from] hex::FromHexError),
+    InvalidHex(String),
+}
+
+impl From<hex::FromHexError> for HashError {
+    fn from(err: hex::FromHexError) -> Self {
+        HashError::InvalidHex(err.to_string())
+    }
 }
 
 impl Display for Hash {

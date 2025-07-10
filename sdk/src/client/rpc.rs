@@ -125,8 +125,14 @@ impl ArchRpcClient {
             .ok_or(ArchError::RpcRequestFailed(
                 "request_airdrop failed".to_string(),
             ))?;
-        let txid = Hash::from_str(result.as_str().unwrap()).unwrap();
-        let processed_tx = self.wait_for_processed_transaction(&txid).unwrap();
+
+        // Handle the result parsing with proper error handling
+        let txid_str = result.as_str().ok_or_else(|| {
+            ArchError::ParseError("Failed to get transaction ID as string".to_string())
+        })?;
+
+        let txid = Hash::from_str(txid_str)?;
+        let processed_tx = self.wait_for_processed_transaction(&txid)?;
         Ok(processed_tx)
     }
 
@@ -145,8 +151,7 @@ impl ArchRpcClient {
                 .ok_or(ArchError::RpcRequestFailed(
                     "create_account_with_faucet failed".to_string(),
                 ))?;
-            let mut runtime_tx: RuntimeTransaction =
-                serde_json::from_value(result).expect("Unable to decode create_account result");
+            let mut runtime_tx: RuntimeTransaction = serde_json::from_value(result)?;
 
             let message_hash = runtime_tx.message.hash();
             let signature = crate::Signature::from(sign_message_bip322(
@@ -259,12 +264,12 @@ impl ArchRpcClient {
     /// Get the best block hash
     pub fn get_best_block_hash(&self) -> Result<Hash> {
         match self.call_method_raw(GET_BEST_BLOCK_HASH)? {
-            Some(value) => value
-                .as_str()
-                .map(|s| Hash::from_str(s).unwrap())
-                .ok_or_else(|| {
+            Some(value) => {
+                let hash_str = value.as_str().ok_or_else(|| {
                     ArchError::ParseError("Failed to get best block hash as string".to_string())
-                }),
+                })?;
+                Ok(Hash::from_str(hash_str)?)
+            }
             None => Err(ArchError::NotFound("Best block hash not found".to_string())),
         }
     }
@@ -384,13 +389,10 @@ impl ArchRpcClient {
     pub fn send_transaction(&self, transaction: RuntimeTransaction) -> Result<Hash> {
         match self.process_result(self.post_data(SEND_TRANSACTION, transaction)?)? {
             Some(value) => {
-                let tx_id = value
-                    .as_str()
-                    .map(|s| Hash::from_str(s).unwrap())
-                    .ok_or_else(|| {
-                        ArchError::ParseError("Failed to get transaction ID as string".to_string())
-                    })?;
-                Ok(tx_id)
+                let tx_id_str = value.as_str().ok_or_else(|| {
+                    ArchError::ParseError("Failed to get transaction ID as string".to_string())
+                })?;
+                Ok(Hash::from_str(tx_id_str)?)
             }
             None => Err(ArchError::TransactionError(
                 "Failed to send transaction".to_string(),
@@ -404,10 +406,14 @@ impl ArchRpcClient {
             SEND_TRANSACTIONS,
             transactions,
         )? {
-            Some(tx_ids) => Ok(tx_ids
-                .iter()
-                .map(|id| Hash::from_str(id).unwrap())
-                .collect()),
+            Some(tx_ids) => {
+                let mut parsed_tx_ids = Vec::new();
+                for id in tx_ids {
+                    let hash = Hash::from_str(&id)?;
+                    parsed_tx_ids.push(hash);
+                }
+                Ok(parsed_tx_ids)
+            }
             None => Err(ArchError::TransactionError(
                 "Failed to send transactions".to_string(),
             )),

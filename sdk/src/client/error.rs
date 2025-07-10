@@ -21,6 +21,9 @@ pub enum ArchError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    #[error("Hash error: {0}")]
+    HashError(#[from] arch_program::hash::HashError),
+
     #[error("Unknown error: {0}")]
     UnknownError(String),
 
