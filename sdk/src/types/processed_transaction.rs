@@ -219,9 +219,9 @@ impl ProcessedTransaction {
         size += 8;
         let mut logs = vec![];
         for _ in 0..logs_len {
-            let log_len = u64::from_le_bytes(data[size..(size + 8)].try_into().unwrap()) as usize;
+            let log_len = u64::from_le_bytes(data[size..(size + 8)].try_into()?) as usize;
             size += 8;
-            logs.push(String::from_utf8(data[size..(size + log_len)].to_vec()).unwrap());
+            logs.push(String::from_utf8(data[size..(size + log_len)].to_vec())?);
             size += log_len;
         }
 

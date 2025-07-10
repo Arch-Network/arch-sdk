@@ -1,3 +1,5 @@
+use std::array::TryFromSliceError;
+
 use arch_program::hash::Hash;
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -20,6 +22,14 @@ pub enum BlockParseError {
     InvalidU128,
     #[error("Invalid transactions length")]
     InvalidTransactionsLength,
+    #[error("try from slice error")]
+    TryFromSliceError,
+}
+
+impl From<TryFromSliceError> for BlockParseError {
+    fn from(_e: TryFromSliceError) -> Self {
+        BlockParseError::TryFromSliceError
+    }
 }
 
 #[derive(
@@ -143,7 +153,7 @@ fn read_u64(data: &[u8], cursor: &mut usize) -> Result<u64, BlockParseError> {
     if *cursor + 8 > data.len() {
         return Err(BlockParseError::InvalidBytes);
     }
-    let result = u64::from_le_bytes(data[*cursor..*cursor + 8].try_into().unwrap());
+    let result = u64::from_le_bytes(data[*cursor..*cursor + 8].try_into()?);
     *cursor += 8;
     Ok(result)
 }
@@ -152,7 +162,7 @@ fn read_u128(data: &[u8], cursor: &mut usize) -> Result<u128, BlockParseError> {
     if *cursor + 16 > data.len() {
         return Err(BlockParseError::InvalidBytes);
     }
-    let result = u128::from_le_bytes(data[*cursor..*cursor + 16].try_into().unwrap());
+    let result = u128::from_le_bytes(data[*cursor..*cursor + 16].try_into()?);
     *cursor += 16;
     Ok(result)
 }
