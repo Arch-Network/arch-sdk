@@ -312,7 +312,8 @@ pub fn create_account_with_anchor(
         ),
         vec![account_key_pair, from_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let txid = arch_rpc_client
         .send_transaction(transaction)
@@ -381,7 +382,8 @@ pub fn assign_ownership_to_program(
         ),
         vec![current_owner_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let txid = arch_rpc_client
         .send_transaction(transaction)

@@ -45,7 +45,8 @@ pub fn initialize_mint_token(
         ),
         vec![authority_keypair, token_mint_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let processed_transactions = send_transactions_and_wait(vec![transaction]);
     assert_eq!(processed_transactions[0].status, Status::Processed);
@@ -91,7 +92,8 @@ pub fn initialize_token_account(
         ),
         vec![owner_keypair, token_account_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let processed_transactions = send_transactions_and_wait(vec![transaction]);
     assert_eq!(processed_transactions[0].status, Status::Processed);
@@ -125,7 +127,8 @@ pub fn mint_tokens(
         ),
         vec![owner_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let processed_transactions = send_transactions_and_wait(vec![transaction]);
     assert_eq!(processed_transactions[0].status, Status::Processed);
@@ -157,7 +160,8 @@ pub fn approve(
         ),
         vec![owner_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let processed_transactioins = send_transactions_and_wait(vec![transaction]);
     assert_eq!(processed_transactioins[0].status, Status::Processed);
@@ -185,7 +189,8 @@ pub fn revoke(
         ),
         vec![owner_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let processed_tx = send_transactions_and_wait(vec![transaction]);
     assert_eq!(processed_tx[0].status, Status::Processed);
@@ -211,7 +216,8 @@ pub fn create_account_helper(
         ),
         vec![from_keypair, to_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let processed_tx = send_transactions_and_wait(vec![transaction]);
     assert_eq!(processed_tx[0].status, Status::Processed);
@@ -241,7 +247,8 @@ pub fn freeze_account(
         ),
         vec![owner_keypair],
         BITCOIN_NETWORK,
-    );
+    )
+    .expect("Failed to build and sign transaction");
 
     let processed_tx = send_transactions_and_wait(vec![transaction]);
     assert_eq!(processed_tx[0].status, Status::Processed);

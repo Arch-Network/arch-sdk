@@ -63,13 +63,19 @@ impl From<std::io::Error> for ProgramDeployerError {
     }
 }
 
+impl From<anyhow::Error> for ProgramDeployerError {
+    fn from(err: anyhow::Error) -> Self {
+        ProgramDeployerError::TransactionError(format!("Transaction building error: {}", err))
+    }
+}
+
 pub fn get_state(data: &[u8]) -> Result<&LoaderState, InstructionError> {
     unsafe {
         let data = data
             .get(0..LoaderState::program_data_offset())
             .ok_or(InstructionError::AccountDataTooSmall)?
             .try_into()
-            .unwrap();
+            .map_err(|_| InstructionError::AccountDataTooSmall)?;
         Ok(std::mem::transmute::<
             &[u8; LoaderState::program_data_offset()],
             &LoaderState,
@@ -145,7 +151,7 @@ impl ProgramDeployer {
                 ),
                 vec![authority_keypair.clone(), program_keypair.clone()],
                 self.network,
-            );
+            )?;
 
             let create_account_txid = self.client.send_transaction(create_account_tx)?;
             let tx = self
@@ -198,7 +204,7 @@ impl ProgramDeployer {
                 ),
                 vec![authority_keypair.clone()],
                 self.network,
-            );
+            )?;
 
             let executability_txid = self.client.send_transaction(executability_tx)?;
             let tx = self
@@ -291,7 +297,7 @@ impl ProgramDeployer {
                 ),
                 vec![authority_keypair.clone()],
                 self.network,
-            );
+            )?;
 
             let retract_txid = self.client.send_transaction(retract_tx)?;
             let _processed_tx = self.client.wait_for_processed_transaction(&retract_txid)?;
@@ -312,7 +318,7 @@ impl ProgramDeployer {
                 ),
                 vec![program_keypair.clone(), authority_keypair.clone()],
                 self.network,
-            );
+            )?;
 
             let truncate_txid = self.client.send_transaction(truncate_tx)?;
             let _processed_tx = self.client.wait_for_processed_transaction(&truncate_txid)?;
@@ -324,7 +330,7 @@ impl ProgramDeployer {
             .map(|(i, chunk)| {
                 let offset: u32 = (i * extend_bytes_max_len()) as u32;
 
-                let recent_blockhash = self.client.get_best_block_hash().unwrap();
+                let recent_blockhash = self.client.get_best_block_hash()?;
                 let message = ArchMessage::new(
                     &[loader_instruction::write(
                         program_pubkey,
@@ -338,7 +344,7 @@ impl ProgramDeployer {
 
                 let digest_slice = message.hash();
 
-                RuntimeTransaction {
+                Ok(RuntimeTransaction {
                     version: 0,
                     signatures: vec![Signature(
                         sign_message_bip322(&authority_keypair, &digest_slice, self.network)
@@ -346,9 +352,9 @@ impl ProgramDeployer {
                             .expect("sign_message_bip322 should return exactly 64 bytes"),
                     )],
                     message,
-                }
+                })
             })
-            .collect::<Vec<RuntimeTransaction>>();
+            .collect::<Result<Vec<RuntimeTransaction>, ProgramDeployerError>>()?;
 
         let pb = ProgressBar::new(txs.len() as u64);
         pb.set_style(

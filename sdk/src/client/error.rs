@@ -1,3 +1,4 @@
+use arch_program::pubkey::Pubkey;
 use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +30,9 @@ pub enum ArchError {
 
     #[error("FromHexError: {0}")]
     FromHexError(String),
+
+    #[error("Required signer not found for key: {0}")]
+    RequiredSignerNotFound(Pubkey),
 }
 
 impl From<serde_json::Error> for ArchError {
