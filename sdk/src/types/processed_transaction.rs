@@ -20,6 +20,9 @@ pub enum ParseProcessedTransactionError {
     #[error("try from slice error")]
     TryFromSliceError,
 
+    #[error("buffer too short for deserialization")]
+    BufferTooShort,
+
     #[error("runtime transaction error: {0}")]
     RuntimeTransactionError(#[from] RuntimeTransactionError),
 
@@ -114,8 +117,17 @@ impl RollbackStatus {
         data: &[u8; ROLLBACK_MESSAGE_BUFFER_SIZE],
     ) -> Result<Self, ParseProcessedTransactionError> {
         if data[0] == 1 {
-            let msg_len = u64::from_le_bytes(data[1..9].try_into()?) as usize;
-            let msg = String::from_utf8(data[9..(9 + msg_len)].to_vec())?;
+            let msg_len = u64::from_le_bytes(
+                data[1..9]
+                    .try_into()
+                    .map_err(|_| ParseProcessedTransactionError::TryFromSliceError)?,
+            ) as usize;
+            // Check that msg_len doesn't exceed the available space in the fixed buffer
+            if 9 + msg_len > ROLLBACK_MESSAGE_BUFFER_SIZE {
+                return Err(ParseProcessedTransactionError::BufferTooShort);
+            }
+            let msg = String::from_utf8(data[9..(9 + msg_len)].to_vec())
+                .map_err(ParseProcessedTransactionError::FromUtf8Error)?;
             Ok(RollbackStatus::Rolledback(msg))
         } else {
             Ok(RollbackStatus::NotRolledback)
@@ -254,6 +266,7 @@ impl ProcessedTransaction {
 
 #[cfg(test)]
 mod tests {
+    use super::ParseProcessedTransactionError;
     // use crate::processed_transaction::ProcessedTransaction;
     // use crate::processed_transaction::RollbackStatus;
     // use crate::processed_transaction::Status;
@@ -429,5 +442,32 @@ mod tests {
     fn rollback_default_message_size() {
         let message = "Transaction rolled back in Bitcoin";
         println!("Message size as bytes : {}", message.as_bytes().len());
+    }
+
+    #[test]
+    fn test_from_fixed_array_invalid_utf8() {
+        let mut data = [0u8; ROLLBACK_MESSAGE_BUFFER_SIZE];
+        data[0] = 1;
+        data[1..9].copy_from_slice(&(3u64.to_le_bytes()));
+        data[9..12].copy_from_slice(&[0xff, 0xff, 0xff]); // Invalid UTF-8
+        let result = RollbackStatus::from_fixed_array(&data);
+        assert!(matches!(
+            result,
+            Err(ParseProcessedTransactionError::FromUtf8Error(_))
+        ));
+    }
+
+    #[test]
+    fn test_from_fixed_array_msg_len_exceeds_buffer() {
+        let mut data = [0u8; ROLLBACK_MESSAGE_BUFFER_SIZE];
+        data[0] = 1;
+        // Set msg_len to exceed available space (buffer size - 9 bytes for header)
+        let invalid_msg_len = ROLLBACK_MESSAGE_BUFFER_SIZE - 8; // This will exceed when we add 9
+        data[1..9].copy_from_slice(&(invalid_msg_len as u64).to_le_bytes());
+        let result = RollbackStatus::from_fixed_array(&data);
+        assert!(matches!(
+            result,
+            Err(ParseProcessedTransactionError::BufferTooShort)
+        ));
     }
 }
