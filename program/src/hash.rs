@@ -1,5 +1,7 @@
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use thiserror::Error;
@@ -21,6 +23,7 @@ use thiserror::Error;
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct Hash([u8; 32]);
 
 #[derive(Error, Debug, Clone, PartialEq, Serialize, Deserialize)]
