@@ -28,6 +28,15 @@ pub enum ParseProcessedTransactionError {
 
     #[error("rollback message too long")]
     RollbackMessageTooLong,
+
+    #[error("log message too long")]
+    LogMessageTooLong,
+
+    #[error("log messages too long")]
+    TooManyLogMessages,
+
+    #[error("status failed message too long")]
+    StatusFailedMessageTooLong,
 }
 
 impl From<TryFromSliceError> for ParseProcessedTransactionError {
@@ -156,8 +165,24 @@ pub struct ProcessedTransaction {
 }
 
 const ROLLBACK_MESSAGE_BUFFER_SIZE: usize = 1033;
+const LOG_MESSAGES_BYTES_LIMIT: usize = 255;
+const MAX_LOG_MESSAGES: usize = 100;
+const MAX_STATUS_FAILED_MESSAGE_SIZE: usize = 1000;
 
 impl ProcessedTransaction {
+    pub fn max_serialized_size() -> usize {
+        ROLLBACK_MESSAGE_BUFFER_SIZE  // rollback status (fixed size buffer)
+            + 8  // runtime_transaction length field
+            + crate::types::runtime_transaction::RUNTIME_TX_SIZE_LIMIT  // max runtime transaction size
+            + 1  // bitcoin_txid variant flag (None/Some)
+            + 32  // bitcoin_txid hash (when Some)
+            + 8  // logs length field
+            + MAX_LOG_MESSAGES * (8 + LOG_MESSAGES_BYTES_LIMIT)  // max logs data
+            + 1  // status variant flag (Queued/Processed/Failed)
+            + 8  // error message length field (for Failed status)
+            + MAX_STATUS_FAILED_MESSAGE_SIZE // reasonable max error message size
+    }
+
     pub fn txid(&self) -> Hash {
         self.runtime_transaction.txid()
     }
@@ -179,10 +204,15 @@ impl ProcessedTransaction {
             None => vec![0],
         });
 
+        if self.logs.len() > MAX_LOG_MESSAGES {
+            return Err(ParseProcessedTransactionError::TooManyLogMessages);
+        }
+
         serialized.extend((self.logs.len() as u64).to_le_bytes());
         for log in &self.logs {
-            serialized.extend((log.len() as u64).to_le_bytes());
-            serialized.extend(log.as_bytes());
+            let log_len = std::cmp::min(log.len(), LOG_MESSAGES_BYTES_LIMIT);
+            serialized.extend((log_len as u64).to_le_bytes());
+            serialized.extend(log.as_bytes()[..log_len].to_vec());
         }
 
         serialized.extend(match &self.status {
@@ -190,6 +220,9 @@ impl ProcessedTransaction {
             Status::Processed => vec![1_u8],
             Status::Failed(err) => {
                 let mut result = vec![2_u8];
+                if err.len() > 1000 {
+                    return Err(ParseProcessedTransactionError::StatusFailedMessageTooLong);
+                }
                 result.extend((err.len() as u64).to_le_bytes());
                 result.extend(err.as_bytes());
                 result
@@ -228,11 +261,18 @@ impl ProcessedTransaction {
 
         let data_bytes = data[size..(size + 8)].try_into()?;
         let logs_len = u64::from_le_bytes(data_bytes) as usize;
+        if logs_len > MAX_LOG_MESSAGES {
+            return Err(ParseProcessedTransactionError::TooManyLogMessages);
+        }
+
         size += 8;
         let mut logs = vec![];
         for _ in 0..logs_len {
             let log_len = u64::from_le_bytes(data[size..(size + 8)].try_into()?) as usize;
             size += 8;
+            if log_len > LOG_MESSAGES_BYTES_LIMIT {
+                return Err(ParseProcessedTransactionError::LogMessageTooLong);
+            }
             logs.push(String::from_utf8(data[size..(size + log_len)].to_vec())?);
             size += log_len;
         }
@@ -243,6 +283,9 @@ impl ProcessedTransaction {
             2 => {
                 let data_bytes = data[(size + 1)..(size + 9)].try_into()?;
                 let error_len = u64::from_le_bytes(data_bytes) as usize;
+                if error_len > 1000 {
+                    return Err(ParseProcessedTransactionError::StatusFailedMessageTooLong);
+                }
                 size += 9;
                 let error = String::from_utf8(data[size..(size + error_len)].to_vec())?;
                 Status::Failed(error)
@@ -267,6 +310,9 @@ impl ProcessedTransaction {
 #[cfg(test)]
 mod tests {
     use super::ParseProcessedTransactionError;
+    use crate::Signature;
+    use arch_program::pubkey::Pubkey;
+    use arch_program::sanitized::SanitizedInstruction;
     // use crate::processed_transaction::ProcessedTransaction;
     // use crate::processed_transaction::RollbackStatus;
     // use crate::processed_transaction::Status;
@@ -442,6 +488,288 @@ mod tests {
     fn rollback_default_message_size() {
         let message = "Transaction rolled back in Bitcoin";
         println!("Message size as bytes : {}", message.as_bytes().len());
+    }
+
+    // Tests for log validation checks
+    fn create_minimal_processed_transaction() -> ProcessedTransaction {
+        ProcessedTransaction {
+            runtime_transaction: crate::RuntimeTransaction {
+                version: 1,
+                signatures: vec![],
+                message: ArchMessage {
+                    header: MessageHeader {
+                        num_readonly_signed_accounts: 0,
+                        num_readonly_unsigned_accounts: 0,
+                        num_required_signatures: 0,
+                    },
+                    account_keys: vec![],
+                    instructions: vec![],
+                    recent_blockhash: Hash::from_str(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap(),
+                },
+            },
+            status: Status::Processed,
+            bitcoin_txid: None,
+            logs: vec![],
+            rollback_status: RollbackStatus::NotRolledback,
+        }
+    }
+
+    #[test]
+    fn test_serialization_too_many_log_messages() {
+        let mut processed_transaction = create_minimal_processed_transaction();
+
+        // Create MAX_LOG_MESSAGES + 1 log messages
+        processed_transaction.logs = (0..=super::MAX_LOG_MESSAGES)
+            .map(|i| format!("Log message {}", i))
+            .collect();
+
+        let result = processed_transaction.to_vec();
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            super::ParseProcessedTransactionError::TooManyLogMessages
+        );
+    }
+
+    #[test]
+    fn test_serialization_exactly_max_log_messages() {
+        let mut processed_transaction = create_minimal_processed_transaction();
+
+        // Create exactly MAX_LOG_MESSAGES log messages
+        processed_transaction.logs = (0..super::MAX_LOG_MESSAGES)
+            .map(|i| format!("Log message {}", i))
+            .collect();
+
+        let result = processed_transaction.to_vec();
+        assert!(result.is_ok());
+
+        // Verify round-trip
+        let serialized = result.unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
+        assert_eq!(processed_transaction, deserialized);
+    }
+
+    #[test]
+    fn test_deserialization_too_many_log_messages() {
+        // Create a valid processed transaction first
+        let mut processed_transaction = create_minimal_processed_transaction();
+        processed_transaction.logs = vec!["Valid log".to_string()];
+
+        let mut serialized = processed_transaction.to_vec().unwrap();
+
+        // Manually corrupt the serialized data to have too many log messages
+        // Find the position where logs length is stored
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let runtime_tx_len_pos = rollback_size;
+        let runtime_tx_len = u64::from_le_bytes(
+            serialized[runtime_tx_len_pos..runtime_tx_len_pos + 8]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let bitcoin_txid_pos = runtime_tx_len_pos + 8 + runtime_tx_len;
+        let logs_len_pos = bitcoin_txid_pos + 1; // +1 for the bitcoin_txid flag (0 in this case)
+
+        // Set logs_len to MAX_LOG_MESSAGES + 1
+        let corrupted_logs_len = (super::MAX_LOG_MESSAGES + 1) as u64;
+        serialized[logs_len_pos..logs_len_pos + 8]
+            .copy_from_slice(&corrupted_logs_len.to_le_bytes());
+
+        let result = ProcessedTransaction::from_vec(&serialized);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            super::ParseProcessedTransactionError::TooManyLogMessages
+        );
+    }
+
+    #[test]
+    fn test_serialization_log_message_gets_truncated() {
+        let mut processed_transaction = create_minimal_processed_transaction();
+
+        // Create a log message longer than LOG_MESSAGES_BYTES_LIMIT
+        let long_message = "a".repeat(super::LOG_MESSAGES_BYTES_LIMIT + 10);
+        processed_transaction.logs = vec![long_message.clone()];
+
+        let result = processed_transaction.to_vec();
+        assert!(result.is_ok());
+
+        // Verify that the message was truncated during serialization
+        let serialized = result.unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
+
+        assert_eq!(deserialized.logs.len(), 1);
+        assert_eq!(deserialized.logs[0].len(), super::LOG_MESSAGES_BYTES_LIMIT);
+        assert_eq!(
+            deserialized.logs[0],
+            "a".repeat(super::LOG_MESSAGES_BYTES_LIMIT)
+        );
+    }
+
+    #[test]
+    fn test_deserialization_log_message_too_long() {
+        // Create a valid processed transaction first
+        let mut processed_transaction = create_minimal_processed_transaction();
+        processed_transaction.logs = vec!["Valid log".to_string()];
+
+        let mut serialized = processed_transaction.to_vec().unwrap();
+
+        // Find the position where the first log message length is stored
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let runtime_tx_len_pos = rollback_size;
+        let runtime_tx_len = u64::from_le_bytes(
+            serialized[runtime_tx_len_pos..runtime_tx_len_pos + 8]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let bitcoin_txid_pos = runtime_tx_len_pos + 8 + runtime_tx_len;
+        let logs_len_pos = bitcoin_txid_pos + 1; // +1 for the bitcoin_txid flag
+        let first_log_len_pos = logs_len_pos + 8; // +8 for logs_len
+
+        // Set the first log message length to exceed LOG_MESSAGES_BYTES_LIMIT
+        let corrupted_log_len = (super::LOG_MESSAGES_BYTES_LIMIT + 1) as u64;
+        serialized[first_log_len_pos..first_log_len_pos + 8]
+            .copy_from_slice(&corrupted_log_len.to_le_bytes());
+
+        let result = ProcessedTransaction::from_vec(&serialized);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            super::ParseProcessedTransactionError::LogMessageTooLong
+        );
+    }
+
+    #[test]
+    fn test_log_message_exactly_at_limit() {
+        let mut processed_transaction = create_minimal_processed_transaction();
+
+        // Create a log message exactly at the LOG_MESSAGES_BYTES_LIMIT
+        let max_message = "a".repeat(super::LOG_MESSAGES_BYTES_LIMIT);
+        processed_transaction.logs = vec![max_message.clone()];
+
+        let result = processed_transaction.to_vec();
+        assert!(result.is_ok());
+
+        // Verify round-trip
+        let serialized = result.unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
+        assert_eq!(processed_transaction, deserialized);
+        assert_eq!(deserialized.logs[0], max_message);
+    }
+
+    #[test]
+    fn test_multiple_log_messages_within_limits() {
+        let mut processed_transaction = create_minimal_processed_transaction();
+
+        // Create multiple log messages within both limits
+        processed_transaction.logs = (0..10)
+            .map(|i| format!("Log message number {} with some content", i))
+            .collect();
+
+        let result = processed_transaction.to_vec();
+        assert!(result.is_ok());
+
+        // Verify round-trip
+        let serialized = result.unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
+        assert_eq!(processed_transaction, deserialized);
+    }
+
+    #[test]
+    fn test_empty_log_messages() {
+        let mut processed_transaction = create_minimal_processed_transaction();
+
+        // Test with some empty log messages
+        processed_transaction.logs = vec!["".to_string(), "Valid log".to_string(), "".to_string()];
+
+        let result = processed_transaction.to_vec();
+        assert!(result.is_ok());
+
+        // Verify round-trip
+        let serialized = result.unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
+        assert_eq!(processed_transaction, deserialized);
+    }
+
+    #[test]
+    fn test_no_log_messages() {
+        let processed_transaction = create_minimal_processed_transaction();
+        // logs is already empty in the minimal transaction
+
+        let result = processed_transaction.to_vec();
+        assert!(result.is_ok());
+
+        // Verify round-trip
+        let serialized = result.unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
+        assert_eq!(processed_transaction, deserialized);
+    }
+
+    #[test]
+    fn test_biggest_processed_transaction_within_max_size() {
+        // Now let's create a truly maximum transaction with all fields maximized
+        let runtime_transaction = crate::RuntimeTransaction {
+            version: 0,
+            signatures: vec![Signature::from([0xFF; 64]); 10], // Some signatures
+            message: ArchMessage {
+                header: MessageHeader {
+                    num_required_signatures: 10,
+                    num_readonly_signed_accounts: 5,
+                    num_readonly_unsigned_accounts: 5,
+                },
+                account_keys: (0..50)
+                    .map(|i| {
+                        let mut bytes = [0u8; 32];
+                        bytes[0] = i as u8;
+                        Pubkey::from(bytes)
+                    })
+                    .collect(),
+                instructions: vec![SanitizedInstruction {
+                    program_id_index: 0,
+                    accounts: (0..20).collect(),
+                    data: vec![0xAA; 7923],
+                }],
+                recent_blockhash: Hash::from([0xFF; 32]),
+            },
+        };
+
+        println!(
+            "runtime_transaction.serialize().len(): {}",
+            runtime_transaction.serialize().len()
+        );
+
+        // Ensure the runtime transaction is within its limit
+        assert!(runtime_transaction.check_tx_size_limit().is_ok());
+
+        let processed_transaction = ProcessedTransaction {
+            runtime_transaction: runtime_transaction.clone(),
+            status: Status::Failed("X".repeat(super::MAX_STATUS_FAILED_MESSAGE_SIZE)), // Large error message
+            bitcoin_txid: Some(Hash::from([0xFF; 32])),
+            logs: (0..super::MAX_LOG_MESSAGES)
+                .map(|_| "X".repeat(super::LOG_MESSAGES_BYTES_LIMIT))
+                .collect(),
+            rollback_status: RollbackStatus::Rolledback(
+                "X".repeat(ROLLBACK_MESSAGE_BUFFER_SIZE - 9),
+            ),
+        };
+
+        let processed_transaction_serialized_len = processed_transaction.to_vec().unwrap();
+
+        println!(
+            "processed_transaction_serialized_len: {}",
+            processed_transaction_serialized_len.len()
+        );
+        println!(
+            "max_serialized_size: {}",
+            ProcessedTransaction::max_serialized_size()
+        );
+
+        assert!(
+            processed_transaction_serialized_len.len()
+                <= ProcessedTransaction::max_serialized_size()
+        );
     }
 
     #[test]

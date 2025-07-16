@@ -52,10 +52,18 @@ pub struct Block {
     pub timestamp: u128,
     pub block_height: u64,
     pub bitcoin_block_height: u64,
-    pub transaction_count: u64,
 }
 
 impl Block {
+    pub const fn max_serialized_size() -> usize {
+        8 // transaction_count
+        + MAX_TRANSACTIONS_PER_BLOCK * 32 // transactions
+        + 32 // previous_block_hash
+        + 16 // timestamp
+        + 8 // block_height
+        + 8 // bitcoin_block_height
+    }
+
     pub fn hash(&self) -> Hash {
         let serialized_block = self.to_vec();
         let hash_string = sha256::digest(sha256::digest(serialized_block));
@@ -66,8 +74,7 @@ impl Block {
         let mut serialized = Vec::new();
 
         // Serialize previous_block_hash
-        serialized.extend_from_slice(self.previous_block_hash.to_string().as_bytes());
-        serialized.push(0); // Null terminator
+        serialized.extend_from_slice(&self.previous_block_hash.to_array());
 
         // Serialize timestamp
         serialized.extend_from_slice(&self.timestamp.to_le_bytes());
@@ -78,14 +85,10 @@ impl Block {
         // Serialize bitcoin block height
         serialized.extend_from_slice(&self.bitcoin_block_height.to_le_bytes());
 
-        // Serialize transaction_count
-        serialized.extend_from_slice(&self.transaction_count.to_le_bytes());
-
         // Serialize transactions
         serialized.extend_from_slice(&(self.transactions.len() as u64).to_le_bytes());
         for transaction in &self.transactions {
-            serialized.extend_from_slice(transaction.to_string().as_bytes());
-            serialized.push(0); // Null terminator
+            serialized.extend_from_slice(&transaction.to_array());
         }
 
         serialized
@@ -95,9 +98,7 @@ impl Block {
         let mut cursor = 0;
 
         // Deserialize previous_block_hash
-        let previous_block_hash_str = read_string(data, &mut cursor)?;
-        let previous_block_hash =
-            Hash::from_str(&previous_block_hash_str).map_err(|_| BlockParseError::InvalidString)?;
+        let previous_block_hash = read_hash(data, &mut cursor)?;
 
         // Deserialize timestamp
         let timestamp = read_u128(data, &mut cursor)?;
@@ -108,9 +109,6 @@ impl Block {
         // Deserialize bitcoin_block_height
         let bitcoin_block_height = read_u64(data, &mut cursor)?;
 
-        // Deserialize transaction_count
-        let transaction_count = read_u64(data, &mut cursor)?;
-
         // Deserialize transactions
         let transactions_len = read_u64(data, &mut cursor)?;
 
@@ -119,8 +117,7 @@ impl Block {
         }
         let mut transactions = Vec::with_capacity(transactions_len as usize);
         for _ in 0..transactions_len {
-            let tx_str = read_string(data, &mut cursor)?;
-            let tx_hash = Hash::from_str(&tx_str).map_err(|_| BlockParseError::InvalidString)?;
+            let tx_hash = read_hash(data, &mut cursor)?;
             transactions.push(tx_hash);
         }
 
@@ -130,22 +127,17 @@ impl Block {
             timestamp,
             block_height,
             bitcoin_block_height,
-            transaction_count,
         })
     }
 }
 
-fn read_string(data: &[u8], cursor: &mut usize) -> Result<String, BlockParseError> {
-    let start = *cursor;
-    while *cursor < data.len() && data[*cursor] != 0 {
-        *cursor += 1;
-    }
-    if *cursor == data.len() {
+fn read_hash(data: &[u8], cursor: &mut usize) -> Result<Hash, BlockParseError> {
+    if *cursor + 32 > data.len() {
         return Err(BlockParseError::InvalidBytes);
     }
-    let result = String::from_utf8(data[start..*cursor].to_vec())
-        .map_err(|_| BlockParseError::InvalidBytes)?;
-    *cursor += 1; // Skip null terminator
+    let result: [u8; 32] = data[*cursor..*cursor + 32].try_into()?;
+    let result = Hash::from(result);
+    *cursor += 32;
     Ok(result)
 }
 
@@ -184,7 +176,6 @@ pub struct FullBlock {
     pub timestamp: u128,
     pub block_height: u64,
     pub bitcoin_block_height: u64,
-    pub transaction_count: u64,
 }
 
 impl From<(Block, Vec<ProcessedTransaction>)> for FullBlock {
@@ -195,7 +186,6 @@ impl From<(Block, Vec<ProcessedTransaction>)> for FullBlock {
             timestamp: value.0.timestamp,
             block_height: value.0.block_height,
             bitcoin_block_height: value.0.bitcoin_block_height,
-            transaction_count: value.0.transaction_count,
         }
     }
 }
@@ -208,7 +198,6 @@ impl FullBlock {
             previous_block_hash: self.previous_block_hash,
             timestamp: self.timestamp,
             bitcoin_block_height: self.bitcoin_block_height,
-            transaction_count: self.transaction_count,
             block_height: self.block_height,
         };
         block.hash()
@@ -221,7 +210,6 @@ impl FullBlock {
             previous_block_hash: self.previous_block_hash,
             timestamp: self.timestamp,
             bitcoin_block_height: self.bitcoin_block_height,
-            transaction_count: self.transaction_count,
             block_height: self.block_height,
         };
         block.to_vec()
@@ -235,7 +223,6 @@ impl From<FullBlock> for Block {
             previous_block_hash: value.previous_block_hash,
             timestamp: value.timestamp,
             bitcoin_block_height: value.bitcoin_block_height,
-            transaction_count: value.transaction_count,
             block_height: value.block_height,
         }
     }
@@ -260,7 +247,6 @@ mod tests {
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
-            transaction_count: 2,
         };
 
         let serialized_data = original_block.to_vec();
@@ -272,10 +258,6 @@ mod tests {
         );
         assert_eq!(original_block.transactions, deserialized_block.transactions);
         assert_eq!(original_block.timestamp, deserialized_block.timestamp);
-        assert_eq!(
-            original_block.transaction_count,
-            deserialized_block.transaction_count
-        );
     }
 
     #[test]
@@ -291,7 +273,6 @@ mod tests {
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
-            transaction_count: 2,
         };
 
         let hash = block.hash();
@@ -304,5 +285,21 @@ mod tests {
             64,
             "Block hash should be 64 characters long"
         );
+    }
+
+    #[test]
+    fn test_max_serialized_size() {
+        let block = Block {
+            transactions: vec![
+                Hash::from_str(GENESIS_BLOCK_PREVIOUS_HASH).unwrap();
+                MAX_TRANSACTIONS_PER_BLOCK
+            ],
+            previous_block_hash: Hash::from_str(GENESIS_BLOCK_PREVIOUS_HASH).unwrap(),
+            timestamp: 1630000000,
+            block_height: 100,
+            bitcoin_block_height: 100,
+        };
+        let serialized_data = block.to_vec();
+        assert_eq!(serialized_data.len(), Block::max_serialized_size());
     }
 }

@@ -835,7 +835,6 @@ mod tests {
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
-            transaction_count: 2,
         };
 
         let mock = mock_rpc_response_with_params(
@@ -851,7 +850,6 @@ mod tests {
         assert!(result.is_some());
         let returned_block = result.unwrap();
         assert_eq!(returned_block.transactions, block.transactions);
-        assert_eq!(returned_block.transaction_count, block.transaction_count);
         assert_eq!(
             returned_block.bitcoin_block_height,
             block.bitcoin_block_height
@@ -1112,7 +1110,6 @@ mod tests {
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
-            transaction_count: 0,
         };
 
         // Mock response with the correct parameters (block_hash and BlockTransactionFilter::Full)
@@ -1166,7 +1163,6 @@ mod tests {
             timestamp: 1630000000,
             block_height: 100,
             bitcoin_block_height: 100,
-            transaction_count: 2,
         };
 
         let mock = mock_rpc_response_with_params(
@@ -1182,7 +1178,6 @@ mod tests {
         assert!(result.is_some());
         let returned_block = result.unwrap();
         assert_eq!(returned_block.transactions, block.transactions);
-        assert_eq!(returned_block.transaction_count, block.transaction_count);
         assert_eq!(
             returned_block.bitcoin_block_height,
             block.bitcoin_block_height
@@ -1205,7 +1200,6 @@ mod tests {
             timestamp: 1630000000,
             block_height,
             bitcoin_block_height: 100,
-            transaction_count: 0,
         };
 
         // Mock response with the correct parameters (block_height and BlockTransactionFilter::Full)
