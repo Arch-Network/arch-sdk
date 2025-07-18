@@ -9,7 +9,7 @@ use crate::program_error::ProgramError;
 use crate::rune::RuneAmount;
 #[cfg(target_os = "solana")]
 use crate::stable_layout::stable_ins::StableInstruction;
-use crate::{msg, transaction_to_sign, MAX_BTC_RUNE_OUTPUT_SIZE, MAX_BTC_TX_SIZE};
+use crate::{msg, MAX_BTC_RUNE_OUTPUT_SIZE, MAX_BTC_TX_SIZE};
 
 use crate::clock::Clock;
 use crate::transaction_to_sign::TransactionToSign;
@@ -476,7 +476,7 @@ pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<Ru
     if size == 0 {
         None
     } else {
-        unsafe { result.set_size(min(size as usize, MAX_BTC_RUNE_OUTPUT_SIZE)) };
+        result.set_size(min(size as usize, MAX_BTC_RUNE_OUTPUT_SIZE));
         borsh::from_slice::<Vec<RuneAmount>>(result.as_slice()).ok()
     }
 }

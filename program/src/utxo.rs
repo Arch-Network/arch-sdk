@@ -180,6 +180,7 @@ impl Default for UtxoMeta {
 
 #[test]
 fn test_outpoint() {
+    use std::str::FromStr;
     assert_eq!(
         OutPoint::new(
             Txid::from_str("c5cc9251192330191366016c8dab0f67dc345bd024a206c313dbf26db0a66bb1")
@@ -199,7 +200,6 @@ fn test_outpoint() {
 
 use core::fmt;
 use std::io::{Read, Result, Write};
-use std::str::FromStr;
 
 use bitcoin::OutPoint;
 use bitcoin::Txid;
