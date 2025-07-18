@@ -113,6 +113,14 @@ pub const MAX_BTC_TX_SIZE: usize = 3976;
 /// Maximum size of a Bitcoin rune output in bytes
 pub const MAX_BTC_RUNE_OUTPUT_SIZE: usize = 2048;
 
+pub const MAX_SIGNERS: usize = 16;
+pub const MAX_SEEDS: usize = 16;
+pub const MAX_SEED_LEN: usize = 32;
+/// Max Taproot inputs to keep tx size ≤ 4096 bytes.
+/// Each input ≈ 161 bytes (base + witness).
+/// 4096 / 161 ≈ 25
+pub const MAX_BTC_TXN_INPUTS: usize = 25;
+
 pub mod builtin {
     use super::*;
     use crate::pubkey::Pubkey;
