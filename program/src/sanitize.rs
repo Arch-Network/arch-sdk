@@ -11,6 +11,7 @@ pub enum SanitizeError {
     SignatureCountMismatch { expected: usize, actual: usize },
     InvalidRecentBlockhash,
     DuplicateAccount,
+    InvalidSize,
 }
 
 impl Error for SanitizeError {}
@@ -31,6 +32,7 @@ impl fmt::Display for SanitizeError {
             }
             SanitizeError::InvalidRecentBlockhash => f.write_str("invalid recent blockhash"),
             SanitizeError::DuplicateAccount => f.write_str("duplicate accounts detected"),
+            SanitizeError::InvalidSize => f.write_str("invalid size"),
         }
     }
 }

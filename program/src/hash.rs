@@ -26,6 +26,12 @@ use thiserror::Error;
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct Hash([u8; 32]);
 
+impl AsRef<[u8; 32]> for Hash {
+    fn as_ref(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 #[derive(Error, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum HashError {
     #[error("Invalid hash length {0}")]
