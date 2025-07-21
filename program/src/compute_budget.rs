@@ -24,7 +24,7 @@ impl ComputeBudgetInstruction {
     pub fn request_heap_frame(bytes: u32) -> Instruction {
         Instruction::new_with_bincode(
             COMPUTE_BUDGET_PROGRAM_ID,
-            &Self::RequestHeapFrame(bytes),
+            Self::RequestHeapFrame(bytes),
             vec![],
         )
     }
@@ -33,7 +33,7 @@ impl ComputeBudgetInstruction {
     pub fn set_compute_unit_limit(units: u32) -> Instruction {
         Instruction::new_with_bincode(
             COMPUTE_BUDGET_PROGRAM_ID,
-            &Self::SetComputeUnitLimit(units),
+            Self::SetComputeUnitLimit(units),
             vec![],
         )
     }

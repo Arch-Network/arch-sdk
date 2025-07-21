@@ -83,7 +83,7 @@ impl TryFrom<&str> for Hash {
 
 impl Hash {
     pub fn from_str(value: &str) -> Result<Self, HashError> {
-        let hash = hex::decode(&value)?;
+        let hash = hex::decode(value)?;
         if hash.len() != 32 {
             return Err(HashError::InvalidLength(hash.len()));
         }

@@ -5,7 +5,6 @@ use crate::types::{
 use crate::{SubscriptionRequest, UnsubscribeRequest};
 use futures::future::{BoxFuture, FutureExt};
 use futures::{SinkExt, StreamExt};
-use rand;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::future::Future;
@@ -17,7 +16,6 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_tungstenite::tungstenite::Bytes;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, WebSocketStream};
 use tracing::{debug, error, info, warn};
-use uuid;
 
 /// Error types for the WebSocket client
 #[derive(Debug, Clone, thiserror::Error)]
@@ -304,7 +302,7 @@ impl WebSocketClient {
         WebSocketError,
     > {
         // Connect to the server
-        let ws_stream = Self::establish_connection(&server_url).await?;
+        let ws_stream = Self::establish_connection(server_url).await?;
 
         // Split the WebSocket stream
         let (write, read) = ws_stream.split();

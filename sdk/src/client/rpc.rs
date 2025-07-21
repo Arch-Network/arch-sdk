@@ -143,7 +143,7 @@ impl ArchRpcClient {
     ) -> Result<()> {
         let pubkey = Pubkey::from_slice(&keypair.x_only_public_key().0.serialize());
 
-        if let Ok(_) = self.read_account_info(pubkey) {
+        if self.read_account_info(pubkey).is_ok() {
             let _processed_tx = self.request_airdrop(pubkey)?;
         } else {
             let result = self
@@ -155,7 +155,7 @@ impl ArchRpcClient {
 
             let message_hash = runtime_tx.message.hash();
             let signature = crate::Signature::from(sign_message_bip322(
-                &keypair,
+                keypair,
                 &message_hash,
                 bitcoin_network,
             ));
@@ -468,15 +468,12 @@ impl ArchRpcClient {
         {
             Ok(res) => match res.text() {
                 Ok(text) => Ok(text),
-                Err(e) => {
-                    return Err(ArchError::NetworkError(format!(
-                        "Failed to read response text: {}",
-                        e
-                    ))
-                    .into())
-                }
+                Err(e) => Err(ArchError::NetworkError(format!(
+                    "Failed to read response text: {}",
+                    e
+                ))),
             },
-            Err(e) => return Err(ArchError::NetworkError(format!("Request failed: {}", e)).into()),
+            Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
         }
     }
 
@@ -499,15 +496,12 @@ impl ArchRpcClient {
         {
             Ok(res) => match res.text() {
                 Ok(text) => Ok(text),
-                Err(e) => {
-                    return Err(ArchError::NetworkError(format!(
-                        "Failed to get response text: {}",
-                        e
-                    ))
-                    .into())
-                }
+                Err(e) => Err(ArchError::NetworkError(format!(
+                    "Failed to get response text: {}",
+                    e
+                ))),
             },
-            Err(e) => return Err(ArchError::NetworkError(format!("Request failed: {}", e)).into()),
+            Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
         }
     }
 }

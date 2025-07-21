@@ -149,7 +149,7 @@ impl ProgramDeployer {
                     Some(authority_pubkey),
                     recent_blockhash,
                 ),
-                vec![authority_keypair.clone(), program_keypair.clone()],
+                vec![authority_keypair, program_keypair],
                 self.network,
             )?;
 
@@ -158,14 +158,11 @@ impl ProgramDeployer {
                 .client
                 .wait_for_processed_transaction(&create_account_txid)?;
 
-            match tx.status {
-                Status::Failed(e) => {
-                    return Err(ProgramDeployerError::TransactionError(format!(
-                        "Program account creation transaction failed: {}",
-                        e.to_string()
-                    )));
-                }
-                _ => {}
+            if let Status::Failed(e) = tx.status {
+                return Err(ProgramDeployerError::TransactionError(format!(
+                    "Program account creation transaction failed: {}",
+                    e
+                )));
             }
 
             println!(
@@ -174,7 +171,7 @@ impl ProgramDeployer {
             );
         }
 
-        self.deploy_program_elf(program_keypair.clone(), authority_keypair.clone(), &elf)?;
+        self.deploy_program_elf(program_keypair, authority_keypair, &elf)?;
 
         let program_info_after_deployment = self.client.read_account_info(program_pubkey)?;
 
@@ -202,7 +199,7 @@ impl ProgramDeployer {
                     Some(authority_pubkey),
                     recent_blockhash,
                 ),
-                vec![authority_keypair.clone()],
+                vec![authority_keypair],
                 self.network,
             )?;
 
@@ -211,14 +208,11 @@ impl ProgramDeployer {
                 .client
                 .wait_for_processed_transaction(&executability_txid)?;
 
-            match tx.status {
-                Status::Failed(e) => {
-                    return Err(ProgramDeployerError::TransactionError(format!(
-                        "Program account creation transaction failed: {}",
-                        e.to_string()
-                    )));
-                }
-                _ => {}
+            if let Status::Failed(e) = tx.status {
+                return Err(ProgramDeployerError::TransactionError(format!(
+                    "Program account creation transaction failed: {}",
+                    e
+                )));
             }
             println!("\x1b[32m Step 3/3 Successful :\x1b[0m Made program account executable!");
         }
@@ -295,7 +289,7 @@ impl ProgramDeployer {
                     Some(authority_pubkey),
                     recent_blockhash,
                 ),
-                vec![authority_keypair.clone()],
+                vec![authority_keypair],
                 self.network,
             )?;
 
@@ -316,7 +310,7 @@ impl ProgramDeployer {
                     Some(authority_pubkey),
                     recent_blockhash,
                 ),
-                vec![program_keypair.clone(), authority_keypair.clone()],
+                vec![program_keypair, authority_keypair],
                 self.network,
             )?;
 

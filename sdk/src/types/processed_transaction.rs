@@ -450,7 +450,7 @@ mod tests {
         };
 
         let serialized = processed_transaction.to_vec();
-        assert_eq!(serialized.is_err(), true);
+        assert!(serialized.is_err());
     }
 
     #[test]
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn rollback_default_message_size() {
         let message = "Transaction rolled back in Bitcoin";
-        println!("Message size as bytes : {}", message.as_bytes().len());
+        println!("Message size as bytes : {}", message.len());
     }
 
     // Tests for log validation checks

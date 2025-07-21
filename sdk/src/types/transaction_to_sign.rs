@@ -14,10 +14,7 @@ pub struct TransactionToSign {
 
 impl TransactionToSign {
     pub fn from_slice(data: &[u8]) -> Result<Self, Error> {
-        fn get_const_slice<'a, const N: usize>(
-            data: &'a [u8],
-            offset: usize,
-        ) -> Result<[u8; N], Error> {
+        fn get_const_slice<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], Error> {
             let end = offset + N;
             let slice = data
                 .get(offset..end)
@@ -28,7 +25,7 @@ impl TransactionToSign {
             Ok(array_ref)
         }
 
-        fn get_slice<'a>(data: &'a [u8], start: usize, len: usize) -> Result<&'a [u8], Error> {
+        fn get_slice(data: &[u8], start: usize, len: usize) -> Result<&[u8], Error> {
             data.get(start..start + len)
                 .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Insufficient data length"))
         }

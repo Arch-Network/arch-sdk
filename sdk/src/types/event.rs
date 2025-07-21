@@ -171,7 +171,7 @@ impl EventFilter {
     pub fn from_value(value: Value) -> Self {
         match value {
             Value::Object(map) => {
-                let criteria = map.into_iter().map(|(k, v)| (k, v)).collect();
+                let criteria = map.into_iter().collect();
                 EventFilter { criteria }
             }
             _ => EventFilter::new(),

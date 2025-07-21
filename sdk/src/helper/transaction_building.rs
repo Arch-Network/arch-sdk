@@ -20,7 +20,7 @@ pub fn build_and_sign_transaction(
                 signers
                     .iter()
                     .find(|signer| signer.x_only_public_key().0.serialize() == key.serialize())
-                    .ok_or_else(|| ArchError::RequiredSignerNotFound(key.clone()))?,
+                    .ok_or(ArchError::RequiredSignerNotFound(*key))?,
                 &digest_slice,
                 bitcoin_network,
             );

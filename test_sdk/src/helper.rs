@@ -293,7 +293,7 @@ pub fn create_account_with_anchor(
 
     let (txid, vout) = send_utxo(account_pubkey);
 
-    let arch_rpc_client = ArchRpcClient::new(&NODE1_ADDRESS.to_string());
+    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
 
     let recent_blockhash = arch_rpc_client.get_best_block_hash().unwrap();
     let transaction = build_and_sign_transaction(
@@ -329,16 +329,15 @@ pub fn create_account_with_anchor(
 }
 
 pub fn read_account_info(pubkey: Pubkey) -> AccountInfo {
-    let arch_rpc_client = ArchRpcClient::new(&NODE1_ADDRESS.to_string());
+    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
 
-    let account_info = arch_rpc_client
+    arch_rpc_client
         .read_account_info(pubkey)
-        .expect("read account info should not fail");
-    account_info
+        .expect("read account info should not fail")
 }
 
 pub fn try_read_account_info(pubkey: Pubkey) -> Option<AccountInfo> {
-    let arch_rpc_client = ArchRpcClient::new(&NODE1_ADDRESS.to_string());
+    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
 
     arch_rpc_client.read_account_info(pubkey).ok()
 }
@@ -346,14 +345,12 @@ pub fn try_read_account_info(pubkey: Pubkey) -> Option<AccountInfo> {
 pub fn send_transactions_and_wait(
     transactions: Vec<RuntimeTransaction>,
 ) -> Vec<ProcessedTransaction> {
-    let arch_rpc_client = ArchRpcClient::new(&NODE1_ADDRESS.to_string());
+    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
     let txids = arch_rpc_client.send_transactions(transactions).unwrap();
 
-    let processed_txs = arch_rpc_client
+    arch_rpc_client
         .wait_for_processed_transactions(txids)
-        .expect("get processed transactions should not fail");
-
-    processed_txs
+        .expect("get processed transactions should not fail")
 }
 
 /* -------------------------------------------------------------------------- */
@@ -366,7 +363,7 @@ pub fn assign_ownership_to_program(
     account_to_transfer_pubkey: Pubkey,
     current_owner_keypair: Keypair,
 ) -> Hash {
-    let arch_rpc_client = ArchRpcClient::new(&NODE1_ADDRESS.to_string());
+    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
 
     let assign_instruction =
         system_instruction::assign(&account_to_transfer_pubkey, &program_pubkey);
@@ -397,7 +394,7 @@ pub fn assign_ownership_to_program(
 }
 
 pub fn create_and_fund_account_with_faucet(keypair: &Keypair, bitcoin_network: bitcoin::Network) {
-    let arch_rpc_client = ArchRpcClient::new(&NODE1_ADDRESS.to_string());
+    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
 
     arch_rpc_client
         .create_and_fund_account_with_faucet(keypair, bitcoin_network)

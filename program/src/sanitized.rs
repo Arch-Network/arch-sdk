@@ -223,7 +223,7 @@ impl ArchMessage {
     }
 
     pub fn get_recent_blockhash(&self) -> Hash {
-        self.recent_blockhash.clone()
+        self.recent_blockhash
     }
 
     pub fn new(
@@ -513,7 +513,7 @@ impl SanitizedInstruction {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<(Self, usize)> {
-        if bytes.len() < 1 {
+        if bytes.is_empty() {
             return Err(anyhow!("Invalid instruction length: empty buffer"));
         }
 

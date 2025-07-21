@@ -439,15 +439,12 @@ impl AsyncArchRpcClient {
         {
             Ok(res) => match res.text().await {
                 Ok(text) => Ok(text),
-                Err(e) => {
-                    return Err(ArchError::NetworkError(format!(
-                        "Failed to read response text: {}",
-                        e
-                    ))
-                    .into())
-                }
+                Err(e) => Err(ArchError::NetworkError(format!(
+                    "Failed to read response text: {}",
+                    e
+                ))),
             },
-            Err(e) => return Err(ArchError::NetworkError(format!("Request failed: {}", e)).into()),
+            Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
         }
     }
 
@@ -471,15 +468,12 @@ impl AsyncArchRpcClient {
         {
             Ok(res) => match res.text().await {
                 Ok(text) => Ok(text),
-                Err(e) => {
-                    return Err(ArchError::NetworkError(format!(
-                        "Failed to get response text: {}",
-                        e
-                    ))
-                    .into())
-                }
+                Err(e) => Err(ArchError::NetworkError(format!(
+                    "Failed to get response text: {}",
+                    e
+                ))),
             },
-            Err(e) => return Err(ArchError::NetworkError(format!("Request failed: {}", e)).into()),
+            Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
         }
     }
 }

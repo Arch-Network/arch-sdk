@@ -139,7 +139,7 @@ use crate::entrypoint::MAX_PERMITTED_DATA_INCREASE;
 use crate::debug_account_data::debug_account_data;
 use crate::program_error::ProgramError;
 
-impl<'a> fmt::Debug for AccountInfo<'a> {
+impl fmt::Debug for AccountInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("AccountInfo");
 

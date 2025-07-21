@@ -206,7 +206,7 @@ pub fn create_account_helper(
     owner: &Pubkey,
 ) {
     let create_account_instruction =
-        create_account(&from_pubkey, &to_pubkey, MIN_ACCOUNT_LAMPORTS, space, owner);
+        create_account(from_pubkey, to_pubkey, MIN_ACCOUNT_LAMPORTS, space, owner);
 
     let transaction = build_and_sign_transaction(
         ArchMessage::new(
@@ -235,7 +235,7 @@ pub fn freeze_account(
         token_account_pubkey,
         mint_pubkey,
         owner_pubkey,
-        &[&owner_pubkey],
+        &[owner_pubkey],
     )
     .unwrap();
 
