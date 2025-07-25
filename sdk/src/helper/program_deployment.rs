@@ -8,7 +8,6 @@ use crate::{
     Status,
 };
 use anyhow::Result;
-use arch_program::account::MIN_ACCOUNT_LAMPORTS;
 use arch_program::bpf_loader::{LoaderState, BPF_LOADER_ID};
 use arch_program::hash::Hash;
 use arch_program::hash::HashError;

@@ -1,6 +1,7 @@
 #![allow(clippy::arithmetic_side_effects)]
 #![deny(missing_docs)]
 #![cfg_attr(not(test), forbid(unsafe_code))]
+#![allow(unexpected_cfgs)]
 
 //! An ERC20-like Token program for the Arch blockchain
 
