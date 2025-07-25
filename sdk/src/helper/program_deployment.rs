@@ -142,7 +142,9 @@ impl ProgramDeployer {
                     &[system_instruction::create_account(
                         &authority_pubkey,
                         &program_pubkey,
-                        MIN_ACCOUNT_LAMPORTS,
+                        arch_program::rent::minimum_rent(
+                            LoaderState::program_data_offset() + elf.len(),
+                        ),
                         0,
                         &BPF_LOADER_ID,
                     )],
