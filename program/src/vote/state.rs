@@ -128,7 +128,7 @@ impl AuthorizedVoters {
     }
 
     pub fn contains(&self, epoch: u64) -> bool {
-        self.authorized_voters.get(&epoch).is_some()
+        self.authorized_voters.contains_key(&epoch)
     }
 
     pub fn iter(&self) -> std::collections::btree_map::Iter<u64, Pubkey> {

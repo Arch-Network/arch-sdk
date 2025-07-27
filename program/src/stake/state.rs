@@ -14,7 +14,7 @@ pub type StakeActivationStatus = StakeHistoryEntry;
 
 // means that no more than RATE of current effective stake may be added or subtracted per
 // epoch
-pub const DEFAULT_SLASH_PENALTY: u8 = ((5 * std::u8::MAX as usize) / 100) as u8;
+pub const DEFAULT_SLASH_PENALTY: u8 = ((5 * u8::MAX as usize) / 100) as u8;
 
 // macro_rules! impl_borsh_stake_state {
 //     ($borsh:ident) => {
@@ -179,7 +179,7 @@ impl Default for Delegation {
             voter_pubkey: Pubkey::default(),
             stake: 0,
             activation_epoch: 0,
-            deactivation_epoch: std::u64::MAX,
+            deactivation_epoch: u64::MAX,
         }
     }
 }
@@ -195,7 +195,7 @@ impl Delegation {
     }
 
     pub fn deactivate(&mut self, epoch: u64) -> Result<(), StakeError> {
-        if self.deactivation_epoch != std::u64::MAX {
+        if self.deactivation_epoch != u64::MAX {
             Err(StakeError::AlreadyDeactivated)
         } else {
             self.deactivation_epoch = epoch;

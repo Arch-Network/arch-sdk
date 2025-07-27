@@ -1,4 +1,4 @@
-use std::array::TryFromSliceError;
+use std::{array::TryFromSliceError, str::FromStr};
 
 use arch_program::hash::Hash;
 use bitcode::{Decode, Encode};

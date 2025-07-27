@@ -102,15 +102,15 @@ pub fn update_commission(vote_pubkey: &Pubkey, authority: &Pubkey, commission: u
 pub fn initialize_shared_validator_account(
     shared_validator_pubkey: &Pubkey,
     bootnode_pubkey: &Pubkey,
-    serialized_pubkey_package: &Vec<u8>,
-    whitelist: &Vec<Pubkey>,
+    serialized_pubkey_package: &[u8],
+    whitelist: &[Pubkey],
 ) -> Instruction {
     Instruction::new_with_bincode(
         VOTE_PROGRAM_ID,
         VoteInstruction::InitializeSharedValidatorAccount(
             *bootnode_pubkey,
-            serialized_pubkey_package.clone(),
-            whitelist.clone(),
+            serialized_pubkey_package.to_vec(),
+            whitelist.to_owned(),
         ),
         vec![AccountMeta::new(*shared_validator_pubkey, false)],
     )
@@ -118,11 +118,11 @@ pub fn initialize_shared_validator_account(
 
 pub fn update_pubkey_package(
     shared_validator_pubkey: &Pubkey,
-    serialized_pubkey_package: &Vec<u8>,
+    serialized_pubkey_package: &[u8],
 ) -> Instruction {
     Instruction::new_with_bincode(
         VOTE_PROGRAM_ID,
-        VoteInstruction::UpdatePubkeyPackage(serialized_pubkey_package.clone()),
+        VoteInstruction::UpdatePubkeyPackage(serialized_pubkey_package.to_vec()),
         vec![AccountMeta::new(*shared_validator_pubkey, false)],
     )
 }

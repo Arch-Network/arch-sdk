@@ -1,6 +1,7 @@
 use std::{
     array::TryFromSliceError,
     fmt::{Display, Formatter},
+    str::FromStr,
 };
 
 use arch_program::hash::Hash;

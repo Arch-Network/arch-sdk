@@ -3,7 +3,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "fuzzing")]
 use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 use thiserror::Error;
 
 #[derive(
@@ -81,19 +81,19 @@ impl TryFrom<&str> for Hash {
     }
 }
 
-impl Hash {
-    pub fn from_str(value: &str) -> Result<Self, HashError> {
-        let hash = hex::decode(value)?;
+impl FromStr for Hash {
+    type Err = HashError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let hash = hex::decode(s)?;
         if hash.len() != 32 {
             return Err(HashError::InvalidLength(hash.len()));
         }
         Ok(Hash(hash.try_into().expect("just checked length")))
     }
+}
 
-    pub fn to_string(&self) -> String {
-        hex::encode(self.0)
-    }
-
+impl Hash {
     pub fn to_array(&self) -> [u8; 32] {
         self.0
     }

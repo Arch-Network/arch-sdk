@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytemuck::{Pod, Zeroable};
@@ -27,10 +27,6 @@ impl RuneId {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        format!("{}:{}", self.block, self.tx)
-    }
-
     /// Returns token bytes as a fixed-size array without heap allocation
     pub fn to_bytes(&self) -> [u8; 12] {
         let mut result = [0u8; 12];
@@ -55,6 +51,12 @@ impl RuneId {
         } else {
             (rune1_bytes, rune0_bytes)
         }
+    }
+}
+
+impl Display for RuneId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.block, self.tx)
     }
 }
 

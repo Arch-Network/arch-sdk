@@ -8,6 +8,7 @@ use bitcoin::key::Keypair;
 use bitcoin::Network;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_str, json, Value};
+use std::str::FromStr;
 use std::time::Duration;
 
 // Import the appropriate result types

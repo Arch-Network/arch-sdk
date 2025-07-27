@@ -309,6 +309,8 @@ impl ProcessedTransaction {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::ParseProcessedTransactionError;
     use crate::Signature;
     use arch_program::pubkey::Pubkey;
