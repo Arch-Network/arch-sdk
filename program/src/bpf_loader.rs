@@ -1,5 +1,3 @@
-// use solana_rbpf::declare_builtin_function;
-
 use crate::pubkey::Pubkey;
 
 /// This is native loader

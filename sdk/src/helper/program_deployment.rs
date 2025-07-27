@@ -277,7 +277,26 @@ impl ProgramDeployer {
         let authority_pubkey =
             Pubkey::from_slice(&authority_keypair.x_only_public_key().0.serialize());
 
+        println!("program_pubkey in deploy_program_elf: {:?}", program_pubkey);
+
         let account_info = self.client.read_account_info(program_pubkey)?;
+
+        println!(
+            "account_info in deploy_program_elf: executable {:?}",
+            account_info.is_executable
+        );
+        println!(
+            "account_info in deploy_program_elf: data length {:?}",
+            account_info.data.len()
+        );
+        println!(
+            "account_info in deploy_program_elf: utxo {:?}",
+            account_info.utxo
+        );
+        println!(
+            "account_info in deploy_program_elf: owner {:?}",
+            account_info.owner
+        );
 
         if account_info.is_executable {
             let recent_blockhash = self.client.get_best_block_hash()?;
