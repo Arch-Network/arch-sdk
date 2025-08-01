@@ -27,6 +27,7 @@ const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
 const GET_BLOCK_COUNT: &str = "get_block_count";
 const GET_BLOCK_HASH: &str = "get_block_hash";
 const GET_BEST_BLOCK_HASH: &str = "get_best_block_hash";
+const GET_BEST_FINALIZED_BLOCK_HASH: &str = "get_best_finalized_block_hash";
 const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
@@ -265,6 +266,19 @@ impl ArchRpcClient {
     /// Get the best block hash
     pub fn get_best_block_hash(&self) -> Result<Hash> {
         match self.call_method_raw(GET_BEST_BLOCK_HASH)? {
+            Some(value) => {
+                let hash_str = value.as_str().ok_or_else(|| {
+                    ArchError::ParseError("Failed to get best block hash as string".to_string())
+                })?;
+                Ok(Hash::from_str(hash_str)?)
+            }
+            None => Err(ArchError::NotFound("Best block hash not found".to_string())),
+        }
+    }
+
+    /// Get the best block hash
+    pub fn get_best_finalized_block_hash(&self) -> Result<Hash> {
+        match self.call_method_raw(GET_BEST_FINALIZED_BLOCK_HASH)? {
             Some(value) => {
                 let hash_str = value.as_str().ok_or_else(|| {
                     ArchError::ParseError("Failed to get best block hash as string".to_string())

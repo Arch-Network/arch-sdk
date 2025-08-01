@@ -41,7 +41,7 @@ pub fn initialize_mint_token(
         ArchMessage::new(
             &[create_account_instruction, initialize_mint_instruction],
             Some(authority_pubkey),
-            client.get_best_block_hash().unwrap(),
+            client.get_best_finalized_block_hash().unwrap(),
         ),
         vec![authority_keypair, token_mint_keypair],
         BITCOIN_NETWORK,
@@ -88,7 +88,7 @@ pub fn initialize_token_account(
                 initialize_token_account_instruction,
             ],
             Some(owner_pubkey),
-            client.get_best_block_hash().unwrap(),
+            client.get_best_finalized_block_hash().unwrap(),
         ),
         vec![owner_keypair, token_account_keypair],
         BITCOIN_NETWORK,
@@ -123,7 +123,7 @@ pub fn mint_tokens(
         ArchMessage::new(
             &[instruction],
             Some(*owner_pubkey),
-            client.get_best_block_hash().unwrap(),
+            client.get_best_finalized_block_hash().unwrap(),
         ),
         vec![owner_keypair],
         BITCOIN_NETWORK,
@@ -156,7 +156,7 @@ pub fn approve(
         ArchMessage::new(
             &[instruction],
             Some(*owner_pubkey),
-            client.get_best_block_hash().unwrap(),
+            client.get_best_finalized_block_hash().unwrap(),
         ),
         vec![owner_keypair],
         BITCOIN_NETWORK,
@@ -185,7 +185,7 @@ pub fn revoke(
         ArchMessage::new(
             &[instruction],
             Some(*owner_pubkey),
-            client.get_best_block_hash().unwrap(),
+            client.get_best_finalized_block_hash().unwrap(),
         ),
         vec![owner_keypair],
         BITCOIN_NETWORK,
@@ -212,7 +212,7 @@ pub fn create_account_helper(
         ArchMessage::new(
             &[create_account_instruction],
             Some(*from_pubkey),
-            client.get_best_block_hash().unwrap(),
+            client.get_best_finalized_block_hash().unwrap(),
         ),
         vec![from_keypair, to_keypair],
         BITCOIN_NETWORK,
@@ -243,7 +243,7 @@ pub fn freeze_account(
         ArchMessage::new(
             &[instruction],
             Some(*owner_pubkey),
-            client.get_best_block_hash().unwrap(),
+            client.get_best_finalized_block_hash().unwrap(),
         ),
         vec![owner_keypair],
         BITCOIN_NETWORK,

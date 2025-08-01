@@ -295,7 +295,7 @@ pub fn create_account_with_anchor(
 
     let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
 
-    let recent_blockhash = arch_rpc_client.get_best_block_hash().unwrap();
+    let recent_blockhash = arch_rpc_client.get_best_finalized_block_hash().unwrap();
     let transaction = build_and_sign_transaction(
         ArchMessage::new(
             &[system_instruction::create_account_with_anchor(
@@ -370,7 +370,7 @@ pub fn assign_ownership_to_program(
 
     let current_owner_pubkey = Pubkey(current_owner_keypair.x_only_public_key().0.serialize());
 
-    let recent_blockhash = arch_rpc_client.get_best_block_hash().unwrap();
+    let recent_blockhash = arch_rpc_client.get_best_finalized_block_hash().unwrap();
     let transaction = build_and_sign_transaction(
         ArchMessage::new(
             &[assign_instruction],

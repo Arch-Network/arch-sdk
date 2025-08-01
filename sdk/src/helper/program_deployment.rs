@@ -134,7 +134,7 @@ impl ProgramDeployer {
             }
             println!("\x1b[33m ELF mismatch with account content ! Redeploying \x1b[0m");
         } else {
-            let recent_blockhash = self.client.get_best_block_hash()?;
+            let recent_blockhash = self.client.get_best_finalized_block_hash()?;
 
             let create_account_tx = build_and_sign_transaction(
                 ArchMessage::new(
@@ -193,7 +193,7 @@ impl ProgramDeployer {
                 "\x1b[32m Step 3/3 Successful :\x1b[0m Program account is already executable !"
             );
         } else {
-            let recent_blockhash = self.client.get_best_block_hash()?;
+            let recent_blockhash = self.client.get_best_finalized_block_hash()?;
             let executability_tx = build_and_sign_transaction(
                 ArchMessage::new(
                     &[loader_instruction::deploy(program_pubkey, authority_pubkey)],
@@ -299,7 +299,7 @@ impl ProgramDeployer {
         );
 
         if account_info.is_executable {
-            let recent_blockhash = self.client.get_best_block_hash()?;
+            let recent_blockhash = self.client.get_best_finalized_block_hash()?;
             let retract_tx = build_and_sign_transaction(
                 ArchMessage::new(
                     &[loader_instruction::retract(
@@ -319,7 +319,7 @@ impl ProgramDeployer {
 
         if account_info.data.len() != LoaderState::program_data_offset() + elf.len() {
             println!("Truncating program account to size of ELF file");
-            let recent_blockhash = self.client.get_best_block_hash()?;
+            let recent_blockhash = self.client.get_best_finalized_block_hash()?;
             let truncate_tx = build_and_sign_transaction(
                 ArchMessage::new(
                     &[loader_instruction::truncate(
@@ -344,7 +344,7 @@ impl ProgramDeployer {
             .map(|(i, chunk)| {
                 let offset: u32 = (i * extend_bytes_max_len()) as u32;
 
-                let recent_blockhash = self.client.get_best_block_hash()?;
+                let recent_blockhash = self.client.get_best_finalized_block_hash()?;
                 let message = ArchMessage::new(
                     &[loader_instruction::write(
                         program_pubkey,
