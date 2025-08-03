@@ -33,4 +33,3 @@ thiserror = { version = "1.0.57" }
 termsize = "0.1.9"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.3", features = ["env-filter", "ansi"] }
-common = { workspace = true }
