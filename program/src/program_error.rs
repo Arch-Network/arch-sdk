@@ -48,6 +48,8 @@ pub enum ProgramError {
     AccountBorrowFailed,
     #[error("Length of the seed is too long for address generation")]
     MaxSeedLengthExceeded,
+    #[error("The number of seeds is greater than the maximum allowed")]
+    MaxSeedsExceeded,
     #[error("Provided seeds do not result in a valid address")]
     InvalidSeeds,
     #[error("IO Error: {0}")]
@@ -82,6 +84,12 @@ pub enum ProgramError {
     AccountNotAnchored,
     #[error("Not enough compute units available to complete the instruction")]
     NotEnoughComputeUnits,
+    #[error("Invalid input to sign type")]
+    InvalidInputToSignType,
+    #[error("Insufficient data length")]
+    InsufficientDataLength,
+    #[error("Incorrect length")]
+    IncorrectLength,
 }
 
 pub trait PrintProgramError {
@@ -115,6 +123,7 @@ impl PrintProgramError for ProgramError {
             Self::NotEnoughAccountKeys => msg!("Error: NotEnoughAccountKeys"),
             Self::AccountBorrowFailed => msg!("Error: AccountBorrowFailed"),
             Self::MaxSeedLengthExceeded => msg!("Error: MaxSeedLengthExceeded"),
+            Self::MaxSeedsExceeded => msg!("Error: MaxSeedsExceeded"),
             Self::InvalidSeeds => msg!("Error: InvalidSeeds"),
             Self::BorshIoError(_) => msg!("Error: BorshIoError"),
             Self::IllegalOwner => msg!("Error: IllegalOwner"),
@@ -138,6 +147,9 @@ impl PrintProgramError for ProgramError {
             Self::ExecutableLamportChange => msg!("Error: ExecutableLamportChange"),
             Self::AccountNotAnchored => msg!("Error: AccountNotAnchored"),
             Self::NotEnoughComputeUnits => msg!("Error: NotEnoughComputeUnits"),
+            Self::InvalidInputToSignType => msg!("Error: InvalidInputToSignType"),
+            Self::InsufficientDataLength => msg!("Error: InsufficientDataLength"),
+            Self::IncorrectLength => msg!("Error: IncorrectLength"),
         }
     }
 }
@@ -163,25 +175,29 @@ pub const UNINITIALIZED_ACCOUNT: u64 = to_builtin!(10);
 pub const NOT_ENOUGH_ACCOUNT_KEYS: u64 = to_builtin!(11);
 pub const ACCOUNT_BORROW_FAILED: u64 = to_builtin!(12);
 pub const MAX_SEED_LENGTH_EXCEEDED: u64 = to_builtin!(13);
-pub const INVALID_SEEDS: u64 = to_builtin!(14);
-pub const BORSH_IO_ERROR: u64 = to_builtin!(15);
-pub const ACCOUNT_NOT_RENT_EXEMPT: u64 = to_builtin!(16);
-pub const UNSUPPORTED_SYSVAR: u64 = to_builtin!(17);
-pub const ILLEGAL_OWNER: u64 = to_builtin!(18);
-pub const MAX_ACCOUNTS_DATA_ALLOCATIONS_EXCEEDED: u64 = to_builtin!(19);
-pub const INVALID_ACCOUNT_DATA_REALLOC: u64 = to_builtin!(20);
-pub const MAX_INSTRUCTION_TRACE_LENGTH_EXCEEDED: u64 = to_builtin!(21);
-pub const BUILTIN_PROGRAMS_MUST_CONSUME_COMPUTE_UNITS: u64 = to_builtin!(22);
-pub const INVALID_ACCOUNT_OWNER: u64 = to_builtin!(23);
-pub const ARITHMETIC_OVERFLOW: u64 = to_builtin!(24);
-pub const IMMUTABLE: u64 = to_builtin!(25);
-pub const INCORRECT_AUTHORITY: u64 = to_builtin!(26);
-pub const FROM_HEX_ERROR: u64 = to_builtin!(27);
-pub const NEGATIVE_ACCOUNT_LAMPORTS: u64 = to_builtin!(28);
-pub const READONLY_LAMPORT_CHANGE: u64 = to_builtin!(29);
-pub const EXECUTABLE_LAMPORT_CHANGE: u64 = to_builtin!(30);
-pub const ACCOUNT_NOT_ANCHORED: u64 = to_builtin!(31);
-pub const NOT_ENOUGH_COMPUTE_UNITS: u64 = to_builtin!(32);
+pub const MAX_SEEDS_EXCEEDED: u64 = to_builtin!(14);
+pub const INVALID_SEEDS: u64 = to_builtin!(15);
+pub const BORSH_IO_ERROR: u64 = to_builtin!(16);
+pub const ACCOUNT_NOT_RENT_EXEMPT: u64 = to_builtin!(17);
+pub const UNSUPPORTED_SYSVAR: u64 = to_builtin!(18);
+pub const ILLEGAL_OWNER: u64 = to_builtin!(19);
+pub const MAX_ACCOUNTS_DATA_ALLOCATIONS_EXCEEDED: u64 = to_builtin!(20);
+pub const INVALID_ACCOUNT_DATA_REALLOC: u64 = to_builtin!(21);
+pub const MAX_INSTRUCTION_TRACE_LENGTH_EXCEEDED: u64 = to_builtin!(22);
+pub const BUILTIN_PROGRAMS_MUST_CONSUME_COMPUTE_UNITS: u64 = to_builtin!(23);
+pub const INVALID_ACCOUNT_OWNER: u64 = to_builtin!(24);
+pub const ARITHMETIC_OVERFLOW: u64 = to_builtin!(25);
+pub const IMMUTABLE: u64 = to_builtin!(26);
+pub const INCORRECT_AUTHORITY: u64 = to_builtin!(27);
+pub const FROM_HEX_ERROR: u64 = to_builtin!(28);
+pub const NEGATIVE_ACCOUNT_LAMPORTS: u64 = to_builtin!(29);
+pub const READONLY_LAMPORT_CHANGE: u64 = to_builtin!(30);
+pub const EXECUTABLE_LAMPORT_CHANGE: u64 = to_builtin!(31);
+pub const ACCOUNT_NOT_ANCHORED: u64 = to_builtin!(32);
+pub const NOT_ENOUGH_COMPUTE_UNITS: u64 = to_builtin!(33);
+pub const INVALID_INPUT_TO_SIGN_TYPE: u64 = to_builtin!(34);
+pub const INSUFFICIENT_DATA_LENGTH: u64 = to_builtin!(35);
+pub const INCORRECT_LENGTH: u64 = to_builtin!(36);
 // Warning: Any new program errors added here must also be:
 // - Added to the below conversions
 // - Added as an equivalent to InstructionError
@@ -203,6 +219,7 @@ impl From<ProgramError> for u64 {
             ProgramError::NotEnoughAccountKeys => NOT_ENOUGH_ACCOUNT_KEYS,
             ProgramError::AccountBorrowFailed => ACCOUNT_BORROW_FAILED,
             ProgramError::MaxSeedLengthExceeded => MAX_SEED_LENGTH_EXCEEDED,
+            ProgramError::MaxSeedsExceeded => MAX_SEEDS_EXCEEDED,
             ProgramError::InvalidSeeds => INVALID_SEEDS,
             ProgramError::BorshIoError(_) => BORSH_IO_ERROR,
             ProgramError::IllegalOwner => ILLEGAL_OWNER,
@@ -226,6 +243,9 @@ impl From<ProgramError> for u64 {
             ProgramError::ExecutableLamportChange => EXECUTABLE_LAMPORT_CHANGE,
             ProgramError::AccountNotAnchored => ACCOUNT_NOT_ANCHORED,
             ProgramError::NotEnoughComputeUnits => NOT_ENOUGH_COMPUTE_UNITS,
+            ProgramError::InvalidInputToSignType => INVALID_INPUT_TO_SIGN_TYPE,
+            ProgramError::InsufficientDataLength => INSUFFICIENT_DATA_LENGTH,
+            ProgramError::IncorrectLength => INCORRECT_LENGTH,
             ProgramError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO
@@ -269,6 +289,9 @@ impl From<u64> for ProgramError {
             FROM_HEX_ERROR => Self::FromHexError,
             ACCOUNT_NOT_ANCHORED => Self::AccountNotAnchored,
             NOT_ENOUGH_COMPUTE_UNITS => Self::NotEnoughComputeUnits,
+            INVALID_INPUT_TO_SIGN_TYPE => Self::InvalidInputToSignType,
+            INSUFFICIENT_DATA_LENGTH => Self::InsufficientDataLength,
+            INCORRECT_LENGTH => Self::IncorrectLength,
             _ => Self::Custom(error as u32),
         }
     }

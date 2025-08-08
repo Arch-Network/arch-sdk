@@ -4,7 +4,9 @@
 //! along with the inputs that need to be signed.
 
 use crate::input_to_sign::InputToSign;
+use crate::program_error::ProgramError;
 use crate::pubkey::Pubkey;
+use crate::{MAX_SEEDS, MAX_SEED_LEN};
 
 /// Represents a transaction that needs to be signed with associated inputs.
 ///
@@ -16,7 +18,7 @@ pub struct TransactionToSign<'a> {
     /// The raw transaction bytes to be signed.
     pub tx_bytes: &'a [u8],
     /// List of inputs within the transaction that need signatures.
-    pub inputs_to_sign: &'a [InputToSign],
+    pub inputs_to_sign: &'a [InputToSign<'a>],
 }
 
 impl<'a> TransactionToSign<'a> {
@@ -40,8 +42,27 @@ impl<'a> TransactionToSign<'a> {
         serialized.extend_from_slice(self.tx_bytes);
         serialized.extend_from_slice(&(self.inputs_to_sign.len() as u32).to_le_bytes());
         for input_to_sign in self.inputs_to_sign.iter() {
-            serialized.extend_from_slice(&input_to_sign.index.to_le_bytes());
-            serialized.extend_from_slice(&input_to_sign.signer.serialize());
+            match input_to_sign {
+                InputToSign::Sign { index, signer } => {
+                    serialized.push(0);
+                    serialized.extend_from_slice(&index.to_le_bytes());
+                    serialized.extend_from_slice(&signer.serialize());
+                }
+                InputToSign::SignWithSeeds {
+                    index,
+                    program_id,
+                    signers_seeds,
+                } => {
+                    serialized.push(1);
+                    serialized.extend_from_slice(&index.to_le_bytes());
+                    serialized.extend_from_slice(&program_id.serialize());
+                    serialized.extend_from_slice(&(signers_seeds.len() as u32).to_le_bytes());
+                    for seed in signers_seeds.iter() {
+                        serialized.extend_from_slice(&(seed.len() as u32).to_le_bytes());
+                        serialized.extend_from_slice(seed);
+                    }
+                }
+            }
         }
 
         serialized
@@ -61,11 +82,8 @@ impl<'a> TransactionToSign<'a> {
     pub fn serialise_with_tx(tx: &bitcoin::Transaction, inputs_to_sign: &[InputToSign]) -> Vec<u8> {
         use bitcoin::consensus::Encodable;
 
-        // Estimate initial capacity to minimize reallocations
         let inputs_count = inputs_to_sign.len();
-        let estimated_tx_size = 250; // Conservative estimate for average tx size
-        let total_estimated_size = 4 + estimated_tx_size + 4 + (4 + 32) * inputs_count;
-        let mut serialized = Vec::with_capacity(total_estimated_size);
+        let mut serialized = vec![];
 
         // Reserve 4 bytes for tx length (we'll write this after we know the actual length)
         let tx_len_pos = serialized.len();
@@ -84,8 +102,27 @@ impl<'a> TransactionToSign<'a> {
         // Serialize inputs_to_sign
         serialized.extend_from_slice(&(inputs_count as u32).to_le_bytes());
         for input_to_sign in inputs_to_sign.iter() {
-            serialized.extend_from_slice(&input_to_sign.index.to_le_bytes());
-            serialized.extend_from_slice(&input_to_sign.signer.serialize());
+            match input_to_sign {
+                InputToSign::Sign { index, signer } => {
+                    serialized.push(0);
+                    serialized.extend_from_slice(&index.to_le_bytes());
+                    serialized.extend_from_slice(&signer.serialize());
+                }
+                InputToSign::SignWithSeeds {
+                    index,
+                    program_id,
+                    signers_seeds,
+                } => {
+                    serialized.push(1);
+                    serialized.extend_from_slice(&index.to_le_bytes());
+                    serialized.extend_from_slice(&program_id.serialize());
+                    serialized.extend_from_slice(&(signers_seeds.len() as u32).to_le_bytes());
+                    for seed in signers_seeds.iter() {
+                        serialized.extend_from_slice(&(seed.len() as u32).to_le_bytes());
+                        serialized.extend_from_slice(seed);
+                    }
+                }
+            }
         }
 
         serialized
@@ -105,35 +142,94 @@ impl<'a> TransactionToSign<'a> {
     ///
     /// This function will panic if the input data is malformed or doesn't contain
     /// enough bytes for the expected format.
-    pub fn from_slice(data: &'a [u8]) -> Self {
-        let mut size = 0;
+    pub fn from_slice(data: &'a [u8]) -> Result<Self, ProgramError> {
+        fn get_const_slice<const N: usize>(
+            data: &[u8],
+            offset: usize,
+        ) -> Result<[u8; N], ProgramError> {
+            let end = offset + N;
+            let slice = data
+                .get(offset..end)
+                .ok_or_else(|| ProgramError::InsufficientDataLength)?;
+            let array_ref = slice
+                .try_into()
+                .map_err(|_| ProgramError::IncorrectLength)?;
+            Ok(array_ref)
+        }
 
-        let tx_bytes_len = u32::from_le_bytes(data[size..size + 4].try_into().unwrap()) as usize;
-        size += 4;
+        fn get_slice(data: &[u8], start: usize, len: usize) -> Result<&[u8], ProgramError> {
+            data.get(start..start + len)
+                .ok_or_else(|| ProgramError::InsufficientDataLength)
+        }
 
-        let tx_bytes = &data[size..(size + tx_bytes_len)];
-        size += tx_bytes_len;
+        let mut offset = 0;
 
-        let inputs_to_sign_len =
-            u32::from_le_bytes(data[size..size + 4].try_into().unwrap()) as usize;
-        size += 4;
+        let tx_bytes_len = u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
+        offset += 4;
+
+        let tx_bytes = get_slice(data, offset, tx_bytes_len)?;
+        offset += tx_bytes_len;
+
+        let inputs_to_sign_len = u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
+        offset += 4;
 
         let mut inputs_to_sign = Vec::with_capacity(inputs_to_sign_len);
 
         for _ in 0..inputs_to_sign_len {
-            let index = u32::from_le_bytes(data[size..size + 4].try_into().unwrap());
-            size += 4;
+            let input_to_sign_type = data
+                .get(offset)
+                .ok_or(ProgramError::InsufficientDataLength)?;
+            offset += 1;
 
-            let signer = Pubkey::from_slice(&data[size..size + 32]);
-            size += 32;
+            let index = u32::from_le_bytes(get_const_slice(data, offset)?);
+            offset += 4;
 
-            inputs_to_sign.push(InputToSign { index, signer });
+            let signer = Pubkey(get_const_slice(data, offset)?);
+            offset += 32;
+
+            match input_to_sign_type {
+                0 => {
+                    inputs_to_sign.push(InputToSign::Sign { index, signer });
+                }
+                1 => {
+                    let signers_seeds_len =
+                        u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
+                    offset += 4;
+
+                    if signers_seeds_len > MAX_SEEDS {
+                        return Err(ProgramError::MaxSeedsExceeded);
+                    }
+
+                    let mut signers_seeds: Vec<&[u8]> = Vec::with_capacity(signers_seeds_len);
+                    for _ in 0..signers_seeds_len {
+                        let seed_len = u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
+                        offset += 4;
+
+                        if seed_len > MAX_SEED_LEN {
+                            return Err(ProgramError::MaxSeedLengthExceeded);
+                        }
+
+                        let seed = get_slice(data, offset, seed_len)?;
+                        offset += seed_len;
+                        signers_seeds.push(seed);
+                    }
+
+                    inputs_to_sign.push(InputToSign::SignWithSeeds {
+                        index,
+                        program_id: signer,
+                        signers_seeds: signers_seeds.leak(),
+                    });
+                }
+                _ => {
+                    return Err(ProgramError::InvalidInputToSignType);
+                }
+            }
         }
 
-        TransactionToSign {
+        Ok(TransactionToSign {
             tx_bytes,
             inputs_to_sign: inputs_to_sign.leak(),
-        }
+        })
     }
 }
 
@@ -154,7 +250,7 @@ mod tests {
             let inputs_to_sign: Vec<InputToSign> = input_indices.into_iter()
                 .zip(input_pubkeys.into_iter())
                 .map(|(index, pubkey_bytes)| {
-                    InputToSign {
+                    InputToSign::Sign {
                         index,
                         signer: Pubkey::from(pubkey_bytes),
                     }
@@ -167,7 +263,7 @@ mod tests {
             };
 
             let serialized = transaction.serialise();
-            let deserialized = TransactionToSign::from_slice(&serialized);
+            let deserialized = TransactionToSign::from_slice(&serialized).unwrap();
 
             assert_eq!(transaction.tx_bytes, deserialized.tx_bytes);
             assert_eq!(transaction.inputs_to_sign, deserialized.inputs_to_sign);
@@ -196,11 +292,11 @@ mod tests {
         };
 
         let inputs_to_sign = vec![
-            InputToSign {
+            InputToSign::Sign {
                 index: 0,
                 signer: Pubkey::from([1u8; 32]),
             },
-            InputToSign {
+            InputToSign::Sign {
                 index: 1,
                 signer: Pubkey::from([2u8; 32]),
             },
@@ -221,8 +317,8 @@ mod tests {
         assert_eq!(serialized1, serialized2);
 
         // Verify both can be deserialized correctly
-        let deserialized1 = TransactionToSign::from_slice(&serialized1);
-        let deserialized2 = TransactionToSign::from_slice(&serialized2);
+        let deserialized1 = TransactionToSign::from_slice(&serialized1).unwrap();
+        let deserialized2 = TransactionToSign::from_slice(&serialized2).unwrap();
 
         assert_eq!(deserialized1.tx_bytes, deserialized2.tx_bytes);
         assert_eq!(deserialized1.inputs_to_sign, deserialized2.inputs_to_sign);

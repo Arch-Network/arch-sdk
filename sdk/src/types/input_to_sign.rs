@@ -1,20 +1,8 @@
-//! Input requiring signature.
-//!
-//! `InputToSign` represents a transaction input
-//! that needs a signature from a specific key.
-#[cfg(feature = "fuzzing")]
-use libfuzzer_sys::arbitrary;
+use arch_program::{program_error::ProgramError, pubkey::Pubkey};
 
-use crate::{program_error::ProgramError, pubkey::Pubkey};
-
-/// Represents a transaction input that needs to be signed.
-///
-/// An `InputToSign` contains the index of the input within a transaction
-/// and the public key of the signer that should sign this input.
-#[derive(Clone, Debug, Eq, PartialEq, Copy)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
-pub enum InputToSign<'a> {
+pub enum InputToSign {
     Sign {
         index: u32,
         signer: Pubkey,
@@ -22,11 +10,11 @@ pub enum InputToSign<'a> {
     SignWithSeeds {
         index: u32,
         program_id: Pubkey,
-        signers_seeds: &'a [&'a [u8]],
+        signers_seeds: Vec<Vec<u8>>,
     },
 }
 
-impl<'a> InputToSign<'a> {
+impl InputToSign {
     pub fn get_signer(&self) -> Result<Pubkey, ProgramError> {
         let signer = match self {
             InputToSign::Sign { signer, .. } => *signer,
@@ -34,7 +22,14 @@ impl<'a> InputToSign<'a> {
                 signers_seeds,
                 program_id,
                 ..
-            } => Pubkey::create_program_address(signers_seeds, program_id)?,
+            } => Pubkey::create_program_address(
+                signers_seeds
+                    .iter()
+                    .map(|seed| seed.as_slice())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                program_id,
+            )?,
         };
 
         Ok(signer)

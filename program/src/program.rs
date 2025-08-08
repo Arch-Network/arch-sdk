@@ -273,13 +273,24 @@ where
             txid_bytes.reverse();
 
             for input in inputs_to_sign {
+                let (index, signer) = match input {
+                    InputToSign::Sign { index, signer } => (*index, *signer),
+                    InputToSign::SignWithSeeds {
+                        index,
+                        program_id,
+                        signers_seeds,
+                    } => (
+                        *index,
+                        Pubkey::create_program_address(signers_seeds, program_id)?,
+                    ),
+                };
                 if let Some(account) = accounts
                     .iter()
-                    .find(|account| *account.as_ref().key == input.signer)
+                    .find(|account| *account.as_ref().key == signer)
                 {
                     account
                         .as_ref()
-                        .set_utxo(&UtxoMeta::from(txid_bytes, input.index));
+                        .set_utxo(&UtxoMeta::from(txid_bytes, index));
                 }
             }
             Ok(())
