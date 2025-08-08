@@ -3,6 +3,7 @@ use crate::arch_program::system_instruction;
 use crate::build_and_sign_transaction;
 use crate::client::ArchError;
 use crate::client::ArchRpcClient;
+use crate::MAX_TX_BATCH_SIZE;
 use crate::{
     types::{RuntimeTransaction, Signature, RUNTIME_TX_SIZE_LIMIT},
     Status,
@@ -382,7 +383,12 @@ impl ProgramDeployer {
 
         pb.set_message("Successfully Processed Deployment Transactions :");
 
-        let tx_ids = self.client.send_transactions(txs)?;
+        let batch = txs
+            .chunks(MAX_TX_BATCH_SIZE)
+            .map(|chunk| self.client.send_transactions(chunk.to_vec()))
+            .collect::<Result<Vec<Vec<Hash>>, ArchError>>()?;
+
+        let tx_ids = batch.iter().flatten().collect::<Vec<&Hash>>();
 
         for tx_id in tx_ids.iter() {
             let _processed_tx = self.client.wait_for_processed_transaction(tx_id)?;

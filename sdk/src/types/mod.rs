@@ -21,3 +21,5 @@ pub use runtime_transaction::*;
 pub use signature::*;
 pub use subscription::*;
 pub use transaction_to_sign::*;
+
+pub const MAX_TX_BATCH_SIZE: usize = 100;

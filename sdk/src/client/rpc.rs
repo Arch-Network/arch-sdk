@@ -1,7 +1,8 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
 use crate::{
-    sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, FullBlock, NOT_FOUND_CODE,
+    sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, FullBlock,
+    MAX_TX_BATCH_SIZE, NOT_FOUND_CODE,
 };
 use arch_program::hash::Hash;
 use bitcoin::key::Keypair;
@@ -417,6 +418,12 @@ impl ArchRpcClient {
 
     /// Send multiple transactions
     pub fn send_transactions(&self, transactions: Vec<RuntimeTransaction>) -> Result<Vec<Hash>> {
+        if transactions.len() > MAX_TX_BATCH_SIZE {
+            return Err(ArchError::TransactionError(
+                "Batch size exceeds maximum".to_string(),
+            ));
+        }
+
         match self.call_method_with_params::<Vec<RuntimeTransaction>, Vec<String>>(
             SEND_TRANSACTIONS,
             transactions,
