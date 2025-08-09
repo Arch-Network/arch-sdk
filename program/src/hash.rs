@@ -3,12 +3,14 @@ use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "fuzzing")]
 use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, str::FromStr};
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 use thiserror::Error;
 
 #[derive(
     Default,
-    Debug,
     PartialEq,
     Eq,
     Clone,
@@ -44,6 +46,12 @@ pub enum HashError {
 impl From<hex::FromHexError> for HashError {
     fn from(err: hex::FromHexError) -> Self {
         HashError::InvalidHex(err.to_string())
+    }
+}
+
+impl Debug for Hash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(self.0))
     }
 }
 
