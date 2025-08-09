@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     io::{Error, ErrorKind},
     str::FromStr,
 };
@@ -13,11 +14,11 @@ pub enum BlockTransactionFilter {
     Signatures,
 }
 
-impl BlockTransactionFilter {
-    pub fn to_string(&self) -> String {
+impl Display for BlockTransactionFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BlockTransactionFilter::Full => "full".to_string(),
-            BlockTransactionFilter::Signatures => "signatures".to_string(),
+            BlockTransactionFilter::Full => write!(f, "full"),
+            BlockTransactionFilter::Signatures => write!(f, "signatures"),
         }
     }
 }

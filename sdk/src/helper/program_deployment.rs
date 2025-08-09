@@ -361,11 +361,11 @@ impl ProgramDeployer {
 
                 Ok(RuntimeTransaction {
                     version: 0,
-                    signatures: vec![Signature(
-                        sign_message_bip322(&authority_keypair, &digest_slice, self.network)
-                            .try_into()
-                            .expect("sign_message_bip322 should return exactly 64 bytes"),
-                    )],
+                    signatures: vec![Signature(sign_message_bip322(
+                        &authority_keypair,
+                        &digest_slice,
+                        self.network,
+                    ))],
                     message,
                 })
             })

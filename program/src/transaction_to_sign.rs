@@ -150,7 +150,7 @@ impl<'a> TransactionToSign<'a> {
             let end = offset + N;
             let slice = data
                 .get(offset..end)
-                .ok_or_else(|| ProgramError::InsufficientDataLength)?;
+                .ok_or(ProgramError::InsufficientDataLength)?;
             let array_ref = slice
                 .try_into()
                 .map_err(|_| ProgramError::IncorrectLength)?;
@@ -159,7 +159,7 @@ impl<'a> TransactionToSign<'a> {
 
         fn get_slice(data: &[u8], start: usize, len: usize) -> Result<&[u8], ProgramError> {
             data.get(start..start + len)
-                .ok_or_else(|| ProgramError::InsufficientDataLength)
+                .ok_or(ProgramError::InsufficientDataLength)
         }
 
         let mut offset = 0;

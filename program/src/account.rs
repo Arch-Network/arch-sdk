@@ -169,6 +169,7 @@ impl<'a> AccountInfo<'a> {
     /// * `is_signer` - Whether this account is a signer
     /// * `is_writable` - Whether this account is writable
     /// * `is_executable` - Whether this account contains executable code
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         key: &'a Pubkey,
         lamports: &'a mut u64,

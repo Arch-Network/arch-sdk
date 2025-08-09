@@ -530,10 +530,7 @@ impl ArchRpcClient {
 
 /// Helper function to check if a transaction has reached a final status
 fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
-    match &tx.status {
-        Status::Processed | Status::Failed(_) => true,
-        _ => false,
-    }
+    matches!(&tx.status, Status::Processed | Status::Failed(_))
 }
 
 #[cfg(test)]

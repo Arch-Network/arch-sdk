@@ -26,7 +26,7 @@ pub enum InputToSign<'a> {
     },
 }
 
-impl<'a> InputToSign<'a> {
+impl InputToSign<'_> {
     pub fn get_signer(&self) -> Result<Pubkey, ProgramError> {
         let signer = match self {
             InputToSign::Sign { signer, .. } => *signer,

@@ -323,6 +323,7 @@ impl WebSocketClient {
     }
 
     /// Attempt to reconnect to the server
+    #[allow(clippy::too_many_arguments)]
     async fn attempt_reconnection(
         server_url: &Arc<String>,
         connected: &Arc<Mutex<bool>>,
@@ -768,6 +769,7 @@ impl WebSocketClient {
     }
 
     /// Process messages until disconnection or cancellation
+    #[allow(clippy::too_many_arguments)]
     async fn process_messages(
         read: &mut futures::stream::SplitStream<
             WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>,

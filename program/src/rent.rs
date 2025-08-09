@@ -1,6 +1,5 @@
 /// Rent Calculation
 // pub const DEFAULT_LAMPORTS_PER_BYTE_YEAR: u64 = 1_000_000_000 / 100 * 365 / (1024 * 1024);
-
 // TODO: Temp value as the rent is becoming greater than MIN_LAMPORTS_REQUIRED,
 // fix that to a good value then comback to this
 pub const DEFAULT_LAMPORTS_PER_BYTE_YEAR: u64 = 2;

@@ -3,7 +3,6 @@ use crate::pubkey::Pubkey;
 /// This is native loader
 /// used for invoking native programs, this doesn't have a an account on it's own,
 /// but native programs use this address in their owner's field.
-
 pub const BPF_LOADER_ID: Pubkey = Pubkey(*b"BpfLoader11111111111111111111111");
 
 pub fn check_id(id: &Pubkey) -> bool {

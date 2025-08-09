@@ -68,8 +68,8 @@ impl<'de> Deserialize<'de> for Signature {
                 A: de::SeqAccess<'de>,
             {
                 let mut bytes = [0u8; 64];
-                for i in 0..64 {
-                    bytes[i] = seq
+                for (i, byte) in bytes.iter_mut().enumerate() {
+                    *byte = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(i, &self))?;
                 }

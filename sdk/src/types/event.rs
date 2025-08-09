@@ -162,7 +162,7 @@ impl EventFilter {
         match filter {
             Value::Array(arr) => arr
                 .iter()
-                .any(|v| value.as_array().map_or(false, |arr| arr.contains(v))),
+                .any(|v| value.as_array().is_some_and(|arr| arr.contains(v))),
             _ => value == filter,
         }
     }
