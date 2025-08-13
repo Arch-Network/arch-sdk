@@ -62,8 +62,7 @@ pub mod keccak;
 pub mod loader_instruction;
 /// Logging functionality for on-chain programs
 pub mod log;
-/// Message format and processing utilities
-pub mod message;
+
 pub mod native_loader;
 /// Program runtime interfaces and state management
 pub mod program;
@@ -100,6 +99,8 @@ pub mod transaction_to_sign;
 /// Bitcoin UTXO (Unspent Transaction Output) management
 pub mod utxo;
 pub mod vote;
+
+pub mod serde_error;
 
 #[macro_use]
 extern crate serde_derive;

@@ -7,6 +7,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::RUNTIME_TX_SIZE_LIMIT;
+
 use super::{RuntimeTransaction, RuntimeTransactionError};
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq)]
@@ -28,6 +30,9 @@ pub enum ParseProcessedTransactionError {
 
     #[error("rollback message too long")]
     RollbackMessageTooLong,
+
+    #[error("runtime transaction size exceeds limit: {0} > {1}")]
+    RuntimeTransactionSizeExceedsLimit(usize, usize),
 
     #[error("log message too long")]
     LogMessageTooLong,
@@ -173,7 +178,7 @@ impl ProcessedTransaction {
     pub fn max_serialized_size() -> usize {
         ROLLBACK_MESSAGE_BUFFER_SIZE  // rollback status (fixed size buffer)
             + 8  // runtime_transaction length field
-            + crate::types::runtime_transaction::RUNTIME_TX_SIZE_LIMIT  // max runtime transaction size
+            + RUNTIME_TX_SIZE_LIMIT  // max runtime transaction size
             + 1  // bitcoin_txid variant flag (None/Some)
             + 32  // bitcoin_txid hash (when Some)
             + 8  // logs length field
@@ -192,8 +197,17 @@ impl ProcessedTransaction {
 
         serialized.extend(self.rollback_status.to_fixed_array()?);
 
-        serialized.extend((self.runtime_transaction.serialize().len() as u64).to_le_bytes());
-        serialized.extend(self.runtime_transaction.serialize());
+        let serialized_runtime_transaction = self.runtime_transaction.serialize();
+        if serialized_runtime_transaction.len() > RUNTIME_TX_SIZE_LIMIT {
+            return Err(
+                ParseProcessedTransactionError::RuntimeTransactionSizeExceedsLimit(
+                    serialized_runtime_transaction.len(),
+                    RUNTIME_TX_SIZE_LIMIT,
+                ),
+            );
+        }
+        serialized.extend((serialized_runtime_transaction.len() as u64).to_le_bytes());
+        serialized.extend(serialized_runtime_transaction);
 
         serialized.extend(match &self.bitcoin_txid {
             Some(txid) => {

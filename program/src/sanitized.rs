@@ -1,7 +1,7 @@
 use crate::hash::Hash;
 use crate::sanitize::{Sanitize, SanitizeError};
+use crate::serde_error::{get_const_slice, get_slice, SerialisationErrors};
 use crate::{compiled_keys::CompiledKeys, instruction::Instruction, pubkey::Pubkey};
-use anyhow::{anyhow, Result};
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "fuzzing")]
@@ -9,7 +9,8 @@ use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 use std::collections::HashSet;
-const MAX_INSTRUCTION_COUNT_PER_TRANSACTION: usize = u8::MAX as usize;
+pub const MAX_INSTRUCTION_COUNT_PER_TRANSACTION: usize = u8::MAX as usize;
+pub const MAX_PUBKEYS_ALLOWED: u32 = u8::MAX as u32;
 /// A sanitized message that has been checked for validity and processed to improve
 /// runtime performance.
 ///
@@ -294,91 +295,66 @@ impl ArchMessage {
         buffer
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() < 3 {
-            return Err(anyhow!("Invalid message length: less than header size"));
-        }
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, SerialisationErrors> {
+        let mut cursor: usize = 0;
 
-        let mut pos = 0;
-
-        // Deserialize header
+        const HEADER_SIZE: usize = 3;
+        let header_bytes = get_const_slice::<HEADER_SIZE>(bytes, cursor)?;
         let header = MessageHeader {
-            num_required_signatures: bytes[pos],
-            num_readonly_signed_accounts: bytes[pos + 1],
-            num_readonly_unsigned_accounts: bytes[pos + 2],
+            num_required_signatures: header_bytes[0],
+            num_readonly_signed_accounts: header_bytes[1],
+            num_readonly_unsigned_accounts: header_bytes[2],
         };
-        pos += 3;
+        cursor += HEADER_SIZE;
 
-        // Deserialize account_keys
-        if bytes.len() < pos + 4 {
-            return Err(anyhow!(
-                "Invalid message length: insufficient bytes for account keys length"
-            ));
+        // Deserialize account_keys length
+        const U32_SIZE: usize = 4;
+        let num_keys_bytes = get_const_slice::<U32_SIZE>(bytes, cursor)?;
+        let num_keys = u32::from_le_bytes(num_keys_bytes);
+        if num_keys > MAX_PUBKEYS_ALLOWED {
+            return Err(SerialisationErrors::MoreThanMaxAllowedKeys);
         }
-        let num_keys = u32::from_le_bytes(
-            bytes[pos..pos + 4]
-                .try_into()
-                .map_err(|_| anyhow!("Invalid byte conversion for account keys length"))?,
-        );
-        pos += 4;
+        cursor += U32_SIZE;
 
+        // Calculate total size needed for account keys with overflow protection
+        const PUBKEY_SIZE: usize = 32;
         let account_keys_size = num_keys
-            .checked_mul(32)
-            .ok_or_else(|| anyhow!("Message length overflow in account keys"))?;
+            .checked_mul(PUBKEY_SIZE as u32)
+            .ok_or(SerialisationErrors::OverFlow)?;
 
-        if bytes.len() < pos + account_keys_size as usize {
-            return Err(anyhow!(
-                "Invalid message length: insufficient bytes for account keys"
-            ));
-        }
+        // Read all account key bytes at once
+        let account_keys_slice = get_slice(bytes, cursor, account_keys_size as usize)?;
+        cursor += account_keys_size as usize;
 
+        // Process account keys using safe iteration - no manual indexing
         let mut account_keys = Vec::with_capacity(num_keys as usize);
-        for _ in 0..num_keys {
-            if bytes.len() < pos + 32 {
-                return Err(anyhow!(
-                    "Invalid message length: insufficient bytes for {} account keys",
-                    num_keys
-                ));
-            }
-            account_keys.push(Pubkey::from_slice(&bytes[pos..pos + 32]));
-            pos += 32;
+        for key_bytes in account_keys_slice.chunks_exact(PUBKEY_SIZE) {
+            account_keys.push(Pubkey::from_slice(key_bytes));
         }
 
-        if bytes.len() < pos + 32 {
-            return Err(anyhow!(
-                "Invalid message length: insufficient bytes for recent blockhash"
-            ));
-        }
-        let recent_blockhash_bytes: [u8; 32] = bytes[pos..pos + 32].try_into().unwrap();
-        let recent_blockhash = Hash::from(recent_blockhash_bytes);
-        pos += 32;
+        // Deserialize recent blockhash
+        let blockhash_bytes = get_const_slice::<PUBKEY_SIZE>(bytes, cursor)?;
+        let recent_blockhash = Hash::from(blockhash_bytes);
+        cursor += PUBKEY_SIZE;
 
-        // Deserialize instructions
-        if bytes.len() < pos + 4 {
-            return Err(anyhow!(
-                "Invalid message length: insufficient bytes for instructions length"
-            ));
-        }
-        let num_instructions = u32::from_le_bytes(
-            bytes[pos..pos + 4]
-                .try_into()
-                .map_err(|_| anyhow!("Invalid byte conversion for instructions length"))?,
-        );
-        pos += 4;
+        // Deserialize instructions length
+        let num_instructions_bytes = get_const_slice::<U32_SIZE>(bytes, cursor)?;
+        let num_instructions = u32::from_le_bytes(num_instructions_bytes);
+        cursor += U32_SIZE;
 
+        // Validate instruction count
         if num_instructions as usize > MAX_INSTRUCTION_COUNT_PER_TRANSACTION {
-            return Err(anyhow!(
-                "Invalid message length: too many instructions: {} > {}",
-                num_instructions,
-                MAX_INSTRUCTION_COUNT_PER_TRANSACTION
-            ));
+            return Err(SerialisationErrors::MoreThanMaxInstructionsAllowed);
         }
 
+        // Deserialize instructions - using safe remaining slice access
         let mut instructions = Vec::with_capacity(num_instructions as usize);
         for _ in 0..num_instructions {
-            let (instruction, bytes_read) = SanitizedInstruction::deserialize(&bytes[pos..])?;
+            // Get remaining bytes safely without direct slicing
+            let remaining_bytes = get_slice(bytes, cursor, bytes.len() - cursor)?;
+            let (instruction, bytes_read) = SanitizedInstruction::deserialize(remaining_bytes)?;
             instructions.push(instruction);
-            pos += bytes_read;
+            cursor += bytes_read;
         }
 
         Ok(Self {
@@ -512,50 +488,33 @@ impl SanitizedInstruction {
         buffer
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Result<(Self, usize)> {
+    pub fn deserialize(bytes: &[u8]) -> Result<(Self, usize), SerialisationErrors> {
         if bytes.is_empty() {
-            return Err(anyhow!("Invalid instruction length: empty buffer"));
+            return Err(SerialisationErrors::SizeTooSmall);
         }
 
-        let mut pos = 0;
-        let program_id_index = bytes[pos];
-        pos += 1;
+        let mut cursor: usize = 0;
+        const PROGRAM_ID_SIZE: usize = 1;
+        let program_id_bytes = get_const_slice::<PROGRAM_ID_SIZE>(bytes, cursor)?;
+        let program_id_index = program_id_bytes[0];
+        cursor += PROGRAM_ID_SIZE;
 
-        if bytes.len() < pos + 4 {
-            return Err(anyhow!(
-                "Invalid instruction length: insufficient bytes for accounts length"
-            ));
-        }
-        let num_accounts = u32::from_le_bytes(
-            bytes[pos..pos + 4]
-                .try_into()
-                .map_err(|_| anyhow!("Invalid byte conversion for accounts length"))?,
-        );
-        pos += 4;
+        const U32_SIZE: usize = 4;
+        let num_accounts_bytes = get_const_slice::<U32_SIZE>(bytes, cursor)?;
+        let num_accounts = u32::from_le_bytes(num_accounts_bytes);
+        cursor += U32_SIZE;
 
-        if bytes.len() < pos + num_accounts as usize {
-            return Err(anyhow!("Insufficient bytes for account indices"));
-        }
-        let accounts = bytes[pos..pos + num_accounts as usize].to_vec();
-        pos += num_accounts as usize;
+        let accounts_slice = get_slice(bytes, cursor, num_accounts as usize)?;
+        let accounts = accounts_slice.to_vec();
+        cursor += num_accounts as usize;
 
-        if bytes.len() < pos + 4 {
-            return Err(anyhow!(
-                "Invalid instruction length: insufficient bytes for data length"
-            ));
-        }
-        let data_len = u32::from_le_bytes(
-            bytes[pos..pos + 4]
-                .try_into()
-                .map_err(|_| anyhow!("Invalid byte conversion for data length"))?,
-        );
-        pos += 4;
+        let data_len_bytes = get_const_slice::<U32_SIZE>(bytes, cursor)?;
+        let data_len = u32::from_le_bytes(data_len_bytes);
+        cursor += U32_SIZE;
 
-        if bytes.len() < pos + data_len as usize {
-            return Err(anyhow!("Insufficient bytes for instruction data"));
-        }
-        let data = bytes[pos..pos + data_len as usize].to_vec();
-        pos += data_len as usize;
+        let data_slice = get_slice(bytes, cursor, data_len as usize)?;
+        let data = data_slice.to_vec();
+        cursor += data_len as usize;
 
         Ok((
             Self {
@@ -563,7 +522,7 @@ impl SanitizedInstruction {
                 accounts,
                 data,
             },
-            pos,
+            cursor, // Return total bytes consumed
         ))
     }
 }
@@ -741,17 +700,10 @@ mod tests {
         // Test empty buffer
         let result = SanitizedInstruction::deserialize(&[]);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid instruction length: empty buffer"
-        );
 
-        // Test buffer too small for program_id_index
-        let result = SanitizedInstruction::deserialize(&[]);
-        assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Invalid instruction length: empty buffer"
+            "Data is not large enough for the requested operation"
         );
 
         // Test buffer too small for accounts length
@@ -759,7 +711,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Invalid instruction length: insufficient bytes for accounts length"
+            "Data corrupted, unable to decode"
         );
 
         // Test impossibly large accounts length
@@ -769,10 +721,6 @@ mod tests {
         ];
         let result = SanitizedInstruction::deserialize(&invalid_instruction);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Insufficient bytes"));
 
         // Test truncated account indices
         let truncated_accounts = vec![
@@ -783,10 +731,6 @@ mod tests {
         ];
         let result = SanitizedInstruction::deserialize(&truncated_accounts);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Insufficient bytes"));
 
         // Test invalid data length
         let invalid_data = vec![
@@ -797,10 +741,6 @@ mod tests {
         ];
         let result = SanitizedInstruction::deserialize(&invalid_data);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Insufficient bytes"));
 
         // Test truncated data
         let truncated_data = vec![
@@ -812,10 +752,6 @@ mod tests {
         ];
         let result = SanitizedInstruction::deserialize(&truncated_data);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Insufficient bytes"));
     }
 
     #[test]
@@ -1018,6 +954,239 @@ mod tests {
         assert!(!unique_keys.contains(&account_keys[3])); // unused account
         assert!(unique_keys.contains(&account_keys[4])); // data account
     }
+
+    #[test]
+    fn test_arch_message_serde_roundtrip_basic() {
+        let header = MessageHeader {
+            num_required_signatures: 2,
+            num_readonly_signed_accounts: 1,
+            num_readonly_unsigned_accounts: 1,
+        };
+
+        let account_keys = vec![
+            Pubkey::new_unique(), // fee payer (signer, writable)
+            Pubkey::new_unique(), // signer (readonly)
+            Pubkey::new_unique(), // program (non-signer, readonly)
+            Pubkey::new_unique(), // data account (non-signer, writable)
+        ];
+
+        let instruction = SanitizedInstruction {
+            program_id_index: 2,
+            accounts: vec![0, 1, 3],
+            data: vec![1, 2, 3, 4, 5],
+        };
+
+        let original_message = ArchMessage {
+            header,
+            account_keys,
+            recent_blockhash: Hash::from([0xab; 32]),
+            instructions: vec![instruction],
+        };
+
+        // Serialize the message
+        let serialized = original_message.serialize();
+
+        // Deserialize it back
+        let deserialized =
+            ArchMessage::deserialize(&serialized).expect("Deserialization should succeed");
+
+        // Verify complete equality
+        assert_eq!(original_message, deserialized);
+    }
+
+    #[test]
+    fn test_arch_message_serde_roundtrip_empty_instructions() {
+        let original_message = ArchMessage {
+            header: MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 0,
+            },
+            account_keys: vec![Pubkey::new_unique()],
+            recent_blockhash: Hash::from([0xff; 32]),
+            instructions: vec![], // Empty instructions
+        };
+
+        let serialized = original_message.serialize();
+        let deserialized = ArchMessage::deserialize(&serialized)
+            .expect("Deserialization should succeed with empty instructions");
+
+        assert_eq!(original_message, deserialized);
+    }
+
+    #[test]
+    fn test_arch_message_serde_roundtrip_max_instructions() {
+        // testing at the boundary of maximum allowed instructions
+        let header = MessageHeader {
+            num_required_signatures: 1,
+            num_readonly_signed_accounts: 0,
+            num_readonly_unsigned_accounts: 1,
+        };
+
+        let account_keys = vec![
+            Pubkey::new_unique(), // fee payer
+            Pubkey::new_unique(), // program
+        ];
+
+        // Create maximum allowed number of instructions
+        let mut instructions = Vec::new();
+        for i in 0..MAX_INSTRUCTION_COUNT_PER_TRANSACTION {
+            instructions.push(SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![0],
+                data: vec![i as u8], // Different data for each instruction
+            });
+        }
+
+        let original_message = ArchMessage {
+            header,
+            account_keys,
+            recent_blockhash: Hash::from([0x42; 32]),
+            instructions,
+        };
+
+        let serialized = original_message.serialize();
+        let deserialized = ArchMessage::deserialize(&serialized)
+            .expect("Deserialization should succeed with max instructions");
+
+        assert_eq!(original_message, deserialized);
+    }
+
+    #[test]
+    fn test_arch_message_serde_roundtrip_large_instruction_data() {
+        // testing with large instruction data
+        let original_message = ArchMessage {
+            header: MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 1,
+            },
+            account_keys: vec![Pubkey::new_unique(), Pubkey::new_unique()],
+            recent_blockhash: Hash::from([0x33; 32]),
+            instructions: vec![SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![0],
+                data: vec![0xaa; 1024], // Large instruction data
+            }],
+        };
+
+        let serialized = original_message.serialize();
+        let deserialized = ArchMessage::deserialize(&serialized)
+            .expect("Deserialization should succeed with large instruction data");
+
+        assert_eq!(original_message, deserialized);
+    }
+
+    #[test]
+    fn test_arch_message_deserialize_insufficient_data() {
+        // testing resilience against truncated data
+        let original_message = ArchMessage {
+            header: MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 0,
+            },
+            account_keys: vec![Pubkey::new_unique()],
+            recent_blockhash: Hash::from([0x11; 32]),
+            instructions: vec![SanitizedInstruction {
+                program_id_index: 0,
+                accounts: vec![],
+                data: vec![1, 2, 3],
+            }],
+        };
+
+        let serialized = original_message.serialize();
+
+        // Test with various truncated lengths
+        for i in 0..serialized.len() {
+            let truncated = &serialized[..i];
+            assert!(
+                ArchMessage::deserialize(truncated).is_err(),
+                "Deserialization should fail for truncated data of length {}",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_arch_message_deserialize_too_many_instructions() {
+        let mut malicious_data = Vec::new();
+
+        // Header (3 bytes)
+        malicious_data.extend_from_slice(&[1, 0, 0]); // 1 required sig, 0 readonly
+
+        // Account keys count (4 bytes) - 1 account
+        malicious_data.extend_from_slice(&1u32.to_le_bytes());
+
+        // Account key (32 bytes)
+        malicious_data.extend_from_slice(&[0x11; 32]);
+
+        // Recent blockhash (32 bytes)
+        malicious_data.extend_from_slice(&[0x22; 32]);
+
+        // Instructions count - exceed maximum
+        let excessive_count = (MAX_INSTRUCTION_COUNT_PER_TRANSACTION + 1) as u32;
+        malicious_data.extend_from_slice(&excessive_count.to_le_bytes());
+
+        let result = ArchMessage::deserialize(&malicious_data);
+        assert!(result.is_err(), "Should reject excessive instruction count");
+    }
+
+    #[test]
+    fn test_arch_message_deserialize_account_key_overflow() {
+        let mut malicious_data = Vec::new();
+
+        // Header
+        malicious_data.extend_from_slice(&[1, 0, 0]);
+
+        // Massive account key count that would overflow when multiplied by 32
+        let overflow_count = u32::MAX;
+        malicious_data.extend_from_slice(&overflow_count.to_le_bytes());
+
+        let result = ArchMessage::deserialize(&malicious_data);
+        assert!(
+            result.is_err(),
+            "Should reject account key count that causes overflow"
+        );
+    }
+
+    #[test]
+    fn test_arch_message_serde_roundtrip_multiple_account_types() {
+        let original_message = ArchMessage {
+            header: MessageHeader {
+                num_required_signatures: 3,
+                num_readonly_signed_accounts: 1,
+                num_readonly_unsigned_accounts: 2,
+            },
+            account_keys: vec![
+                Pubkey::new_unique(), // signer, writable (fee payer)
+                Pubkey::new_unique(), // signer, writable
+                Pubkey::new_unique(), // signer, readonly
+                Pubkey::new_unique(), // non-signer, writable
+                Pubkey::new_unique(), // non-signer, readonly (program)
+                Pubkey::new_unique(), // non-signer, readonly
+            ],
+            recent_blockhash: Hash::from([0x99; 32]),
+            instructions: vec![
+                SanitizedInstruction {
+                    program_id_index: 4,
+                    accounts: vec![0, 1, 2, 3],
+                    data: vec![0x01, 0x02],
+                },
+                SanitizedInstruction {
+                    program_id_index: 5,
+                    accounts: vec![1, 3],
+                    data: vec![],
+                },
+            ],
+        };
+
+        let serialized = original_message.serialize();
+        let deserialized = ArchMessage::deserialize(&serialized)
+            .expect("Complex message deserialization should succeed");
+
+        assert_eq!(original_message, deserialized);
+    }
 }
 
 #[cfg(test)]
@@ -1188,5 +1357,170 @@ mod sanitize_tests {
             message.sanitize().unwrap_err(),
             SanitizeError::DuplicateAccount
         );
+    }
+
+    #[test]
+    fn test_sanitized_instruction_serde_roundtrip_basic() {
+        let original_instruction = SanitizedInstruction {
+            program_id_index: 5,
+            accounts: vec![0, 1, 2, 3],
+            data: vec![0xaa, 0xbb, 0xcc, 0xdd],
+        };
+
+        let serialized = original_instruction.serialize();
+        let (deserialized, bytes_read) =
+            SanitizedInstruction::deserialize(&serialized).expect("Deserialization should succeed");
+
+        assert_eq!(original_instruction, deserialized);
+        assert_eq!(bytes_read, serialized.len());
+    }
+
+    #[test]
+    fn test_sanitized_instruction_serde_roundtrip_empty_data() {
+        let original_instruction = SanitizedInstruction {
+            program_id_index: 1,
+            accounts: vec![0],
+            data: vec![], // Empty data
+        };
+
+        let serialized = original_instruction.serialize();
+        let (deserialized, bytes_read) = SanitizedInstruction::deserialize(&serialized)
+            .expect("Deserialization should succeed with empty data");
+
+        assert_eq!(original_instruction, deserialized);
+        assert_eq!(bytes_read, serialized.len());
+    }
+
+    #[test]
+    fn test_sanitized_instruction_serde_roundtrip_empty_accounts() {
+        let original_instruction = SanitizedInstruction {
+            program_id_index: 42,
+            accounts: vec![], // Empty accounts
+            data: vec![1, 2, 3],
+        };
+
+        let serialized = original_instruction.serialize();
+        let (deserialized, bytes_read) = SanitizedInstruction::deserialize(&serialized)
+            .expect("Deserialization should succeed with empty accounts");
+
+        assert_eq!(original_instruction, deserialized);
+        assert_eq!(bytes_read, serialized.len());
+    }
+
+    #[test]
+    fn test_sanitized_instruction_serde_roundtrip_large_data() {
+        let original_instruction = SanitizedInstruction {
+            program_id_index: 255,
+            accounts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            data: vec![0x42; 2048], // Large data payload
+        };
+
+        let serialized = original_instruction.serialize();
+        let (deserialized, bytes_read) = SanitizedInstruction::deserialize(&serialized)
+            .expect("Deserialization should succeed with large data");
+
+        assert_eq!(original_instruction, deserialized);
+        assert_eq!(bytes_read, serialized.len());
+    }
+
+    #[test]
+    fn test_sanitized_instruction_deserialize_insufficient_data() {
+        let original_instruction = SanitizedInstruction {
+            program_id_index: 10,
+            accounts: vec![1, 2, 3],
+            data: vec![0xaa, 0xbb, 0xcc],
+        };
+
+        let serialized = original_instruction.serialize();
+
+        // Test with various truncated lengths
+        for i in 0..serialized.len() {
+            let truncated = &serialized[..i];
+            assert!(
+                SanitizedInstruction::deserialize(truncated).is_err(),
+                "Deserialization should fail for truncated instruction data of length {}",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_sanitized_instruction_deserialize_empty_buffer() {
+        let result = SanitizedInstruction::deserialize(&[]);
+        assert!(result.is_err(), "Should fail with empty buffer");
+    }
+
+    #[test]
+    fn test_sanitized_instruction_deserialize_malformed_lengths() {
+        let mut malicious_data = Vec::new();
+
+        // Program ID
+        malicious_data.push(1);
+
+        malicious_data.extend_from_slice(&1000u32.to_le_bytes());
+
+        malicious_data.extend_from_slice(&[1, 2, 3]); // Only 3 bytes instead of 1000
+
+        let result = SanitizedInstruction::deserialize(&malicious_data);
+        assert!(
+            result.is_err(),
+            "Should fail with insufficient account data"
+        );
+    }
+
+    #[test]
+    fn test_sanitized_instruction_deserialize_data_length_mismatch() {
+        let mut malicious_data = Vec::new();
+
+        // Program ID
+        malicious_data.push(5);
+
+        // Accounts length (0 accounts)
+        malicious_data.extend_from_slice(&0u32.to_le_bytes());
+
+        // Data length - claim we have large data
+        malicious_data.extend_from_slice(&1000u32.to_le_bytes());
+
+        // But provide insufficient data
+        malicious_data.extend_from_slice(&[0xaa, 0xbb]); // Only 2 bytes instead of 1000
+
+        let result = SanitizedInstruction::deserialize(&malicious_data);
+        assert!(
+            result.is_err(),
+            "Should fail with insufficient instruction data"
+        );
+    }
+
+    #[test]
+    fn test_sanitized_instruction_bytes_consumed_accuracy() {
+        let instructions = vec![
+            SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: vec![],
+            },
+            SanitizedInstruction {
+                program_id_index: 2,
+                accounts: vec![0, 1, 2],
+                data: vec![0xaa],
+            },
+            SanitizedInstruction {
+                program_id_index: 3,
+                accounts: vec![0],
+                data: vec![0xbb; 100],
+            },
+        ];
+
+        for instruction in instructions {
+            let serialized = instruction.serialize();
+            let (_, bytes_read) = SanitizedInstruction::deserialize(&serialized)
+                .expect("Deserialization should succeed");
+
+            assert_eq!(
+                bytes_read,
+                serialized.len(),
+                "Bytes read should exactly match serialized length"
+            );
+        }
     }
 }

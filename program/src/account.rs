@@ -1,4 +1,5 @@
 //! Core account abstractions and management functionality for blockchain accounts, including account information and metadata structures.
+use crate::serde_error::{get_const_slice, SerialisationErrors};
 use crate::{msg, pubkey::Pubkey, utxo::UtxoMeta};
 
 use bitcode::{Decode, Encode};
@@ -103,12 +104,30 @@ impl AccountMeta {
     ///
     /// # Returns
     /// A new AccountMeta instance
-    pub fn from_slice(data: &[u8]) -> Self {
-        Self {
-            pubkey: Pubkey::from_slice(&data[..size_of::<Pubkey>()]),
-            is_signer: data[size_of::<Pubkey>()] != 0,
-            is_writable: data[size_of::<Pubkey>() + 1] != 0,
-        }
+    pub fn from_slice(data: &[u8]) -> Result<Self, SerialisationErrors> {
+        let mut cursor: usize = 0;
+
+        // Read pubkey - 32 bytes, using safe bounds checking
+        const PUBKEY_SIZE: usize = 32;
+        let pubkey_bytes = get_const_slice::<PUBKEY_SIZE>(data, cursor)?;
+        let pubkey = Pubkey::from_slice(&pubkey_bytes);
+        cursor += PUBKEY_SIZE;
+
+        // Read is_signer flag - 1 byte
+        const BOOL_SIZE: usize = 1;
+        let is_signer_bytes = get_const_slice::<BOOL_SIZE>(data, cursor)?;
+        let is_signer = is_signer_bytes[0] != 0;
+        cursor += BOOL_SIZE;
+
+        // Read is_writable flag - 1 byte
+        let is_writable_bytes = get_const_slice::<BOOL_SIZE>(data, cursor)?;
+        let is_writable = is_writable_bytes[0] != 0;
+
+        Ok(Self {
+            pubkey,
+            is_signer,
+            is_writable,
+        })
     }
 }
 
@@ -389,6 +408,173 @@ mod tests {
     use crate::{account::AccountMeta, pubkey::Pubkey};
 
     use proptest::prelude::*;
+    /// Test basic serialization/deserialization round-trip for AccountMeta
+    #[test]
+    fn test_account_meta_serialize_deserialize_basic() {
+        // Test case 1: Signer and writable
+        let account_meta = AccountMeta {
+            pubkey: Pubkey::system_program(),
+            is_signer: true,
+            is_writable: true,
+        };
+
+        let serialized = account_meta.serialize();
+        let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+        assert_eq!(account_meta, deserialized);
+
+        // Test case 2: Signer but read-only
+        let account_meta = AccountMeta {
+            pubkey: Pubkey::from([1u8; 32]),
+            is_signer: true,
+            is_writable: false,
+        };
+
+        let serialized = account_meta.serialize();
+        let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+        assert_eq!(account_meta, deserialized);
+
+        // Test case 3: Not signer but writable
+        let account_meta = AccountMeta {
+            pubkey: Pubkey::from([255u8; 32]),
+            is_signer: false,
+            is_writable: true,
+        };
+
+        let serialized = account_meta.serialize();
+        let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+        assert_eq!(account_meta, deserialized);
+
+        // Test case 4: Neither signer nor writable
+        let account_meta = AccountMeta {
+            pubkey: Pubkey::from([42u8; 32]),
+            is_signer: false,
+            is_writable: false,
+        };
+
+        let serialized = account_meta.serialize();
+        let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+        assert_eq!(account_meta, deserialized);
+    }
+
+    /// Test AccountMeta creation helpers with round-trip verification
+    #[test]
+    fn test_account_meta_constructors_round_trip() {
+        let pubkey = Pubkey::from([123u8; 32]);
+
+        // Test new() constructor (writable by default)
+        let meta_signer = AccountMeta::new(pubkey, true);
+        let serialized = meta_signer.serialize();
+        let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+        assert_eq!(meta_signer, deserialized);
+        assert!(deserialized.is_writable);
+        assert!(deserialized.is_signer);
+
+        let meta_non_signer = AccountMeta::new(pubkey, false);
+        let serialized = meta_non_signer.serialize();
+        let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+        assert_eq!(meta_non_signer, deserialized);
+        assert!(deserialized.is_writable);
+        assert!(!deserialized.is_signer);
+
+        // Test new_readonly() constructor
+        let meta_readonly_signer = AccountMeta::new_readonly(pubkey, true);
+        let serialized = meta_readonly_signer.serialize();
+        let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+        assert_eq!(meta_readonly_signer, deserialized);
+        assert!(!deserialized.is_writable);
+        assert!(deserialized.is_signer);
+
+        let meta_readonly_non_signer = AccountMeta::new_readonly(pubkey, false);
+        let serialized = meta_readonly_non_signer.serialize();
+        let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+        assert_eq!(meta_readonly_non_signer, deserialized);
+        assert!(!deserialized.is_writable);
+        assert!(!deserialized.is_signer);
+    }
+
+    /// Test error conditions when deserializing malformed data
+    #[test]
+    fn test_account_meta_deserialize_error_conditions() {
+        // Test with empty data
+        let result = AccountMeta::from_slice(&[]);
+        assert!(result.is_err());
+
+        // Test with insufficient data (only pubkey, missing flags)
+        let pubkey_only = [0u8; 32];
+        let result = AccountMeta::from_slice(&pubkey_only);
+        assert!(result.is_err());
+
+        // Test with partial data (pubkey + one flag)
+        let mut partial_data = [0u8; 33];
+        partial_data[32] = 1; // is_signer = true
+        let result = AccountMeta::from_slice(&partial_data);
+        assert!(result.is_err());
+
+        // Test with too much data (should still work, only reads what it needs)
+        let mut extra_data = [0u8; 50];
+        extra_data[32] = 1; // is_signer = true
+        extra_data[33] = 0; // is_writable = false
+        let result = AccountMeta::from_slice(&extra_data);
+        assert!(result.is_ok());
+        let deserialized = result.unwrap();
+        assert!(deserialized.is_signer);
+        assert!(!deserialized.is_writable);
+    }
+
+    /// Test specific boolean flag encoding/decoding
+    #[test]
+    fn test_account_meta_boolean_flags_round_trip() {
+        let pubkey = Pubkey::from([42u8; 32]);
+
+        // Test all possible boolean combinations
+        for is_signer in [false, true] {
+            for is_writable in [false, true] {
+                let account_meta = AccountMeta {
+                    pubkey,
+                    is_signer,
+                    is_writable,
+                };
+
+                let serialized = account_meta.serialize();
+
+                // Verify serialized format
+                assert_eq!(serialized.len(), 34);
+                assert_eq!(serialized[32], if is_signer { 1 } else { 0 });
+                assert_eq!(serialized[33], if is_writable { 1 } else { 0 });
+
+                let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+                assert_eq!(account_meta, deserialized);
+                assert_eq!(deserialized.is_signer, is_signer);
+                assert_eq!(deserialized.is_writable, is_writable);
+            }
+        }
+    }
+
+    /// Test with various pubkey patterns
+    #[test]
+    fn test_account_meta_different_pubkeys_round_trip() {
+        let test_pubkeys = vec![
+            [0u8; 32],                            // All zeros
+            [255u8; 32],                          // All ones
+            [170u8; 32],                          // Alternating pattern
+            Pubkey::system_program().serialize(), // System program
+        ];
+
+        for pubkey_bytes in test_pubkeys {
+            let pubkey = Pubkey::from(pubkey_bytes);
+            let account_meta = AccountMeta {
+                pubkey,
+                is_signer: true,
+                is_writable: false,
+            };
+
+            let serialized = account_meta.serialize();
+            let deserialized = AccountMeta::from_slice(&serialized).unwrap();
+
+            assert_eq!(account_meta, deserialized);
+            assert_eq!(deserialized.pubkey.serialize(), pubkey_bytes);
+        }
+    }
 
     proptest! {
         #[test]
@@ -405,7 +591,7 @@ mod tests {
             };
 
             let serialized = account_meta.serialize();
-            let deserialized = AccountMeta::from_slice(&serialized);
+            let deserialized = AccountMeta::from_slice(&serialized).unwrap();
 
             assert_eq!(account_meta, deserialized);
         }

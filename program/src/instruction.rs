@@ -1,7 +1,6 @@
 /// This module defines the instruction data structure and related error types.
 /// Instructions are the fundamental unit of program execution in the Arch Network,
 /// containing the program to call, accounts to interact with, and instruction data.
-use std::mem::size_of;
 
 #[cfg(feature = "fuzzing")]
 use libfuzzer_sys::arbitrary;
@@ -13,7 +12,6 @@ use crate::stake::instruction::StakeError;
 use crate::system_instruction::SystemError;
 use crate::vote::instruction::VoteError;
 use crate::{account::AccountMeta, program_error::ProgramError};
-
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -96,7 +94,8 @@ impl Instruction {
         size += 1;
         let mut accounts = Vec::with_capacity(accounts_len);
         for _ in 0..accounts_len {
-            accounts.push(AccountMeta::from_slice(&data[size..(size + 34)]));
+            // unwrap here is fine as this runs inside the vm
+            accounts.push(AccountMeta::from_slice(&data[size..(size + 34)]).unwrap());
             size += size_of::<AccountMeta>();
         }
         let data_len = u64::from_le_bytes(data[size..(size + 8)].try_into().unwrap());
