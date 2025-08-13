@@ -1,3 +1,4 @@
+use std::time::Duration;
 use std::{fs, str::FromStr};
 
 use arch_program::{
@@ -330,10 +331,21 @@ pub fn create_account_with_anchor(
 
 pub fn read_account_info(pubkey: Pubkey) -> AccountInfo {
     let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
+    // Retry with backoff to account for propagation/finality delays in CI
+    let max_attempts: u32 = 50; // ~10s at 200ms per attempt
+    let backoff = Duration::from_millis(200);
 
+    for _attempt in 0..max_attempts {
+        if let Ok(info) = arch_rpc_client.read_account_info(pubkey) {
+            return info;
+        }
+        std::thread::sleep(backoff);
+    }
+
+    // Final attempt to surface the actual error in panic
     arch_rpc_client
         .read_account_info(pubkey)
-        .expect("read account info should not fail")
+        .expect("read account info should not fail after retries")
 }
 
 pub fn try_read_account_info(pubkey: Pubkey) -> Option<AccountInfo> {
