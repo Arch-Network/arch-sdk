@@ -14,6 +14,8 @@ pub struct Config {
     pub node_password: String,
     pub network: Network,
     pub arch_node_url: String,
+    pub api_url: String,
+    pub explorer_url: String,
 }
 impl Config {
     pub fn localnet() -> Self {
@@ -23,6 +25,41 @@ impl Config {
             node_password: "bitcoinpass".to_string(),
             network: Network::Regtest,
             arch_node_url: "http://localhost:9002/".to_string(),
+            api_url: "".to_string(),
+            explorer_url: "".to_string(),
+        }
+    }
+    pub fn devnet() -> Self {
+        Self {
+            node_endpoint: "".to_string(),
+            node_username: "bitcoin".to_string(),
+            node_password: "bitcoinpass".to_string(),
+            network: Network::Testnet4,
+            arch_node_url: "".to_string(),
+            api_url: "ttps://mempool.dev.aws.archnetwork.xyz/api/v1".to_string(),
+            explorer_url: "https://mempool.dev.aws.archnetwork.xyz".to_string(),
+        }
+    }
+    pub fn testnet() -> Self {
+        Self {
+            node_endpoint: "".to_string(),
+            node_username: "bitcoin".to_string(),
+            node_password: "bitcoinpass".to_string(),
+            network: Network::Testnet4,
+            arch_node_url: "".to_string(),
+            api_url: "https://mempool.space/testnet4/api/v1".to_string(),
+            explorer_url: "https://mempool.space/testnet4".to_string(),
+        }
+    }
+    pub fn mainnet() -> Self {
+        Self {
+            node_endpoint: "".to_string(),
+            node_username: "bitcoin".to_string(),
+            node_password: "bitcoinpass".to_string(),
+            network: Network::Bitcoin,
+            arch_node_url: "".to_string(),
+            api_url: "https://mempool.space/api/v1".to_string(),
+            explorer_url: "https://mempool.space".to_string(),
         }
     }
     // TODO: Add devnet, testnet and mainnet configs

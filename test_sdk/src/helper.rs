@@ -248,13 +248,7 @@ pub fn prepare_fees_with_extra_utxo(rune_txid: String, rune_vout: u32) -> String
 /// Used to send a utxo the taptweaked account address corresponding to the
 /// network's joint pubkey
 pub fn send_utxo(pubkey: Pubkey) -> (String, u32) {
-    let bitcoin_config = Config {
-        node_endpoint: BITCOIN_NODE_ENDPOINT.to_string(),
-        node_username: BITCOIN_NODE_USERNAME.to_string(),
-        node_password: BITCOIN_NODE_PASSWORD.to_string(),
-        network: BITCOIN_NETWORK,
-        arch_node_url: NODE1_ADDRESS.to_string(),
-    };
+    let bitcoin_config = Config::localnet();
 
     let bitcoin_helper = BitcoinHelper::new(&bitcoin_config);
 
