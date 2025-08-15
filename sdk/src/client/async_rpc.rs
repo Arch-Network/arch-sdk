@@ -1,6 +1,10 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
-use crate::{AccountInfoWithPubkey, BlockTransactionFilter, FullBlock, NOT_FOUND_CODE};
+use crate::{
+    sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, FullBlock, NOT_FOUND_CODE,
+};
+use bitcoin::key::Keypair;
+use bitcoin::Network;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -475,6 +479,66 @@ impl AsyncArchRpcClient {
             },
             Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
         }
+    }
+
+    /// Request an airdrop for a given key
+    pub async fn request_airdrop(&self, pubkey: Pubkey) -> Result<ProcessedTransaction> {
+        let result = self
+            .process_result(self.post_data("request_airdrop", pubkey).await?)
+            .await?
+            .ok_or(ArchError::RpcRequestFailed(
+                "request_airdrop failed".to_string(),
+            ))?;
+
+        // Handle the result parsing with proper error handling
+        let txid_str = result.as_str().ok_or_else(|| {
+            ArchError::ParseError("Failed to get transaction ID as string".to_string())
+        })?;
+
+        let processed_tx = self.wait_for_processed_transaction(txid_str).await?;
+
+        Ok(processed_tx)
+    }
+
+    /// Create an account with lamports
+    pub async fn create_and_fund_account_with_faucet(
+        &self,
+        keypair: &Keypair,
+        bitcoin_network: Network,
+    ) -> Result<()> {
+        let pubkey = Pubkey::from_slice(&keypair.x_only_public_key().0.serialize());
+
+        if self.read_account_info(pubkey).await.is_ok() {
+            let _processed_tx = self.request_airdrop(pubkey).await?;
+        } else {
+            let result = self
+                .process_result(self.post_data("create_account_with_faucet", pubkey).await?)
+                .await?
+                .ok_or(ArchError::RpcRequestFailed(
+                    "create_account_with_faucet failed".to_string(),
+                ))?;
+            let mut runtime_tx: RuntimeTransaction = serde_json::from_value(result)?;
+
+            let message_hash = runtime_tx.message.hash();
+            let signature = crate::Signature::from(sign_message_bip322(
+                keypair,
+                &message_hash,
+                bitcoin_network,
+            ));
+
+            runtime_tx.signatures.push(signature);
+
+            let result = self.send_transaction(runtime_tx).await?;
+
+            let _processed_tx = self.wait_for_processed_transaction(&result).await?;
+        }
+
+        let account_info = self.read_account_info(pubkey).await?;
+
+        // assert_eq!(account_info.owner, Pubkey::system_program());
+        assert!(account_info.lamports >= 1_000_000_000);
+
+        Ok(())
     }
 }
 

@@ -139,6 +139,7 @@ impl ArchRpcClient {
         Ok(processed_tx)
     }
 
+    /// Create an account with lamports
     pub fn create_and_fund_account_with_faucet(
         &self,
         keypair: &Keypair,
