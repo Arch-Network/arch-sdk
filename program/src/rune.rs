@@ -123,17 +123,7 @@ impl<'de> Deserialize<'de> for RuneId {
 }
 
 #[derive(
-    Debug,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    BorshSerialize,
-    BorshDeserialize,
-    Serialize,
-    Deserialize,
-    Pod,
-    Zeroable,
+    Debug, Copy, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize, Pod, Zeroable,
 )]
 #[repr(C)]
 pub struct RuneAmount {
@@ -169,6 +159,18 @@ impl PartialOrd for RuneAmount {
             (false, _) => None,
             (true, ord) => Some(ord),
         }
+    }
+}
+
+impl PartialEq<RuneId> for RuneAmount {
+    fn eq(&self, other: &RuneId) -> bool {
+        self.id == *other
+    }
+}
+
+impl PartialEq<RuneAmount> for RuneAmount {
+    fn eq(&self, other: &RuneAmount) -> bool {
+        self.id == other.id
     }
 }
 
