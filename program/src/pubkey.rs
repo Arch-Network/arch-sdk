@@ -45,6 +45,9 @@ pub const PUBKEY_BYTES: usize = 32;
 pub struct Pubkey(pub [u8; 32]);
 
 impl Pubkey {
+    pub const fn new_from_array(data: [u8; 32]) -> Self {
+        Self(data)
+    }
     /// Serializes the public key to a 32-byte array.
     ///
     /// # Returns
