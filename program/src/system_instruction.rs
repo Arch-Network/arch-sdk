@@ -254,6 +254,15 @@ pub fn allocate(pubkey: &Pubkey, space: u64) -> Instruction {
     )
 }
 
+pub fn anchor(pubkey: &Pubkey, txid: [u8; 32], vout: u32) -> Instruction {
+    let account_metas = vec![AccountMeta::new(*pubkey, true)];
+    Instruction::new_with_bincode(
+        SYSTEM_PROGRAM_ID,
+        &SystemInstruction::Anchor { txid, vout },
+        account_metas,
+    )
+}
+
 // pub fn create_nonce_account(
 //     from_pubkey: &Pubkey,
 //     nonce_pubkey: &Pubkey,
