@@ -18,7 +18,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 /// This struct stores these values in a compact 36-byte array format:
 /// - First 32 bytes: transaction ID (txid)
 /// - Last 4 bytes: output index (vout) in little-endian format
-#[derive(Clone, Debug, PartialEq, Hash, Eq, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Copy, Hash, Eq, Encode, Decode)]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 #[repr(C)]
 pub struct UtxoMeta([u8; 36]);
