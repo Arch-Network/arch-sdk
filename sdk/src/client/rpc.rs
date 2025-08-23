@@ -402,6 +402,14 @@ impl ArchRpcClient {
         Ok(())
     }
 
+    /// Get the network pubkey from the network
+    pub fn get_network_pubkey(&self) -> Result<String> {
+        match self.call_method::<String>("get_network_pubkey")? {
+            Some(key) => Ok(key),
+            None => Err(ArchError::NotFound("Network pubkey not found".to_string())),
+        }
+    }
+
     /// Send a single transaction
     pub fn send_transaction(&self, transaction: RuntimeTransaction) -> Result<Hash> {
         match self.process_result(self.post_data(SEND_TRANSACTION, transaction)?)? {
@@ -965,6 +973,19 @@ mod tests {
         let result = client.start_dkg();
 
         assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_network_pubkey() {
+        let mut server = Server::new();
+        let expected_key = "0000000000000000000000000000000000000000000000000000000000000000";
+        let mock = mock_rpc_response(&mut server, "get_network_pubkey", json!(expected_key));
+
+        let client = get_test_client(&server);
+        let result = client.get_network_pubkey().unwrap();
+
+        assert_eq!(result, expected_key);
         mock.assert();
     }
 
