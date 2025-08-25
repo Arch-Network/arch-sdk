@@ -90,6 +90,8 @@ pub struct TransactionEvent {
     pub status: Status,
     /// The program IDs that were called in this transaction
     pub program_ids: Vec<String>,
+    /// Block height
+    pub block_height: u64,
 }
 
 /// Information about an account update
@@ -99,6 +101,8 @@ pub struct AccountUpdateEvent {
     pub account: String,
     /// The transaction that updated this account
     pub transaction_hash: String,
+    /// Block height
+    pub block_height: u64,
 }
 
 /// Transactions that were rolled back
