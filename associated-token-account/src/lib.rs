@@ -78,7 +78,7 @@ pub fn process_instruction(
 }
 
 pub fn id() -> Pubkey {
-    Pubkey::from_slice(b"associated-token-account00000000")
+    Pubkey::from_slice(b"AssociatedTokenAccount1111111111")
 }
 
 pub fn get_associated_token_address_and_bump_seed(

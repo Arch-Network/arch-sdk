@@ -84,7 +84,7 @@ pub fn try_ui_amount_into_amount(ui_amount: String, decimals: u8) -> Result<u64,
 
 /// The program ID for the APL-token program
 pub fn id() -> Pubkey {
-    Pubkey::from_slice(b"apl-token00000000000000000000000")
+    Pubkey::from_slice(b"AplToken111111111111111111111111")
 }
 
 /// Checks that the supplied program ID is the correct one for APL-token
