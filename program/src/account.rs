@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 
 pub const MIN_ACCOUNT_LAMPORTS: u64 = 1_000_000;
 
-// This is the account id for the shared validator data account
+/// This is the account id for the shared validator data account
 pub const SHARED_VALIDATOR_DATA_ACCOUNT_ID: [u8; 32] = [2; 32];
+
 /// Account information that is passed to programs during instruction execution.
 /// The account's data contains the actual account state managed by programs.
 #[derive(Clone)]

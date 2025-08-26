@@ -90,6 +90,8 @@ pub enum ProgramError {
     InsufficientDataLength,
     #[error("Incorrect length")]
     IncorrectLength,
+    #[error("Transcript verification failed")]
+    TranscriptVerificationFailed,
 }
 
 pub trait PrintProgramError {
@@ -150,6 +152,7 @@ impl PrintProgramError for ProgramError {
             Self::InvalidInputToSignType => msg!("Error: InvalidInputToSignType"),
             Self::InsufficientDataLength => msg!("Error: InsufficientDataLength"),
             Self::IncorrectLength => msg!("Error: IncorrectLength"),
+            Self::TranscriptVerificationFailed => msg!("Error: TranscriptVerificationFailed"),
         }
     }
 }
@@ -198,6 +201,7 @@ pub const NOT_ENOUGH_COMPUTE_UNITS: u64 = to_builtin!(33);
 pub const INVALID_INPUT_TO_SIGN_TYPE: u64 = to_builtin!(34);
 pub const INSUFFICIENT_DATA_LENGTH: u64 = to_builtin!(35);
 pub const INCORRECT_LENGTH: u64 = to_builtin!(36);
+pub const TRANSCRIPT_VERIFICATION_FAILED: u64 = to_builtin!(37);
 // Warning: Any new program errors added here must also be:
 // - Added to the below conversions
 // - Added as an equivalent to InstructionError
@@ -246,6 +250,7 @@ impl From<ProgramError> for u64 {
             ProgramError::InvalidInputToSignType => INVALID_INPUT_TO_SIGN_TYPE,
             ProgramError::InsufficientDataLength => INSUFFICIENT_DATA_LENGTH,
             ProgramError::IncorrectLength => INCORRECT_LENGTH,
+            ProgramError::TranscriptVerificationFailed => TRANSCRIPT_VERIFICATION_FAILED,
             ProgramError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO
@@ -292,6 +297,7 @@ impl From<u64> for ProgramError {
             INVALID_INPUT_TO_SIGN_TYPE => Self::InvalidInputToSignType,
             INSUFFICIENT_DATA_LENGTH => Self::InsufficientDataLength,
             INCORRECT_LENGTH => Self::IncorrectLength,
+            TRANSCRIPT_VERIFICATION_FAILED => Self::TranscriptVerificationFailed,
             _ => Self::Custom(error as u32),
         }
     }

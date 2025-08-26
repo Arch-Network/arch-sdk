@@ -411,6 +411,9 @@ pub enum InstructionError {
 
     #[error("Not enough compute units")]
     NotEnoughComputeUnits,
+
+    #[error("Transcript verification failed")]
+    TranscriptVerificationFailed,
 }
 
 impl From<SystemError> for InstructionError {
@@ -463,6 +466,7 @@ impl From<u64> for InstructionError {
             EXECUTABLE_LAMPORT_CHANGE => Self::ExecutableLamportChange,
             ACCOUNT_NOT_ANCHORED => Self::AccountNotAnchored,
             NOT_ENOUGH_COMPUTE_UNITS => Self::NotEnoughComputeUnits,
+            TRANSCRIPT_VERIFICATION_FAILED => Self::TranscriptVerificationFailed,
             _ => {
                 // A valid custom error has no bits set in the upper 32
                 if value >> BUILTIN_BIT_SHIFT == 0 {

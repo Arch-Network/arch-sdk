@@ -80,6 +80,8 @@ pub mod program_utils;
 /// Public key definitions and operations
 pub mod pubkey;
 pub mod rent;
+/// Resharing defines.
+pub mod resharing;
 /// Sanitization trait and error types for validating over-the-wire messages
 pub mod sanitize;
 /// Sanitized transaction processing

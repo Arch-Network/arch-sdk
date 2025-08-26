@@ -70,8 +70,15 @@ pub struct RuntimeTransaction {
 impl Sanitize for RuntimeTransaction {
     fn sanitize(&self) -> Result<(), SanitizeError> {
         // Size check
-        self.check_tx_size_limit()
-            .map_err(|_| SanitizeError::InvalidSize)?;
+        self.check_tx_size_limit().map_err(|err| match err {
+            RuntimeTransactionError::RuntimeTransactionSizeExceedsLimit(serialized_len, limit) => {
+                SanitizeError::InvalidSize {
+                    serialized_len,
+                    limit,
+                }
+            }
+            _ => SanitizeError::InvalidValue,
+        })?;
 
         // Check if version is allowed
         if !ALLOWED_VERSIONS.contains(&self.version) {
