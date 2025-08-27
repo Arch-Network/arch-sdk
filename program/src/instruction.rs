@@ -414,6 +414,9 @@ pub enum InstructionError {
 
     #[error("Transcript verification failed")]
     TranscriptVerificationFailed,
+
+    #[error("Invalid chunk: {0}")]
+    InvalidChunk(String),
 }
 
 impl From<SystemError> for InstructionError {
@@ -467,6 +470,7 @@ impl From<u64> for InstructionError {
             ACCOUNT_NOT_ANCHORED => Self::AccountNotAnchored,
             NOT_ENOUGH_COMPUTE_UNITS => Self::NotEnoughComputeUnits,
             TRANSCRIPT_VERIFICATION_FAILED => Self::TranscriptVerificationFailed,
+            INVALID_CHUNK => Self::InvalidChunk("Unknown".to_string()),
             _ => {
                 // A valid custom error has no bits set in the upper 32
                 if value >> BUILTIN_BIT_SHIFT == 0 {
