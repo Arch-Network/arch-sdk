@@ -242,7 +242,7 @@ pub const MAX_TRANSACTION_TO_SIGN: usize = 4 * 1024;
 /// # Returns
 /// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
 pub fn set_transaction_to_sign<'info, T>(
-    accounts: &'info [T],
+    accounts: &[T],
     tx: &Transaction,
     inputs_to_sign: &[InputToSign],
 ) -> ProgramResult
