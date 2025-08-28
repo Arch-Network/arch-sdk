@@ -11,8 +11,9 @@ use {
     arch_program::{
         account::{next_account_info, AccountInfo},
         entrypoint::ProgramResult,
+        input_to_sign::InputToSign,
         msg,
-        program::set_return_data,
+        program::{set_input_to_sign, set_return_data},
         program_error::ProgramError,
         program_memory::sol_memcmp,
         program_option::COption,
@@ -740,6 +741,35 @@ impl Processor {
         Ok(())
     }
 
+    /// Processes an [`Anchor`](enum.TokenInstruction.html) instruction
+    pub fn process_anchor(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        txid: [u8; 32],
+        input_to_sign: InputToSign,
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let account_info = next_account_info(account_info_iter)?;
+        let owner_info = next_account_info(account_info_iter)?;
+
+        let account = Account::unpack(&account_info.data.borrow())?;
+
+        if account.is_frozen() {
+            return Err(TokenError::AccountFrozen.into());
+        }
+
+        Self::validate_owner(
+            program_id,
+            &account.owner,
+            owner_info,
+            account_info_iter.as_slice(),
+        )?;
+
+        set_input_to_sign(account_info_iter.as_slice(), txid, &[input_to_sign])?;
+
+        Ok(())
+    }
+
     /// Processes an [`Instruction`](enum.Instruction.html).
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = TokenInstruction::unpack(input)?;
@@ -847,6 +877,13 @@ impl Processor {
             TokenInstruction::UiAmountToAmount { ui_amount } => {
                 msg!("Instruction: UiAmountToAmount");
                 Self::process_ui_amount_to_amount(program_id, accounts, ui_amount)
+            }
+            TokenInstruction::Anchor {
+                txid,
+                input_to_sign,
+            } => {
+                msg!("Instruction: Anchor");
+                Self::process_anchor(program_id, accounts, txid, input_to_sign)
             }
         }
     }

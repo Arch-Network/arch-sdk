@@ -6,7 +6,6 @@
 use crate::input_to_sign::InputToSign;
 use crate::program_error::ProgramError;
 use crate::pubkey::Pubkey;
-use crate::{MAX_SEEDS, MAX_SEED_LEN};
 
 /// Represents a transaction that needs to be signed with associated inputs.
 ///
@@ -18,7 +17,7 @@ pub struct TransactionToSign<'a> {
     /// The raw transaction bytes to be signed.
     pub tx_bytes: &'a [u8],
     /// List of inputs within the transaction that need signatures.
-    pub inputs_to_sign: &'a [InputToSign<'a>],
+    pub inputs_to_sign: &'a [InputToSign],
 }
 
 impl<'a> TransactionToSign<'a> {
@@ -42,27 +41,19 @@ impl<'a> TransactionToSign<'a> {
         serialized.extend_from_slice(self.tx_bytes);
         serialized.extend_from_slice(&(self.inputs_to_sign.len() as u32).to_le_bytes());
         for input_to_sign in self.inputs_to_sign.iter() {
-            match input_to_sign {
-                InputToSign::Sign { index, signer } => {
-                    serialized.push(0);
-                    serialized.extend_from_slice(&index.to_le_bytes());
-                    serialized.extend_from_slice(&signer.serialize());
-                }
-                InputToSign::SignWithSeeds {
-                    index,
-                    program_id,
-                    signers_seeds,
-                } => {
-                    serialized.push(1);
-                    serialized.extend_from_slice(&index.to_le_bytes());
-                    serialized.extend_from_slice(&program_id.serialize());
-                    serialized.extend_from_slice(&(signers_seeds.len() as u32).to_le_bytes());
-                    for seed in signers_seeds.iter() {
-                        serialized.extend_from_slice(&(seed.len() as u32).to_le_bytes());
-                        serialized.extend_from_slice(seed);
-                    }
-                }
-            }
+            serialized.extend_from_slice(&input_to_sign.index.to_le_bytes());
+            serialized.extend_from_slice(&input_to_sign.signer.serialize());
+        }
+
+        serialized
+    }
+
+    pub fn serialise_inputs_to_sign(inputs_to_sign: &[InputToSign]) -> Vec<u8> {
+        let mut serialized = vec![];
+        serialized.extend_from_slice(&(inputs_to_sign.len() as u32).to_le_bytes());
+        for input_to_sign in inputs_to_sign.iter() {
+            serialized.extend_from_slice(&input_to_sign.index.to_le_bytes());
+            serialized.extend_from_slice(&input_to_sign.signer.serialize());
         }
 
         serialized
@@ -102,27 +93,8 @@ impl<'a> TransactionToSign<'a> {
         // Serialize inputs_to_sign
         serialized.extend_from_slice(&(inputs_count as u32).to_le_bytes());
         for input_to_sign in inputs_to_sign.iter() {
-            match input_to_sign {
-                InputToSign::Sign { index, signer } => {
-                    serialized.push(0);
-                    serialized.extend_from_slice(&index.to_le_bytes());
-                    serialized.extend_from_slice(&signer.serialize());
-                }
-                InputToSign::SignWithSeeds {
-                    index,
-                    program_id,
-                    signers_seeds,
-                } => {
-                    serialized.push(1);
-                    serialized.extend_from_slice(&index.to_le_bytes());
-                    serialized.extend_from_slice(&program_id.serialize());
-                    serialized.extend_from_slice(&(signers_seeds.len() as u32).to_le_bytes());
-                    for seed in signers_seeds.iter() {
-                        serialized.extend_from_slice(&(seed.len() as u32).to_le_bytes());
-                        serialized.extend_from_slice(seed);
-                    }
-                }
-            }
+            serialized.extend_from_slice(&input_to_sign.index.to_le_bytes());
+            serialized.extend_from_slice(&input_to_sign.signer.serialize());
         }
 
         serialized
@@ -176,54 +148,13 @@ impl<'a> TransactionToSign<'a> {
         let mut inputs_to_sign = Vec::with_capacity(inputs_to_sign_len);
 
         for _ in 0..inputs_to_sign_len {
-            let input_to_sign_type = data
-                .get(offset)
-                .ok_or(ProgramError::InsufficientDataLength)?;
-            offset += 1;
-
             let index = u32::from_le_bytes(get_const_slice(data, offset)?);
             offset += 4;
 
             let signer = Pubkey(get_const_slice(data, offset)?);
             offset += 32;
 
-            match input_to_sign_type {
-                0 => {
-                    inputs_to_sign.push(InputToSign::Sign { index, signer });
-                }
-                1 => {
-                    let signers_seeds_len =
-                        u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
-                    offset += 4;
-
-                    if signers_seeds_len > MAX_SEEDS {
-                        return Err(ProgramError::MaxSeedsExceeded);
-                    }
-
-                    let mut signers_seeds: Vec<&[u8]> = Vec::with_capacity(signers_seeds_len);
-                    for _ in 0..signers_seeds_len {
-                        let seed_len = u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
-                        offset += 4;
-
-                        if seed_len > MAX_SEED_LEN {
-                            return Err(ProgramError::MaxSeedLengthExceeded);
-                        }
-
-                        let seed = get_slice(data, offset, seed_len)?;
-                        offset += seed_len;
-                        signers_seeds.push(seed);
-                    }
-
-                    inputs_to_sign.push(InputToSign::SignWithSeeds {
-                        index,
-                        program_id: signer,
-                        signers_seeds: signers_seeds.leak(),
-                    });
-                }
-                _ => {
-                    return Err(ProgramError::InvalidInputToSignType);
-                }
-            }
+            inputs_to_sign.push(InputToSign { index, signer });
         }
 
         Ok(TransactionToSign {
@@ -250,7 +181,7 @@ mod tests {
             let inputs_to_sign: Vec<InputToSign> = input_indices.into_iter()
                 .zip(input_pubkeys.into_iter())
                 .map(|(index, pubkey_bytes)| {
-                    InputToSign::Sign {
+                    InputToSign {
                         index,
                         signer: Pubkey::from(pubkey_bytes),
                     }
@@ -292,11 +223,11 @@ mod tests {
         };
 
         let inputs_to_sign = vec![
-            InputToSign::Sign {
+            InputToSign {
                 index: 0,
                 signer: Pubkey::from([1u8; 32]),
             },
-            InputToSign::Sign {
+            InputToSign {
                 index: 1,
                 signer: Pubkey::from([2u8; 32]),
             },

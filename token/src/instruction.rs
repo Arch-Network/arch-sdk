@@ -3,8 +3,8 @@
 use {
     crate::{check_program_account, error::TokenError},
     arch_program::{
-        account::AccountMeta, instruction::Instruction, program_error::ProgramError,
-        program_option::COption, pubkey::Pubkey,
+        account::AccountMeta, input_to_sign::InputToSign, instruction::Instruction,
+        program_error::ProgramError, program_option::COption, pubkey::Pubkey,
     },
     std::{convert::TryInto, mem::size_of},
 };
@@ -442,6 +442,18 @@ pub enum TokenInstruction<'a> {
     // Any new variants also need to be added to program-2022 `TokenInstruction`, so that the
     // latter remains a superset of this instruction set. New variants also need to be added to
     // token/js/src/instructions/types.ts to maintain @solana/spl-token compatibility
+    /// Anchor an account to a Bitcoin transaction
+    ///
+    /// Accounts expected by this instruction:
+    ///
+    ///   0. `[writable]` The account to anchor
+    ///   1. `[signer]` The owner of the account
+    Anchor {
+        /// The transaction ID
+        txid: [u8; 32],
+        /// The input to sign
+        input_to_sign: InputToSign,
+    },
 }
 impl<'a> TokenInstruction<'a> {
     /// Unpacks a byte buffer into a
@@ -539,6 +551,14 @@ impl<'a> TokenInstruction<'a> {
             22 => {
                 let ui_amount = std::str::from_utf8(rest).map_err(|_| InvalidInstruction)?;
                 Self::UiAmountToAmount { ui_amount }
+            }
+            23 => {
+                let (txid, input_to_sign) = Self::unpack_txid(rest)?;
+                let input_to_sign = InputToSign::from_slice(input_to_sign)?;
+                Self::Anchor {
+                    txid,
+                    input_to_sign,
+                }
             }
             _ => return Err(TokenError::InvalidInstruction.into()),
         })
@@ -644,6 +664,14 @@ impl<'a> TokenInstruction<'a> {
                 buf.push(22);
                 buf.extend_from_slice(ui_amount.as_bytes());
             }
+            Self::Anchor {
+                txid,
+                input_to_sign,
+            } => {
+                buf.push(23);
+                buf.extend_from_slice(txid);
+                buf.extend_from_slice(&input_to_sign.serialise());
+            }
         };
         buf
     }
@@ -653,6 +681,16 @@ impl<'a> TokenInstruction<'a> {
             let (key, rest) = input.split_at(32);
             let pk = Pubkey::from_slice(key);
             Ok((pk, rest))
+        } else {
+            Err(TokenError::InvalidInstruction.into())
+        }
+    }
+
+    fn unpack_txid(input: &[u8]) -> Result<([u8; 32], &[u8]), ProgramError> {
+        if input.len() >= 32 {
+            let (key, rest) = input.split_at(32);
+            let txid = key.try_into().map_err(|_| TokenError::InvalidInstruction)?;
+            Ok((txid, rest))
         } else {
             Err(TokenError::InvalidInstruction.into())
         }
@@ -1340,6 +1378,30 @@ pub fn ui_amount_to_amount(
     })
 }
 
+/// Creates an `Anchor` instruction
+pub fn anchor(
+    token_program_id: &Pubkey,
+    account_pubkey: &Pubkey,
+    owner_pubkey: &Pubkey,
+    txid: [u8; 32],
+    input_to_sign: InputToSign,
+) -> Result<Instruction, ProgramError> {
+    check_program_account(token_program_id)?;
+
+    Ok(Instruction {
+        program_id: *token_program_id,
+        accounts: vec![
+            AccountMeta::new(*account_pubkey, false),
+            AccountMeta::new_readonly(*owner_pubkey, true),
+        ],
+        data: TokenInstruction::Anchor {
+            txid,
+            input_to_sign,
+        }
+        .pack(),
+    })
+}
+
 /// Utility function that checks index is between `MIN_SIGNERS` and
 /// `MAX_SIGNERS`
 pub fn is_valid_signer_index(index: usize) -> bool {
@@ -1572,6 +1634,23 @@ mod test {
         let check = TokenInstruction::UiAmountToAmount { ui_amount: "0.42" };
         let packed = check.pack();
         let expect = vec![22u8, 48, 46, 52, 50];
+        assert_eq!(packed, expect);
+        let unpacked = TokenInstruction::unpack(&expect).unwrap();
+        assert_eq!(unpacked, check);
+
+        let check = TokenInstruction::Anchor {
+            txid: [1u8; 32],
+            input_to_sign: InputToSign {
+                index: 0,
+                signer: Pubkey::from_slice(&[2u8; 32]),
+            },
+        };
+        let packed = check.pack();
+        let mut expect = vec![23u8];
+        expect.extend_from_slice(&[1u8; 32]);
+        // expect.extend_from_slice(&[0]);
+        expect.extend_from_slice(&[0, 0, 0, 0]);
+        expect.extend_from_slice(&[2u8; 32]);
         assert_eq!(packed, expect);
         let unpacked = TokenInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);

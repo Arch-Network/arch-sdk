@@ -32,3 +32,33 @@ pub fn create_pda_account<'a>(
         &[new_pda_signer_seeds],
     )
 }
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_pda_account_with_anchor<'a>(
+    payer: &AccountInfo<'a>,
+    space: usize,
+    owner: &Pubkey,
+    txid: [u8; 32],
+    vout: u32,
+    system_program: &AccountInfo<'a>,
+    new_pda_account: &AccountInfo<'a>,
+    new_pda_signer_seeds: &[&[u8]],
+) -> ProgramResult {
+    invoke_signed(
+        &system_instruction::create_account_with_anchor(
+            payer.key,
+            new_pda_account.key,
+            MIN_ACCOUNT_LAMPORTS,
+            space as u64,
+            owner,
+            txid,
+            vout,
+        ),
+        &[
+            payer.clone(),
+            new_pda_account.clone(),
+            system_program.clone(),
+        ],
+        &[new_pda_signer_seeds],
+    )
+}

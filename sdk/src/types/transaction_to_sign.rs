@@ -1,5 +1,4 @@
-use crate::InputToSign;
-use arch_program::{pubkey::Pubkey, MAX_SEEDS, MAX_SEED_LEN};
+use arch_program::{input_to_sign::InputToSign, pubkey::Pubkey};
 use std::io::{Error, ErrorKind};
 
 #[cfg(feature = "fuzzing")]
@@ -13,28 +12,41 @@ pub struct TransactionToSign {
     pub inputs_to_sign: Vec<InputToSign>,
 }
 
+fn get_const_slice<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], Error> {
+    let end = offset + N;
+    let slice = data
+        .get(offset..end)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Insufficient data length"))?;
+    let array_ref = slice
+        .try_into()
+        .map_err(|_| Error::new(ErrorKind::InvalidData, "Incorrect length"))?;
+    Ok(array_ref)
+}
+
+fn get_slice(data: &[u8], start: usize, len: usize) -> Result<&[u8], Error> {
+    data.get(start..start + len)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Insufficient data length"))
+}
+
 impl TransactionToSign {
     pub fn from_slice(data: &[u8]) -> Result<Self, Error> {
-        fn get_const_slice<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], Error> {
-            let end = offset + N;
-            let slice = data
-                .get(offset..end)
-                .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Insufficient data length"))?;
-            let array_ref = slice
-                .try_into()
-                .map_err(|_| Error::new(ErrorKind::InvalidData, "Incorrect length"))?;
-            Ok(array_ref)
-        }
-
-        fn get_slice(data: &[u8], start: usize, len: usize) -> Result<&[u8], Error> {
-            data.get(start..start + len)
-                .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Insufficient data length"))
-        }
-
         let tx_bytes_len = u32::from_le_bytes(get_const_slice(data, 0)?) as usize;
-
         let tx_bytes = get_slice(data, 4, tx_bytes_len)?.to_vec();
-        let mut offset = 4 + tx_bytes_len;
+
+        let inputs_to_sign = Self::deserialize_inputs_to_sign(get_slice(
+            data,
+            4 + tx_bytes_len,
+            data.len() - 4 - tx_bytes_len,
+        )?)?;
+
+        Ok(TransactionToSign {
+            tx_bytes,
+            inputs_to_sign,
+        })
+    }
+
+    pub fn deserialize_inputs_to_sign(data: &[u8]) -> Result<Vec<InputToSign>, Error> {
+        let mut offset = 0;
 
         let inputs_to_sign_length = u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
         offset += 4;
@@ -48,68 +60,17 @@ impl TransactionToSign {
 
         let mut inputs_to_sign = Vec::with_capacity(inputs_to_sign_length);
         for _ in 0..inputs_to_sign_length {
-            let input_to_sign_type = data[offset];
-            offset += 1;
-
             // Parse input index (4 bytes)
             let index = u32::from_le_bytes(get_const_slice(data, offset)?);
             offset += 4;
 
-            match input_to_sign_type {
-                0 => {
-                    let signer_bytes: [u8; 32] = get_const_slice(data, offset)?;
-                    offset += 32;
-                    let signer = Pubkey::from(signer_bytes);
-                    inputs_to_sign.push(InputToSign::Sign { index, signer });
-                }
-                1 => {
-                    let program_id_bytes: [u8; 32] = get_const_slice(data, offset)?;
-                    offset += 32;
-                    let program_id = Pubkey::from(program_id_bytes);
-                    let signers_seeds_len =
-                        u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
-                    offset += 4;
-
-                    if signers_seeds_len > MAX_SEEDS {
-                        return Err(Error::new(ErrorKind::InvalidData, "Too many signers seeds"));
-                    }
-
-                    let mut signers_seeds: Vec<Vec<u8>> = Vec::with_capacity(signers_seeds_len);
-                    for _ in 0..signers_seeds_len {
-                        let seed_len = u32::from_le_bytes(get_const_slice(data, offset)?) as usize;
-                        offset += 4;
-
-                        if seed_len > MAX_SEED_LEN {
-                            return Err(Error::new(
-                                ErrorKind::InvalidData,
-                                "Seed length is greater than MAX_SEED_LEN",
-                            ));
-                        }
-
-                        let seed = get_slice(data, offset, seed_len)?;
-                        offset += seed_len;
-                        signers_seeds.push(seed.to_vec());
-                    }
-
-                    inputs_to_sign.push(InputToSign::SignWithSeeds {
-                        index,
-                        program_id,
-                        signers_seeds,
-                    });
-                }
-                _ => {
-                    return Err(Error::new(
-                        ErrorKind::InvalidData,
-                        "Invalid input to sign type",
-                    ));
-                }
-            }
+            let signer_bytes: [u8; 32] = get_const_slice(data, offset)?;
+            offset += 32;
+            let signer = Pubkey::from(signer_bytes);
+            inputs_to_sign.push(InputToSign { index, signer });
         }
 
-        Ok(TransactionToSign {
-            tx_bytes,
-            inputs_to_sign,
-        })
+        Ok(inputs_to_sign)
     }
 
     pub fn serialise(&self) -> Vec<u8> {
@@ -119,27 +80,8 @@ impl TransactionToSign {
         serialized.extend_from_slice(&self.tx_bytes);
         serialized.extend_from_slice(&(self.inputs_to_sign.len() as u32).to_le_bytes());
         for input_to_sign in self.inputs_to_sign.iter() {
-            match input_to_sign {
-                InputToSign::Sign { index, signer } => {
-                    serialized.push(0);
-                    serialized.extend_from_slice(&index.to_le_bytes());
-                    serialized.extend_from_slice(&signer.serialize());
-                }
-                InputToSign::SignWithSeeds {
-                    index,
-                    program_id,
-                    signers_seeds,
-                } => {
-                    serialized.push(1);
-                    serialized.extend_from_slice(&index.to_le_bytes());
-                    serialized.extend_from_slice(&program_id.serialize());
-                    serialized.extend_from_slice(&signers_seeds.len().to_le_bytes());
-                    for seed in signers_seeds.iter() {
-                        serialized.extend_from_slice(&(seed.len() as u32).to_le_bytes());
-                        serialized.extend_from_slice(seed);
-                    }
-                }
-            }
+            serialized.extend_from_slice(&input_to_sign.index.to_le_bytes());
+            serialized.extend_from_slice(&input_to_sign.signer.serialize());
         }
 
         serialized
@@ -386,175 +328,175 @@ mod tests {
         let program_return = TransactionToSign {
             tx_bytes,
             inputs_to_sign: vec![
-                InputToSign::Sign {
+                InputToSign {
                     index: 0,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 1,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 2,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 3,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 4,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 5,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 6,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 7,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 8,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 9,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 10,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 11,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 12,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 13,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 14,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 15,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 16,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 17,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 18,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 19,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 20,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 21,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 22,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 23,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 24,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
@@ -817,189 +759,189 @@ mod tests {
         let program_return = TransactionToSign {
             tx_bytes,
             inputs_to_sign: vec![
-                InputToSign::Sign {
+                InputToSign {
                     index: 0,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 1,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 2,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 3,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 4,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 5,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 6,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 7,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 8,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 9,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 10,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 11,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 12,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 13,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 14,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 15,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 16,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 17,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 18,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 19,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 20,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 21,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 22,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 23,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 24,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 25,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
                         206, 235, 216, 86, 168, 13, 50, 242, 66, 107, 239, 255, 250, 213, 163, 48,
                     ]),
                 },
-                InputToSign::Sign {
+                InputToSign {
                     index: 26,
                     signer: Pubkey([
                         199, 62, 220, 99, 239, 171, 63, 140, 90, 151, 154, 255, 244, 245, 239, 168,
@@ -1010,5 +952,85 @@ mod tests {
         };
 
         assert!(TransactionToSign::from_slice(&program_return.serialise()).is_err());
+    }
+
+    #[test]
+    fn test_sdk_and_program_serialization_consistency() {
+        // Test data
+        let tx_bytes = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let inputs = vec![
+            InputToSign {
+                index: 0,
+                signer: Pubkey([1; 32]),
+            },
+            InputToSign {
+                index: 1,
+                signer: Pubkey([2; 32]),
+            },
+            InputToSign {
+                index: 5,
+                signer: Pubkey([255; 32]),
+            },
+        ];
+
+        // Test 1: SDK TransactionToSign serialization and deserialization
+        let sdk_tx = TransactionToSign {
+            tx_bytes: tx_bytes.clone(),
+            inputs_to_sign: inputs.clone(),
+        };
+
+        let sdk_serialized = sdk_tx.serialise();
+        let sdk_deserialized = TransactionToSign::from_slice(&sdk_serialized).unwrap();
+
+        assert_eq!(sdk_deserialized.tx_bytes, tx_bytes);
+        assert_eq!(sdk_deserialized.inputs_to_sign, inputs);
+
+        // Test 2: Program TransactionToSign can deserialize SDK serialized data
+        let program_tx = arch_program::transaction_to_sign::TransactionToSign {
+            tx_bytes: &tx_bytes,
+            inputs_to_sign: &inputs,
+        };
+
+        let program_serialized = program_tx.serialise();
+
+        // Ensure SDK can deserialize Program's serialized data
+        let sdk_from_program = TransactionToSign::from_slice(&program_serialized).unwrap();
+        assert_eq!(sdk_from_program.tx_bytes, tx_bytes);
+        assert_eq!(sdk_from_program.inputs_to_sign, inputs);
+
+        // Test 3: Ensure both produce the same serialized output
+        assert_eq!(
+            sdk_serialized, program_serialized,
+            "SDK and Program serialization should produce identical output"
+        );
+
+        // Test 4: Program can deserialize SDK's serialized data
+        let program_from_sdk =
+            arch_program::transaction_to_sign::TransactionToSign::from_slice(&sdk_serialized)
+                .unwrap();
+        assert_eq!(program_from_sdk.tx_bytes, &tx_bytes[..]);
+        assert_eq!(program_from_sdk.inputs_to_sign.len(), inputs.len());
+        for (i, input) in program_from_sdk.inputs_to_sign.iter().enumerate() {
+            assert_eq!(input.index, inputs[i].index);
+            assert_eq!(input.signer.0, inputs[i].signer.0);
+        }
+
+        // Test 5: Test with empty inputs
+        let empty_tx = TransactionToSign {
+            tx_bytes: vec![42, 43, 44],
+            inputs_to_sign: vec![],
+        };
+
+        let empty_serialized = empty_tx.serialise();
+        let empty_deserialized = TransactionToSign::from_slice(&empty_serialized).unwrap();
+        assert_eq!(empty_deserialized.tx_bytes, vec![42, 43, 44]);
+        assert_eq!(empty_deserialized.inputs_to_sign.len(), 0);
+
+        // Program should also handle empty inputs
+        let program_empty =
+            arch_program::transaction_to_sign::TransactionToSign::from_slice(&empty_serialized)
+                .unwrap();
+        assert_eq!(program_empty.tx_bytes, &[42, 43, 44]);
+        assert_eq!(program_empty.inputs_to_sign.len(), 0);
     }
 }

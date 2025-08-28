@@ -251,51 +251,96 @@ where
 {
     msg!("setting tx to sign");
     // Use the new method that avoids double allocation
-    let serialized_transaction_to_sign = TransactionToSign::serialise_with_tx(tx, inputs_to_sign);
+
+    let serialized_tx_bytes = bitcoin::consensus::serialize(tx);
+    let serialized_inputs_to_sign = TransactionToSign::serialise_inputs_to_sign(inputs_to_sign);
 
     #[cfg(target_os = "solana")]
-    let result = unsafe {
+    let set_tx_result = unsafe {
         crate::syscalls::arch_set_transaction_to_sign(
-            serialized_transaction_to_sign.as_ptr(),
-            serialized_transaction_to_sign.len() as u64,
+            serialized_tx_bytes.as_ptr(),
+            serialized_tx_bytes.len() as u64,
         )
     };
     #[cfg(not(target_os = "solana"))]
-    let result = crate::program_stubs::arch_set_transaction_to_sign(
-        serialized_transaction_to_sign.as_ptr(),
-        serialized_transaction_to_sign.len(),
+    let set_tx_result = crate::program_stubs::arch_set_transaction_to_sign(
+        serialized_tx_bytes.as_ptr(),
+        serialized_tx_bytes.len(),
     );
 
-    match result {
-        crate::entrypoint::SUCCESS => {
-            let txid = tx.compute_txid();
-            let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
-            txid_bytes.reverse();
+    #[cfg(target_os = "solana")]
+    let set_inputs_to_sign_result = unsafe {
+        crate::syscalls::arch_set_inputs_to_sign(
+            serialized_inputs_to_sign.as_ptr(),
+            serialized_inputs_to_sign.len() as u64,
+        )
+    };
+    #[cfg(not(target_os = "solana"))]
+    let set_inputs_to_sign_result = crate::program_stubs::arch_set_inputs_to_sign(
+        serialized_inputs_to_sign.as_ptr(),
+        serialized_inputs_to_sign.len(),
+    );
 
+    match set_tx_result {
+        crate::entrypoint::SUCCESS => match set_inputs_to_sign_result {
+            crate::entrypoint::SUCCESS => {
+                let txid = tx.compute_txid();
+                let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
+                txid_bytes.reverse();
+
+                for input in inputs_to_sign {
+                    if let Some(account) = accounts
+                        .iter()
+                        .find(|account| *account.as_ref().key == input.signer)
+                    {
+                        account
+                            .as_ref()
+                            .set_utxo(&UtxoMeta::from(txid_bytes, input.index));
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(set_inputs_to_sign_result.into()),
+        },
+        _ => Err(set_tx_result.into()),
+    }
+}
+
+pub fn set_input_to_sign(
+    accounts: &[AccountInfo],
+    txid: [u8; 32],
+    inputs_to_sign: &[InputToSign],
+) -> ProgramResult {
+    msg!("setting inputs to sign");
+
+    let serialized_inputs_to_sign = TransactionToSign::serialise_inputs_to_sign(inputs_to_sign);
+
+    #[cfg(target_os = "solana")]
+    let set_inputs_to_sign_result = unsafe {
+        crate::syscalls::arch_set_inputs_to_sign(
+            serialized_inputs_to_sign.as_ptr(),
+            serialized_inputs_to_sign.len() as u64,
+        )
+    };
+    #[cfg(not(target_os = "solana"))]
+    let set_inputs_to_sign_result = crate::program_stubs::arch_set_inputs_to_sign(
+        serialized_inputs_to_sign.as_ptr(),
+        serialized_inputs_to_sign.len(),
+    );
+
+    match set_inputs_to_sign_result {
+        crate::entrypoint::SUCCESS => {
             for input in inputs_to_sign {
-                let (index, signer) = match input {
-                    InputToSign::Sign { index, signer } => (*index, *signer),
-                    InputToSign::SignWithSeeds {
-                        index,
-                        program_id,
-                        signers_seeds,
-                    } => (
-                        *index,
-                        Pubkey::create_program_address(signers_seeds, program_id)?,
-                    ),
-                };
-                if let Some(account) = accounts
-                    .iter()
-                    .find(|account| *account.as_ref().key == signer)
+                if let Some(account) = accounts.iter().find(|account| *account.key == input.signer)
                 {
                     account
                         .as_ref()
-                        .set_utxo(&UtxoMeta::from(txid_bytes, index));
+                        .set_utxo(&UtxoMeta::from(txid, input.index));
                 }
             }
             Ok(())
         }
-        _ => Err(result.into()),
+        _ => Err(set_inputs_to_sign_result.into()),
     }
 }
 

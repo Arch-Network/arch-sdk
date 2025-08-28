@@ -41,6 +41,10 @@ pub(crate) fn arch_set_transaction_to_sign(_transaction_to_sign: *const u8, _len
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED
 }
+pub(crate) fn arch_set_inputs_to_sign(_inputs_to_sign: *const u8, _length: usize) -> u64 {
+    sol_log("UNAVAILABLE");
+    UNIMPLEMENTED
+}
 pub(crate) fn arch_get_bitcoin_tx(_buf: *const u8, _buf_len: usize, _txid: &[u8; 32]) -> u64 {
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED

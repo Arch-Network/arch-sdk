@@ -14,36 +14,42 @@ use crate::{program_error::ProgramError, pubkey::Pubkey};
 #[derive(Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 
-pub enum InputToSign<'a> {
-    Sign {
-        index: u32,
-        signer: Pubkey,
-    },
-    SignWithSeeds {
-        index: u32,
-        program_id: Pubkey,
-        signers_seeds: &'a [&'a [u8]],
-    },
+pub struct InputToSign {
+    pub index: u32,
+    pub signer: Pubkey,
 }
 
-impl InputToSign<'_> {
-    pub fn get_signer(&self) -> Result<Pubkey, ProgramError> {
-        let signer = match self {
-            InputToSign::Sign { signer, .. } => *signer,
-            InputToSign::SignWithSeeds {
-                signers_seeds,
-                program_id,
-                ..
-            } => Pubkey::create_program_address(signers_seeds, program_id)?,
-        };
+impl InputToSign {
+    pub fn from_slice(data: &[u8]) -> Result<Self, ProgramError> {
+        fn get_const_slice<const N: usize>(
+            data: &[u8],
+            offset: usize,
+        ) -> Result<[u8; N], ProgramError> {
+            let end = offset + N;
+            let slice = data
+                .get(offset..end)
+                .ok_or(ProgramError::InsufficientDataLength)?;
+            let array_ref = slice
+                .try_into()
+                .map_err(|_| ProgramError::IncorrectLength)?;
+            Ok(array_ref)
+        }
 
-        Ok(signer)
+        let mut offset = 0;
+
+        let index = u32::from_le_bytes(get_const_slice(data, offset)?);
+        offset += 4;
+
+        let signer = Pubkey(get_const_slice(data, offset)?);
+
+        Ok(InputToSign { index, signer })
     }
 
-    pub fn get_index(&self) -> u32 {
-        match self {
-            InputToSign::Sign { index, .. } => *index,
-            InputToSign::SignWithSeeds { index, .. } => *index,
-        }
+    pub fn serialise(&self) -> Vec<u8> {
+        let mut serialized = vec![];
+        serialized.extend_from_slice(&self.index.to_le_bytes());
+        serialized.extend_from_slice(&self.signer.serialize());
+
+        serialized
     }
 }

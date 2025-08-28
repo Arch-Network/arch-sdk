@@ -3,15 +3,16 @@
 mod tools;
 
 use arch_program::{
-    account::{next_account_info, AccountInfo},
+    account::{next_account_info, AccountInfo, AccountMeta},
     entrypoint::ProgramResult,
+    instruction::Instruction,
     msg,
     program::invoke,
     program_error::ProgramError,
     program_pack::Pack,
     pubkey::Pubkey,
 };
-use tools::create_pda_account;
+use tools::{create_pda_account, create_pda_account_with_anchor};
 
 #[cfg(not(feature = "no-entrypoint"))]
 use arch_program::entrypoint;
@@ -23,7 +24,7 @@ entrypoint!(process_instruction);
 pub fn process_instruction(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
-    _input: &[u8],
+    input: &[u8],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
 
@@ -52,14 +53,31 @@ pub fn process_instruction(
         &[bump_seed],
     ];
 
-    create_pda_account(
-        funder_info,
-        apl_token::state::Account::LEN,
-        spl_token_program_info.key,
-        system_program_info,
-        associated_token_account_info,
-        associated_token_account_signer_seeds,
-    )?;
+    if input.len() == 36 {
+        let txid: [u8; 32] = input[..32].try_into().unwrap();
+        let vout = u32::from_le_bytes(input[32..36].try_into().unwrap());
+
+        create_pda_account_with_anchor(
+            funder_info,
+            apl_token::state::Account::LEN,
+            spl_token_program_info.key,
+            txid,
+            vout,
+            system_program_info,
+            associated_token_account_info,
+            associated_token_account_signer_seeds,
+        )?;
+    } else {
+        create_pda_account(
+            funder_info,
+            apl_token::state::Account::LEN,
+            spl_token_program_info.key,
+            system_program_info,
+            associated_token_account_info,
+            associated_token_account_signer_seeds,
+        )?;
+    }
+
     msg!("Initialize the associated token account");
     invoke(
         &apl_token::instruction::initialize_account3(
@@ -93,5 +111,55 @@ pub fn get_associated_token_address_and_bump_seed(
             &spl_token_mint_address.serialize(),
         ],
         program_id,
+    )
+}
+
+pub fn create_associated_token_account(
+    funder: &Pubkey,
+    associated_token_account: &Pubkey,
+    wallet: &Pubkey,
+    mint: &Pubkey,
+    spl_token_program: &Pubkey,
+    system_program: &Pubkey,
+) -> Instruction {
+    Instruction::new(
+        id(),
+        vec![],
+        vec![
+            AccountMeta::new(*funder, true),
+            AccountMeta::new(*associated_token_account, false),
+            AccountMeta::new_readonly(*wallet, false),
+            AccountMeta::new_readonly(*mint, false),
+            AccountMeta::new_readonly(*system_program, false),
+            AccountMeta::new_readonly(*spl_token_program, false),
+        ],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_associated_token_account_with_anchor(
+    funder: &Pubkey,
+    associated_token_account: &Pubkey,
+    wallet: &Pubkey,
+    mint: &Pubkey,
+    spl_token_program: &Pubkey,
+    system_program: &Pubkey,
+    txid: [u8; 32],
+    vout: u32,
+) -> Instruction {
+    let mut data = txid.to_vec();
+    data.extend_from_slice(&vout.to_le_bytes());
+
+    Instruction::new(
+        id(),
+        data,
+        vec![
+            AccountMeta::new(*funder, true),
+            AccountMeta::new(*associated_token_account, false),
+            AccountMeta::new_readonly(*wallet, false),
+            AccountMeta::new_readonly(*mint, false),
+            AccountMeta::new_readonly(*system_program, false),
+            AccountMeta::new_readonly(*spl_token_program, false),
+        ],
     )
 }
