@@ -280,6 +280,71 @@ impl Pubkey {
             }
         }
     }
+
+    /// Creates a derived address based on a base public key, string seed and owner program id.
+    ///
+    /// Mirrors the behaviour of Solana's `Pubkey::create_with_seed` helper and is
+    /// required by higher-level crates (e.g. Anchor) when working with
+    /// SystemProgram instructions such as `CreateAccountWithSeed`.
+    ///
+    /// The resulting address is simply `sha256(base || seed || owner)` and **can** be
+    /// on-curve – it is *not* restricted to PDAs.
+    ///
+    /// # Arguments
+    /// * `base`  – Base public key that must sign any transaction creating the account
+    /// * `seed`  – Arbitrary UTF-8 seed text (≤ `MAX_SEED_LEN` bytes)
+    /// * `owner` – Program id that will own the created account
+    ///
+    /// # Errors
+    /// * [`ProgramError::MaxSeedLengthExceeded`] – if the seed is longer than
+    ///   `MAX_SEED_LEN`
+    pub fn create_with_seed(
+        base: &Pubkey,
+        seed: &str,
+        owner: &Pubkey,
+    ) -> Result<Pubkey, ProgramError> {
+        if seed.len() > MAX_SEED_LEN {
+            return Err(ProgramError::MaxSeedLengthExceeded);
+        }
+
+        // Perform the calculation directly when not running inside the Solana VM
+        #[cfg(not(target_os = "solana"))]
+        {
+            let mut data = Vec::with_capacity(32 + seed.len() + 32);
+            data.extend_from_slice(base.as_ref());
+            data.extend_from_slice(seed.as_bytes());
+            data.extend_from_slice(owner.as_ref());
+
+            // sha256::digest returns a hex string – decode back into raw bytes
+            let hash = hex::decode(sha256::digest(&data))?;
+            Ok(Pubkey::from_slice(&hash))
+        }
+
+        // Inside the BPF program we delegate to the corresponding syscall
+        #[cfg(target_os = "solana")]
+        {
+            // The Solana BPF target does not currently expose a dedicated syscall
+            // for `create_with_seed`. Fortunately, the address derivation formula
+            // is pure: `sha256(base || seed || owner)` with no additional
+            // constraints (the result *can* be on-curve). We therefore replicate
+            // the host-side implementation directly using the `sha256` crate that
+            // is already available as a dependency.
+
+            // 1. Assemble the input buffer: base pubkey bytes, seed UTF-8 bytes,
+            //    and owner pubkey bytes.
+            let mut data = Vec::with_capacity(32 + seed.len() + 32);
+            data.extend_from_slice(base.as_ref());
+            data.extend_from_slice(seed.as_bytes());
+            data.extend_from_slice(owner.as_ref());
+
+            // 2. Hash the buffer with SHA-256. The `sha256::digest` helper returns
+            //    a hex-encoded string, so we decode it back into raw bytes before
+            //    constructing the resulting `Pubkey`.
+            let hash = hex::decode(sha256::digest(&data))?;
+
+            Ok(Pubkey::from_slice(&hash))
+        }
+    }
 }
 
 /// Maximum number of seeds allowed in PDA derivation
@@ -330,6 +395,19 @@ impl AsMut<[u8]> for Pubkey {
 impl From<[u8; 32]> for Pubkey {
     fn from(value: [u8; 32]) -> Self {
         Pubkey(value)
+    }
+}
+
+impl std::str::FromStr for Pubkey {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Decode the provided hex string into raw bytes.
+        let bytes = hex::decode(s).map_err(|_| "Invalid hex string for Pubkey")?;
+        if bytes.len() != 32 {
+            return Err("Invalid length for Pubkey (expected 32 bytes)");
+        }
+        Ok(Pubkey::from_slice(&bytes))
     }
 }
 
