@@ -7,6 +7,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[cfg(feature = "fuzzing")]
+use libfuzzer_sys::arbitrary;
+
 use crate::RUNTIME_TX_SIZE_LIMIT;
 
 use super::{RuntimeTransaction, RuntimeTransactionError};
@@ -64,6 +67,7 @@ impl From<TryFromSliceError> for ParseProcessedTransactionError {
 )]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type", content = "message")]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub enum Status {
     Queued,
     Processed,
@@ -102,6 +106,7 @@ impl Status {
 )]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type", content = "message")]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub enum RollbackStatus {
     Rolledback(String),
     NotRolledback,
@@ -161,6 +166,7 @@ impl RollbackStatus {
     Decode,
     Eq,
 )]
+#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct ProcessedTransaction {
     pub runtime_transaction: RuntimeTransaction,
     pub status: Status,
