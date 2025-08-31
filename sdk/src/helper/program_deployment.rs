@@ -3,6 +3,7 @@ use crate::arch_program::system_instruction;
 use crate::build_and_sign_transaction;
 use crate::client::ArchError;
 use crate::client::ArchRpcClient;
+use crate::Config;
 use crate::MAX_TX_BATCH_SIZE;
 use crate::{
     types::{RuntimeTransaction, Signature, RUNTIME_TX_SIZE_LIMIT},
@@ -16,7 +17,6 @@ use arch_program::instruction::InstructionError;
 use arch_program::loader_instruction;
 use arch_program::sanitized::ArchMessage;
 use bitcoin::key::Keypair;
-use bitcoin::Network;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 use tracing::debug;
@@ -86,15 +86,13 @@ pub fn get_state(data: &[u8]) -> Result<&LoaderState, InstructionError> {
 /// Program deployment service
 pub struct ProgramDeployer {
     client: ArchRpcClient,
-    network: Network,
 }
 
 impl ProgramDeployer {
     /// Create a new program deployer
-    pub fn new(node_url: &str, network: Network) -> Self {
+    pub fn new(config: &Config) -> Self {
         Self {
-            client: ArchRpcClient::new(node_url),
-            network,
+            client: ArchRpcClient::new(config),
         }
     }
 
@@ -152,7 +150,7 @@ impl ProgramDeployer {
                     recent_blockhash,
                 ),
                 vec![authority_keypair, program_keypair],
-                self.network,
+                self.client.config.network,
             )?;
 
             let create_account_txid = self.client.send_transaction(create_account_tx)?;
@@ -202,7 +200,7 @@ impl ProgramDeployer {
                     recent_blockhash,
                 ),
                 vec![authority_keypair],
-                self.network,
+                self.client.config.network,
             )?;
 
             let executability_txid = self.client.send_transaction(executability_tx)?;
@@ -311,7 +309,7 @@ impl ProgramDeployer {
                     recent_blockhash,
                 ),
                 vec![authority_keypair],
-                self.network,
+                self.client.config.network,
             )?;
 
             let retract_txid = self.client.send_transaction(retract_tx)?;
@@ -332,7 +330,7 @@ impl ProgramDeployer {
                     recent_blockhash,
                 ),
                 vec![program_keypair, authority_keypair],
-                self.network,
+                self.client.config.network,
             )?;
 
             let truncate_txid = self.client.send_transaction(truncate_tx)?;
@@ -364,7 +362,7 @@ impl ProgramDeployer {
                     signatures: vec![Signature(sign_message_bip322(
                         &authority_keypair,
                         &digest_slice,
-                        self.network,
+                        self.client.config.network,
                     ))],
                     message,
                 })

@@ -10,6 +10,7 @@ pub use program_deployment::*;
 pub use transaction_building::*;
 pub use utxo::*;
 
+use crate::Config;
 use anyhow::{anyhow, Result};
 use bitcoin::{
     self,
@@ -17,10 +18,6 @@ use bitcoin::{
     key::{Parity, UntweakedKeypair, XOnlyPublicKey},
     secp256k1::{self, Secp256k1, SecretKey},
 };
-use rand_core::OsRng;
-use std::fs;
-use std::str::FromStr;
-
 use bitcoin::{
     absolute::LockTime,
     key::{TapTweak, TweakedKeypair},
@@ -29,40 +26,9 @@ use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, TapSighashType, Transaction, TxIn, Witness,
 };
 use bitcoincore_rpc::{Auth, Client, RawTx, RpcApi};
-
-/// Get the explorer URL based on the Bitcoin network
-pub fn get_explorer_url(network: bitcoin::Network) -> String {
-    match network {
-        // bitcoin::Network::Bitcoin => test_config.explorer_url_mainnet.to_string(),
-        bitcoin::Network::Bitcoin => Config::mainnet().explorer_url,
-        bitcoin::Network::Testnet => Config::testnet().explorer_url,
-        _ => Config::devnet().explorer_url,
-    }
-}
-
-/// Get the transaction URL for the explorer
-pub fn get_explorer_tx_url(network: bitcoin::Network, tx_id: &str) -> String {
-    format!("{}/tx/{}", get_explorer_url(network), tx_id)
-}
-
-/// Get the address URL for the explorer
-pub fn get_explorer_address_url(network: bitcoin::Network, address: &str) -> String {
-    format!("{}/address/{}", get_explorer_url(network), address)
-}
-
-/// Get the API URL based on the Bitcoin network
-pub fn get_api_url(network: bitcoin::Network) -> String {
-    match network {
-        bitcoin::Network::Bitcoin => Config::mainnet().api_url,
-        bitcoin::Network::Testnet => Config::testnet().api_url,
-        _ => Config::devnet().api_url,
-    }
-}
-
-/// Get the API endpoint URL
-pub fn get_api_endpoint_url(network: bitcoin::Network, endpoint: &str) -> String {
-    format!("{}/{}", get_api_url(network), endpoint)
-}
+use rand_core::OsRng;
+use std::fs;
+use std::str::FromStr;
 
 /// Represents a party or node secret and address information
 pub struct CallerInfo {

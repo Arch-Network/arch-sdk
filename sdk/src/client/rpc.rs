@@ -1,12 +1,11 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
 use crate::{
-    sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, FullBlock,
+    sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, Config, FullBlock,
     MAX_TX_BATCH_SIZE, NOT_FOUND_CODE,
 };
 use arch_program::hash::Hash;
 use bitcoin::key::Keypair;
-use bitcoin::Network;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_str, json, Value};
 use std::str::FromStr;
@@ -37,14 +36,14 @@ const START_DKG: &str = "start_dkg";
 /// ArchRpcClient provides a simple interface for making RPC calls to the Arch blockchain
 #[derive(Clone)]
 pub struct ArchRpcClient {
-    url: String,
+    pub config: Config,
 }
 
 impl ArchRpcClient {
     /// Create a new ArchRpcClient with the specified URL
-    pub fn new(url: &str) -> Self {
+    pub fn new(config: &Config) -> Self {
         Self {
-            url: url.to_string(),
+            config: config.clone(),
         }
     }
 
@@ -140,11 +139,7 @@ impl ArchRpcClient {
     }
 
     /// Create an account with lamports
-    pub fn create_and_fund_account_with_faucet(
-        &self,
-        keypair: &Keypair,
-        bitcoin_network: Network,
-    ) -> Result<()> {
+    pub fn create_and_fund_account_with_faucet(&self, keypair: &Keypair) -> Result<()> {
         let pubkey = Pubkey::from_slice(&keypair.x_only_public_key().0.serialize());
 
         if self.read_account_info(pubkey).is_ok() {
@@ -161,7 +156,7 @@ impl ArchRpcClient {
             let signature = crate::Signature::from(sign_message_bip322(
                 keypair,
                 &message_hash,
-                bitcoin_network,
+                self.config.network,
             ));
 
             runtime_tx.signatures.push(signature);
@@ -488,7 +483,7 @@ impl ArchRpcClient {
     fn post(&self, method: &str) -> Result<String> {
         let client = reqwest::blocking::Client::new();
         match client
-            .post(&self.url)
+            .post(&self.config.arch_node_url)
             .header("content-type", "application/json")
             .json(&json!({
                 "jsonrpc": "2.0",
@@ -515,7 +510,7 @@ impl ArchRpcClient {
     ) -> Result<String> {
         let client = reqwest::blocking::Client::new();
         match client
-            .post(&self.url)
+            .post(&self.config.arch_node_url)
             .header("content-type", "application/json")
             .json(&json!({
                 "jsonrpc": "2.0",
@@ -552,7 +547,9 @@ mod tests {
 
     // Helper to create a test client with the mockito server
     fn get_test_client(server: &Server) -> ArchRpcClient {
-        ArchRpcClient::new(&server.url())
+        let mut config = Config::localnet();
+        config.arch_node_url = server.url().to_string();
+        ArchRpcClient::new(&config)
     }
 
     // Helper to create a mock RPC response

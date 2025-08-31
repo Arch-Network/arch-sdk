@@ -1,6 +1,5 @@
-use crate::{ArchError, RuntimeTransaction, Signature};
-
 use super::sign_message_bip322;
+use crate::{ArchError, RuntimeTransaction, Signature};
 use arch_program::sanitized::ArchMessage;
 use bitcoin::{key::Keypair, Network};
 

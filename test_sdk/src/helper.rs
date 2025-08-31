@@ -22,7 +22,7 @@ use bitcoincore_rpc::{Auth, Client, RawTx, RpcApi};
 use crate::{
     constants::{
         BITCOIN_NETWORK, BITCOIN_NODE_ENDPOINT, BITCOIN_NODE_PASSWORD, BITCOIN_NODE_USERNAME,
-        CALLER_FILE_PATH, NODE1_ADDRESS,
+        CALLER_FILE_PATH,
     },
     models::CallerInfo,
 };
@@ -262,7 +262,7 @@ pub fn deploy_program(
     program_keypair: Keypair,
     authority_keypair: Keypair,
 ) -> Pubkey {
-    let deployer = ProgramDeployer::new(NODE1_ADDRESS, BITCOIN_NETWORK);
+    let deployer = ProgramDeployer::new(&Config::localnet());
 
     deployer
         .try_deploy_program(program_name, program_keypair, authority_keypair, &elf_path)
@@ -270,7 +270,7 @@ pub fn deploy_program(
 }
 
 pub fn deploy_program_elf(elf_path: String, program_keypair: Keypair, authority_keypair: Keypair) {
-    let deployer = ProgramDeployer::new(NODE1_ADDRESS, BITCOIN_NETWORK);
+    let deployer = ProgramDeployer::new(&Config::localnet());
 
     let elf = fs::read(elf_path).expect("elf path should be available");
 
@@ -287,7 +287,7 @@ pub fn create_account_with_anchor(
 
     let (txid, vout) = send_utxo(account_pubkey);
 
-    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
+    let arch_rpc_client = ArchRpcClient::new(&Config::localnet());
 
     let recent_blockhash = arch_rpc_client.get_best_finalized_block_hash().unwrap();
     let transaction = build_and_sign_transaction(
@@ -323,14 +323,14 @@ pub fn create_account_with_anchor(
 }
 
 pub fn read_account_info(pubkey: Pubkey) -> AccountInfo {
-    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
+    let arch_rpc_client = ArchRpcClient::new(&Config::localnet());
     arch_rpc_client
         .read_account_info(pubkey)
         .expect("read account info should not fail after retries")
 }
 
 pub fn try_read_account_info(pubkey: Pubkey) -> Option<AccountInfo> {
-    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
+    let arch_rpc_client = ArchRpcClient::new(&Config::localnet());
 
     arch_rpc_client.read_account_info(pubkey).ok()
 }
@@ -338,7 +338,7 @@ pub fn try_read_account_info(pubkey: Pubkey) -> Option<AccountInfo> {
 pub fn send_transactions_and_wait(
     transactions: Vec<RuntimeTransaction>,
 ) -> Vec<ProcessedTransaction> {
-    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
+    let arch_rpc_client = ArchRpcClient::new(&Config::localnet());
     let txids = arch_rpc_client.send_transactions(transactions).unwrap();
 
     arch_rpc_client
@@ -356,7 +356,7 @@ pub fn assign_ownership_to_program(
     account_to_transfer_pubkey: Pubkey,
     current_owner_keypair: Keypair,
 ) -> Hash {
-    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
+    let arch_rpc_client = ArchRpcClient::new(&Config::localnet());
 
     let assign_instruction =
         system_instruction::assign(&account_to_transfer_pubkey, &program_pubkey);
@@ -386,10 +386,10 @@ pub fn assign_ownership_to_program(
     txid
 }
 
-pub fn create_and_fund_account_with_faucet(keypair: &Keypair, bitcoin_network: bitcoin::Network) {
-    let arch_rpc_client = ArchRpcClient::new(NODE1_ADDRESS);
+pub fn create_and_fund_account_with_faucet(keypair: &Keypair) {
+    let arch_rpc_client = ArchRpcClient::new(&Config::localnet());
 
     arch_rpc_client
-        .create_and_fund_account_with_faucet(keypair, bitcoin_network)
+        .create_and_fund_account_with_faucet(keypair)
         .expect("create and fund account with faucet should not fail");
 }
