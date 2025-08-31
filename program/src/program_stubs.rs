@@ -107,3 +107,8 @@ pub(crate) fn arch_get_clock(_clock: *mut Clock) -> u64 {
 pub(crate) fn arch_get_stack_height() -> u64 {
     UNIMPLEMENTED
 }
+
+pub(crate) fn arch_get_bitcoin_tx_confirmation(_txid: &[u8; 32], _buf: *const u8) -> u64 {
+    sol_log("UNAVAILABLE");
+    UNIMPLEMENTED
+}

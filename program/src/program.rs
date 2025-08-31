@@ -645,3 +645,23 @@ pub fn get_stack_height() -> u64 {
     #[cfg(not(target_os = "solana"))]
     crate::program_stubs::arch_get_stack_height()
 }
+
+/// Retrieves the confirmation status of a Bitcoin transaction by its transaction ID.
+///
+/// # Arguments
+/// * `txid` - 32-byte array containing the Bitcoin transaction ID
+///
+/// # Returns
+/// * `bool` - The confirmation status of the transaction, false if not found
+pub fn get_bitcoin_tx_confirmation(txid: [u8; 32]) -> bool {
+    let mut buf = [0u8; 1];
+
+    #[cfg(target_os = "solana")]
+    let result =
+        unsafe { crate::syscalls::arch_get_bitcoin_tx_confirmation(&txid, buf.as_mut_ptr()) };
+
+    #[cfg(not(target_os = "solana"))]
+    let _ = crate::program_stubs::arch_get_bitcoin_tx_confirmation(&txid, buf.as_mut_ptr());
+
+    buf[0] == 1
+}
