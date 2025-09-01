@@ -1,7 +1,8 @@
 use std::{collections::HashMap, fmt};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
+use std::str::FromStr;
 
 use super::Status;
 
@@ -78,6 +79,10 @@ pub struct BlockEvent {
     /// The hash of the block
     pub hash: String,
     /// The timestamp when the block was created
+    #[serde(
+        serialize_with = "serialize_u128_as_string",
+        deserialize_with = "deserialize_u128_from_string"
+    )]
     pub timestamp: u128,
 }
 
@@ -108,6 +113,8 @@ pub struct AccountUpdateEvent {
 /// Transactions that were rolled back
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RolledbackTransactionsEvent {
+    /// Block height
+    pub block_height: u64,
     /// The transaction hashes that were rolled back
     pub transaction_hashes: Vec<String>,
 }
@@ -115,6 +122,8 @@ pub struct RolledbackTransactionsEvent {
 /// Transactions that were reapplied
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReappliedTransactionsEvent {
+    /// Block height
+    pub block_height: u64,
     /// The transaction hashes that were reapplied
     pub transaction_hashes: Vec<String>,
 }
@@ -179,6 +188,71 @@ impl EventFilter {
                 EventFilter { criteria }
             }
             _ => EventFilter::new(),
+        }
+    }
+}
+
+fn serialize_u128_as_string<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&value.to_string())
+}
+
+fn deserialize_u128_from_string<'de, D>(deserializer: D) -> Result<u128, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    u128::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_event_timestamp_serializes_as_string() {
+        let event = Event::Block(BlockEvent {
+            hash: "h".to_string(),
+            timestamp: 12345678901234567890u128,
+        });
+
+        let json = serde_json::to_string(&event).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(v.get("topic").unwrap(), "block");
+        let ts = v.get("data").unwrap().get("timestamp").unwrap();
+        assert!(ts.is_string());
+        assert_eq!(ts.as_str().unwrap(), "12345678901234567890");
+
+        let back: Event = serde_json::from_str(&json).unwrap();
+        match back {
+            Event::Block(be) => assert_eq!(be.timestamp, 12345678901234567890u128),
+            _ => panic!("expected block event"),
+        }
+    }
+
+    #[test]
+    fn block_event_timestamp_handles_u128_max() {
+        let max_val = u128::MAX;
+        let event = Event::Block(BlockEvent {
+            hash: "max".to_string(),
+            timestamp: max_val,
+        });
+
+        // Serialize
+        let json = serde_json::to_string(&event).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let ts = v.get("data").unwrap().get("timestamp").unwrap();
+        assert!(ts.is_string());
+        assert_eq!(ts.as_str().unwrap(), max_val.to_string());
+
+        // Deserialize the same JSON back
+        let back: Event = serde_json::from_str(&json).unwrap();
+        match back {
+            Event::Block(be) => assert_eq!(be.timestamp, max_val),
+            _ => panic!("expected block event"),
         }
     }
 }
