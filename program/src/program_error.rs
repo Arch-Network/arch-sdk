@@ -314,3 +314,9 @@ impl From<hex::FromHexError> for ProgramError {
         Self::FromHexError
     }
 }
+
+impl From<std::io::Error> for ProgramError {
+    fn from(error: std::io::Error) -> Self {
+        Self::BorshIoError(error.to_string())
+    }
+}
