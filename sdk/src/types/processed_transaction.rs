@@ -252,25 +252,57 @@ impl ProcessedTransaction {
     }
 
     pub fn from_vec(data: &[u8]) -> Result<Self, ParseProcessedTransactionError> {
+        fn get_const_slice<const N: usize>(
+            data: &[u8],
+            offset: usize,
+        ) -> Result<[u8; N], ParseProcessedTransactionError> {
+            let end = offset + N;
+            let slice = data
+                .get(offset..end)
+                .ok_or(ParseProcessedTransactionError::TryFromSliceError)?;
+            let array_ref = slice
+                .try_into()
+                .map_err(|_| ParseProcessedTransactionError::TryFromSliceError)?;
+            Ok(array_ref)
+        }
+
+        fn get_slice(
+            data: &[u8],
+            start: usize,
+            len: usize,
+        ) -> Result<&[u8], ParseProcessedTransactionError> {
+            data.get(start..start + len)
+                .ok_or(ParseProcessedTransactionError::TryFromSliceError)
+        }
+
+        fn get_byte(data: &[u8], offset: usize) -> Result<u8, ParseProcessedTransactionError> {
+            data.get(offset)
+                .copied()
+                .ok_or(ParseProcessedTransactionError::TryFromSliceError)
+        }
+
         let mut size = 0;
 
-        let rollback_buffer: [u8; ROLLBACK_MESSAGE_BUFFER_SIZE] = data
-            [size..(size + ROLLBACK_MESSAGE_BUFFER_SIZE)]
-            .try_into()
-            .map_err(|_| ParseProcessedTransactionError::TryFromSliceError)?;
+        // Rollback buffer - use get_const_slice
+        let rollback_buffer = get_const_slice(data, size)?;
         let rollback_status = RollbackStatus::from_fixed_array(&rollback_buffer)?;
 
         size += ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let data_bytes = data[size..(size + 8)].try_into()?;
+
+        // Runtime transaction length - use get_const_slice
+        let data_bytes = get_const_slice(data, size)?;
         let runtime_transaction_len = u64::from_le_bytes(data_bytes) as usize;
         size += 8;
+
+        // Runtime transaction data - use get_slice
         let runtime_transaction =
-            RuntimeTransaction::from_slice(&data[size..(size + runtime_transaction_len)])?;
+            RuntimeTransaction::from_slice(get_slice(data, size, runtime_transaction_len)?)?;
         size += runtime_transaction_len;
 
-        let bitcoin_txid = if data[size] == 1 {
+        // Bitcoin transaction ID - use get_byte and get_const_slice
+        let bitcoin_txid = if get_byte(data, size)? == 1 {
             size += 1;
-            let bytes: [u8; 32] = data[(size)..(size + 32)].try_into()?;
+            let bytes = get_const_slice(data, size)?;
             let res = Some(Hash::from(bytes));
             size += 32;
             res
@@ -279,7 +311,8 @@ impl ProcessedTransaction {
             None
         };
 
-        let data_bytes = data[size..(size + 8)].try_into()?;
+        // Logs length - use get_const_slice
+        let data_bytes = get_const_slice(data, size)?;
         let logs_len = u64::from_le_bytes(data_bytes) as usize;
         if logs_len > MAX_LOG_MESSAGES {
             return Err(ParseProcessedTransactionError::TooManyLogMessages);
@@ -287,27 +320,34 @@ impl ProcessedTransaction {
 
         size += 8;
         let mut logs = vec![];
+
+        // Process each log - use get_const_slice and get_slice
         for _ in 0..logs_len {
-            let log_len = u64::from_le_bytes(data[size..(size + 8)].try_into()?) as usize;
+            let log_len_bytes = get_const_slice(data, size)?;
+            let log_len = u64::from_le_bytes(log_len_bytes) as usize;
             size += 8;
             if log_len > LOG_MESSAGES_BYTES_LIMIT {
                 return Err(ParseProcessedTransactionError::LogMessageTooLong);
             }
-            logs.push(String::from_utf8(data[size..(size + log_len)].to_vec())?);
+            let log_data = get_slice(data, size, log_len)?;
+            logs.push(String::from_utf8(log_data.to_vec())?);
             size += log_len;
         }
 
-        let status = match data[size] {
+        // Status processing - use get_byte, get_const_slice and get_slice
+        let status = match get_byte(data, size)? {
             0 => Status::Queued,
             1 => Status::Processed,
             2 => {
-                let data_bytes = data[(size + 1)..(size + 9)].try_into()?;
-                let error_len = u64::from_le_bytes(data_bytes) as usize;
+                size += 1;
+                let error_len_bytes = get_const_slice(data, size)?;
+                let error_len = u64::from_le_bytes(error_len_bytes) as usize;
                 if error_len > 1000 {
                     return Err(ParseProcessedTransactionError::StatusFailedMessageTooLong);
                 }
-                size += 9;
-                let error = String::from_utf8(data[size..(size + error_len)].to_vec())?;
+                size += 8;
+                let error_data = get_slice(data, size, error_len)?;
+                let error = String::from_utf8(error_data.to_vec())?;
                 Status::Failed(error)
             }
             _ => unreachable!("status doesn't exist"),
