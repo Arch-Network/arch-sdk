@@ -1,12 +1,12 @@
 [package]
 name = "apl-associated-token-account"
-version = "0.5.6"
+version = "0.5.7"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-arch_program = "0.5.6"
+arch_program = "0.5.7"
 apl-token = { version = "2", features = ["no-entrypoint"] }
 borsh = { version = "1.5.1", features = ["derive"] }
 bitcoin = { version = "0.31.0", features = ["serde"] }
