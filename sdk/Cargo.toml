@@ -29,7 +29,6 @@ snafu = "0.8.5"
 base64 = "0.22.1"
 bip322 = "0.0.9"
 thiserror = { version = "1.0.57" }
-termsize = "0.1.9"
 tracing = "0.1.40"
 tokio-tungstenite = "0.26.1"
 tokio = { version = "1.38.0", features = ["full", "rt-multi-thread"] }
