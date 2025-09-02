@@ -337,13 +337,12 @@ impl ProgramDeployer {
             let _processed_tx = self.client.wait_for_processed_transaction(&truncate_txid)?;
         }
 
+        let recent_blockhash = self.client.get_best_finalized_block_hash()?;
         let txs = elf
             .chunks(extend_bytes_max_len())
             .enumerate()
             .map(|(i, chunk)| {
                 let offset: u32 = (i * extend_bytes_max_len()) as u32;
-
-                let recent_blockhash = self.client.get_best_finalized_block_hash()?;
                 let message = ArchMessage::new(
                     &[loader_instruction::write(
                         program_pubkey,
