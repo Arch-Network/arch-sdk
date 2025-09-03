@@ -318,6 +318,32 @@ impl ProgramDeployer {
 
         if account_info.data.len() != LoaderState::program_data_offset() + elf.len() {
             println!("Truncating program account to size of ELF file");
+
+            // Need to pay for minimum rent
+            let minimum_rent =
+                arch_program::rent::minimum_rent(LoaderState::program_data_offset() + elf.len());
+            let missing_lamports = minimum_rent.saturating_sub(account_info.lamports);
+
+            if missing_lamports > 0 {
+                let recent_blockhash = self.client.get_best_finalized_block_hash()?;
+                let transfer_tx = build_and_sign_transaction(
+                    ArchMessage::new(
+                        &[system_instruction::transfer(
+                            &authority_pubkey,
+                            &program_pubkey,
+                            missing_lamports,
+                        )],
+                        Some(authority_pubkey),
+                        recent_blockhash,
+                    ),
+                    vec![authority_keypair],
+                    self.client.config.network,
+                )?;
+
+                let transfer_txid = self.client.send_transaction(transfer_tx)?;
+                let _processed_tx = self.client.wait_for_processed_transaction(&transfer_txid)?;
+            }
+
             let recent_blockhash = self.client.get_best_finalized_block_hash()?;
             let truncate_tx = build_and_sign_transaction(
                 ArchMessage::new(
