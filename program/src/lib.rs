@@ -52,13 +52,13 @@ pub mod decode_error;
 pub mod entrypoint;
 /// Hash type for 32-byte cryptographic hashes
 pub mod hash;
+pub mod hashing_functions;
 /// Helper functions for common operations
 pub mod helper;
 /// Bitcoin transaction input signing utilities
 pub mod input_to_sign;
 /// Instruction definitions and processing
 pub mod instruction;
-pub mod keccak;
 pub mod loader_instruction;
 /// Logging functionality for on-chain programs
 pub mod log;

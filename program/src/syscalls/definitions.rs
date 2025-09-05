@@ -32,6 +32,7 @@ define_syscall!(fn arch_get_bitcoin_block_height() -> u64);
 define_syscall!(fn arch_get_clock(clock: *mut Clock) -> u64);
 define_syscall!(fn sol_secp256k1_recover( hash_addr: *const u8, recovery_id_val: u64, signature_addr: *const u8, result_addr: *mut u8) ->  u64);
 define_syscall!(fn sol_keccak256(data: *const u8, length: u64, result: *mut u8) -> u64);
+define_syscall!(fn sol_sha256(data: *const u8, length: u64, result: *mut u8) -> u64);
 
 // logs
 define_syscall!(fn sol_log_(message: *const u8, len: u64));

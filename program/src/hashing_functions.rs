@@ -117,7 +117,7 @@ impl Hash {
 }
 
 /// Return a Keccak256 hash for the given data.
-pub fn hashv(vals: &[&[u8]]) -> Hash {
+fn keccak256_internal(vals: &[&[u8]]) -> Hash {
     // Perform the calculation inline, calling this from within a program is
     // not supported
     #[cfg(not(target_os = "solana"))]
@@ -142,13 +142,35 @@ pub fn hashv(vals: &[&[u8]]) -> Hash {
 }
 
 /// Return a Keccak256 hash for the given data.
-pub fn hash(val: &[u8]) -> Hash {
-    hashv(&[val])
+pub fn keccak256(val: &[u8]) -> Hash {
+    keccak256_internal(&[val])
+}
+
+#[allow(unused_variables)]
+pub fn sha256(val: &[u8]) -> Hash {
+    #[cfg(not(target_os = "solana"))]
+    {
+        // unimplemented, returning base value
+        Hash::new_from_array([0; HASH_BYTES])
+    }
+    #[cfg(target_os = "solana")]
+    {
+        // call via syscall
+        let mut hash_result = [0; HASH_BYTES];
+        unsafe {
+            crate::syscalls::sol_sha256(
+                val as *const _ as *const u8,
+                val.len() as u64,
+                &mut hash_result as *mut _ as *mut u8,
+            );
+        }
+        Hash::new_from_array(hash_result)
+    }
 }
 
 /// Return the hash of the given hash extended with the given value.
 pub fn extend_and_hash(id: &Hash, val: &[u8]) -> Hash {
     let mut hash_data = id.as_ref().to_vec();
     hash_data.extend_from_slice(val);
-    hash(&hash_data)
+    keccak256_internal(&[&hash_data])
 }
