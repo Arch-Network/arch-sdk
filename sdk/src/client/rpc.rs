@@ -542,7 +542,8 @@ mod tests {
     use super::*;
     use crate::arch_program::pubkey::Pubkey;
     use arch_program::hash::Hash;
-    use arch_program::{account::MIN_ACCOUNT_LAMPORTS, sanitized::ArchMessage};
+    use arch_program::rent::minimum_rent;
+    use arch_program::sanitized::ArchMessage;
     use mockito::Server;
 
     // Helper to create a test client with the mockito server
@@ -669,9 +670,9 @@ mod tests {
 
         // Create account info according to the actual struct definition
         let account_info = AccountInfo {
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
-            data: vec![1, 2, 3, 4],
+            data: vec![1u8, 2, 3, 4],
             utxo: "utxo123".to_string(),
             is_executable: false,
         };
@@ -786,9 +787,9 @@ mod tests {
 
         // Create some program accounts for the response
         let account_info = AccountInfo {
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(4),
             owner: program_id,
-            data: vec![1, 2, 3, 4],
+            data: vec![1u8, 2, 3, 4],
             utxo: "utxo123".to_string(),
             is_executable: false,
         };
@@ -1006,9 +1007,9 @@ mod tests {
 
         // Test a more complex return type (using AccountInfo as an example)
         let account_info = AccountInfo {
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
-            data: vec![1, 2, 3, 4],
+            data: vec![1u8, 2, 3, 4],
             utxo: "utxo123".to_string(),
             is_executable: false,
         };
@@ -1064,15 +1065,15 @@ mod tests {
 
         // Create account info for responses
         let account_info1 = AccountInfo {
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
-            data: vec![1, 2, 3, 4],
+            data: vec![1u8, 2, 3, 4],
             utxo: "utxo123".to_string(),
             is_executable: false,
         };
 
         let account_info2 = AccountInfo {
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
             data: vec![5, 6, 7, 8],
             utxo: "utxo456".to_string(),
@@ -1082,7 +1083,7 @@ mod tests {
         // Updated to match actual struct definition
         let account_with_pubkey1 = AccountInfoWithPubkey {
             key: pubkey1,
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(account_info1.data.len()),
             owner: account_info1.owner,
             data: account_info1.data.clone(),
             utxo: account_info1.utxo.clone(),
@@ -1092,7 +1093,7 @@ mod tests {
         // Updated to match actual struct definition
         let account_with_pubkey2 = AccountInfoWithPubkey {
             key: pubkey2,
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(account_info2.data.len()),
             owner: account_info2.owner,
             data: account_info2.data.clone(),
             utxo: account_info2.utxo.clone(),

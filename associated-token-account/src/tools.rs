@@ -1,9 +1,6 @@
 use arch_program::{
-    account::{AccountInfo, MIN_ACCOUNT_LAMPORTS},
-    entrypoint::ProgramResult,
-    program::invoke_signed,
-    pubkey::Pubkey,
-    system_instruction,
+    account::AccountInfo, entrypoint::ProgramResult, program::invoke_signed, pubkey::Pubkey,
+    rent::minimum_rent, system_instruction,
 };
 
 /// Creates associated token account using Program Derived Address for the given
@@ -20,7 +17,7 @@ pub fn create_pda_account<'a>(
         &system_instruction::create_account(
             payer.key,
             new_pda_account.key,
-            MIN_ACCOUNT_LAMPORTS,
+            minimum_rent(space),
             space as u64,
             owner,
         ),
@@ -48,7 +45,7 @@ pub fn create_pda_account_with_anchor<'a>(
         &system_instruction::create_account_with_anchor(
             payer.key,
             new_pda_account.key,
-            MIN_ACCOUNT_LAMPORTS,
+            arch_program::rent::minimum_rent(space),
             space as u64,
             owner,
             txid,

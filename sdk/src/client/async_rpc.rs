@@ -551,7 +551,8 @@ fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
 mod tests {
     use super::*;
     use arch_program::hash::Hash;
-    use arch_program::{account::MIN_ACCOUNT_LAMPORTS, sanitized::ArchMessage};
+    use arch_program::rent::minimum_rent;
+    use arch_program::sanitized::ArchMessage;
     use mockito::Server;
 
     // Helper to create a test client with the mockito server
@@ -670,9 +671,9 @@ mod tests {
 
         // Create account info according to the actual struct definition
         let account_info = AccountInfo {
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
-            data: vec![1, 2, 3, 4],
+            data: vec![1u8, 2, 3, 4],
             utxo: "utxo123".to_string(),
             is_executable: false,
         };
@@ -744,9 +745,9 @@ mod tests {
 
         // Create some program accounts for the response
         let account_info = AccountInfo {
-            lamports: MIN_ACCOUNT_LAMPORTS,
+            lamports: minimum_rent(4),
             owner: program_id,
-            data: vec![1, 2, 3, 4],
+            data: vec![1u8, 2, 3, 4],
             utxo: "utxo123".to_string(),
             is_executable: false,
         };

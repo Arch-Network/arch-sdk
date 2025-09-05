@@ -8,8 +8,6 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 
-pub const MIN_ACCOUNT_LAMPORTS: u64 = 1_000_000;
-
 /// This is the account id for the shared validator data account
 pub const SHARED_VALIDATOR_DATA_ACCOUNT_ID: [u8; 32] = [2; 32];
 

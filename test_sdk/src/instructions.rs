@@ -2,7 +2,7 @@ use crate::{
     constants::BITCOIN_NETWORK, helper::send_transactions_and_wait, logging::init_logging,
 };
 use arch_program::{
-    account::MIN_ACCOUNT_LAMPORTS, program_pack::Pack, pubkey::Pubkey, sanitized::ArchMessage,
+    program_pack::Pack, pubkey::Pubkey, rent::minimum_rent, sanitized::ArchMessage,
     system_instruction::create_account,
 };
 use arch_sdk::{build_and_sign_transaction, generate_new_keypair, ArchRpcClient, Status};
@@ -23,7 +23,7 @@ pub fn initialize_mint_token(
     let create_account_instruction = create_account(
         &authority_pubkey,
         &token_mint_pubkey,
-        MIN_ACCOUNT_LAMPORTS,
+        minimum_rent(0),
         size,
         owner,
     );
@@ -68,7 +68,7 @@ pub fn initialize_token_account(
     let create_account_instruction = create_account(
         &owner_pubkey,
         &token_account_pubkey,
-        MIN_ACCOUNT_LAMPORTS,
+        minimum_rent(apl_token::state::Account::LEN),
         apl_token::state::Account::LEN as u64,
         &apl_token::id(),
     );
@@ -205,8 +205,13 @@ pub fn create_account_helper(
     space: u64,
     owner: &Pubkey,
 ) {
-    let create_account_instruction =
-        create_account(from_pubkey, to_pubkey, MIN_ACCOUNT_LAMPORTS, space, owner);
+    let create_account_instruction = create_account(
+        from_pubkey,
+        to_pubkey,
+        minimum_rent(space as usize),
+        space,
+        owner,
+    );
 
     let transaction = build_and_sign_transaction(
         ArchMessage::new(

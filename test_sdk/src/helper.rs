@@ -1,8 +1,8 @@
 use std::{fs, str::FromStr};
 
 use arch_program::{
-    account::MIN_ACCOUNT_LAMPORTS, hash::Hash, pubkey::Pubkey, sanitized::ArchMessage,
-    system_instruction, system_program::SYSTEM_PROGRAM_ID,
+    hash::Hash, pubkey::Pubkey, rent::minimum_rent, sanitized::ArchMessage, system_instruction,
+    system_program::SYSTEM_PROGRAM_ID,
 };
 use arch_sdk::{
     build_and_sign_transaction, generate_new_keypair, AccountInfo, ArchRpcClient,
@@ -295,7 +295,7 @@ pub fn create_account_with_anchor(
             &[system_instruction::create_account_with_anchor(
                 &from_pubkey,
                 &account_pubkey,
-                MIN_ACCOUNT_LAMPORTS,
+                minimum_rent(0),
                 0,
                 &SYSTEM_PROGRAM_ID,
                 hex::decode(txid).unwrap().try_into().unwrap(),
