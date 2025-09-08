@@ -99,6 +99,8 @@ pub fn id() -> Pubkey {
     Pubkey::from_slice(b"AssociatedTokenAccount1111111111")
 }
 
+pub const ID: Pubkey = Pubkey::new_from_array(*b"AssociatedTokenAccount1111111111");
+
 pub fn get_associated_token_address_and_bump_seed(
     wallet_address: &Pubkey,
     spl_token_mint_address: &Pubkey,

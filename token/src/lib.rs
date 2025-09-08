@@ -87,6 +87,9 @@ pub fn id() -> Pubkey {
     Pubkey::from_slice(b"AplToken111111111111111111111111")
 }
 
+/// The program ID for the APL-token program
+pub const ID: Pubkey = Pubkey::new_from_array(*b"AplToken111111111111111111111111");
+
 /// Checks that the supplied program ID is the correct one for APL-token
 pub fn check_program_account(spl_token_program_id: &Pubkey) -> ProgramResult {
     if spl_token_program_id != &id() {
