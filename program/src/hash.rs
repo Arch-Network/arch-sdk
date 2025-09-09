@@ -89,6 +89,18 @@ impl TryFrom<&str> for Hash {
     }
 }
 
+impl TryFrom<&[u8]> for Hash {
+    type Error = HashError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(Hash(
+            value
+                .try_into()
+                .map_err(|_| HashError::InvalidLength(value.len()))?,
+        ))
+    }
+}
+
 impl FromStr for Hash {
     type Err = HashError;
 
