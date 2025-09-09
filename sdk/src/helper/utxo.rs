@@ -5,8 +5,7 @@ use bitcoin::{address::Address, Amount, Network};
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
+use titan_client::{TitanApiBlocking, TitanBlockingClient};
 
 /// Helper struct for Bitcoin operations
 #[derive(Clone)]
@@ -17,6 +16,8 @@ pub struct BitcoinHelper {
     rpc_client: Arc<Client>,
     /// Arch RPC client
     arch_client: ArchRpcClient,
+    /// Titan Client
+    titan_client: TitanBlockingClient,
 }
 
 impl BitcoinHelper {
@@ -32,6 +33,7 @@ impl BitcoinHelper {
             network: config.network,
             rpc_client,
             arch_client,
+            titan_client: titan_client::TitanBlockingClient::new(config.titan_url.as_str()),
         }
     }
 
@@ -81,8 +83,22 @@ impl BitcoinHelper {
             }
         }
 
-        sleep(Duration::from_millis(200));
+        self.wait_until_titan_indexes_transaction(&txid)?;
 
         Ok((txid.to_string(), vout))
+    }
+
+    pub fn wait_until_titan_indexes_transaction(&self, txid: &bitcoin::Txid) -> Result<(), String> {
+        let mut wait_time = 0;
+        while self.titan_client.get_transaction(txid).is_err() && wait_time < 60 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            wait_time += 1;
+        }
+
+        if wait_time >= 60 {
+            return Err("Failed to wait for transaction to be indexed".to_string());
+        }
+
+        Ok(())
     }
 }

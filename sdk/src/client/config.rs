@@ -7,6 +7,7 @@ pub struct Config {
     pub node_password: String,
     pub network: Network,
     pub arch_node_url: String,
+    pub titan_url: String,
 }
 
 impl Config {
@@ -15,6 +16,7 @@ impl Config {
             node_endpoint: "http://127.0.0.1:18443/wallet/testwallet".to_string(),
             node_username: "bitcoin".to_string(),
             node_password: "bitcoinpass".to_string(),
+            titan_url: "http://127.0.0.1:3030".to_string(),
             network: Network::Regtest,
             arch_node_url: "http://localhost:9002/".to_string(),
         }
@@ -25,6 +27,7 @@ impl Config {
             node_endpoint: "".to_string(),
             node_username: "bitcoin".to_string(),
             node_password: "bitcoinpass".to_string(),
+            titan_url: "".to_string(),
             network: Network::Testnet4,
             arch_node_url: "".to_string(),
         }
@@ -35,6 +38,7 @@ impl Config {
             node_endpoint: "".to_string(),
             node_username: "bitcoin".to_string(),
             node_password: "bitcoinpass".to_string(),
+            titan_url: "".to_string(),
             network: Network::Testnet4,
             arch_node_url: "".to_string(),
         }
@@ -47,6 +51,7 @@ impl Config {
             node_password: "bitcoinpass".to_string(),
             network: Network::Bitcoin,
             arch_node_url: "".to_string(),
+            titan_url: "".to_string(),
         }
     }
     // TODO: Add devnet, testnet and mainnet configs
