@@ -30,8 +30,9 @@ pub(crate) fn _sol_set_return_data(_data: *const u8, _length: u64) {
 pub(crate) fn _sol_log_pubkey(_pubkey_addr: *const u8) {
     sol_log("UNAVAILABLE");
 }
-pub(crate) fn _sol_log_data(_data: *const u8, _data_len: u64) {
-    sol_log("UNAVAILABLE");
+pub(crate) fn _sol_log_data(data: *const u8, data_len: u64) {
+    let slice = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    println!("sol_log_data: {:?}", slice);
 }
 pub(crate) fn _sol_get_return_data(_data: *mut u8, _length: u64, _program_id: *mut Pubkey) -> u64 {
     sol_log("UNAVAILABLE");
