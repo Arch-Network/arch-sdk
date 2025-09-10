@@ -94,6 +94,8 @@ pub enum ProgramError {
     TranscriptVerificationFailed,
     #[error("Invalid chunk: {0}")]
     InvalidChunk(String),
+    #[error("Invalid state transition: {0}")]
+    InvalidStateTransition(String),
 }
 
 pub trait PrintProgramError {
@@ -156,6 +158,7 @@ impl PrintProgramError for ProgramError {
             Self::IncorrectLength => msg!("Error: IncorrectLength"),
             Self::TranscriptVerificationFailed => msg!("Error: TranscriptVerificationFailed"),
             Self::InvalidChunk(_) => msg!("Error: invalid chunk"),
+            Self::InvalidStateTransition(_) => msg!("Error: InvalidStateTransition"),
         }
     }
 }
@@ -206,6 +209,7 @@ pub const INSUFFICIENT_DATA_LENGTH: u64 = to_builtin!(35);
 pub const INCORRECT_LENGTH: u64 = to_builtin!(36);
 pub const TRANSCRIPT_VERIFICATION_FAILED: u64 = to_builtin!(37);
 pub const INVALID_CHUNK: u64 = to_builtin!(38);
+pub const INVALID_STATE_TRANSITION: u64 = to_builtin!(39);
 // Warning: Any new program errors added here must also be:
 // - Added to the below conversions
 // - Added as an equivalent to InstructionError
@@ -256,6 +260,7 @@ impl From<ProgramError> for u64 {
             ProgramError::IncorrectLength => INCORRECT_LENGTH,
             ProgramError::TranscriptVerificationFailed => TRANSCRIPT_VERIFICATION_FAILED,
             ProgramError::InvalidChunk(_) => INVALID_CHUNK,
+            ProgramError::InvalidStateTransition(_) => INVALID_STATE_TRANSITION,
             ProgramError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO
