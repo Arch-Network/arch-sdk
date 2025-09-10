@@ -6,7 +6,7 @@ description = "A Rust SDK for building applications on the Arch Network blockcha
 license = "MIT"
 
 [dependencies]
-arch_program = "0.5.9"
+arch_program = "0.5.8"
 
 bitcode = "0.6.4"
 borsh = { version = "1.5.1" }
