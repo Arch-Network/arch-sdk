@@ -163,8 +163,8 @@ pub fn approve(
     )
     .expect("Failed to build and sign transaction");
 
-    let processed_transactioins = send_transactions_and_wait(vec![transaction]);
-    assert_eq!(processed_transactioins[0].status, Status::Processed);
+    let processed_transactions = send_transactions_and_wait(vec![transaction]);
+    assert_eq!(processed_transactions[0].status, Status::Processed);
 }
 
 pub fn revoke(
