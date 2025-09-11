@@ -19,3 +19,9 @@ pub fn minimum_rent(data_len: usize) -> u64 {
     let bytes = data_len as u64;
     (ACCOUNT_STORAGE_OVERHEAD + bytes) * DEFAULT_LAMPORTS_PER_BYTE_YEAR
 }
+
+/// Checks if the account is exempt from rent.
+pub fn is_exempt(lamports: u64, data_len: usize) -> bool {
+    let rent = minimum_rent(data_len);
+    lamports >= rent
+}
