@@ -75,6 +75,7 @@ pub mod program_option;
 /// Data serialization and deserialization for on-chain storage
 pub mod program_pack;
 /// Stub implementations for program interfaces
+#[cfg(not(target_os = "solana"))]
 pub mod program_stubs;
 pub mod program_utils;
 /// Public key definitions and operations
