@@ -16,50 +16,6 @@ pub type StakeActivationStatus = StakeHistoryEntry;
 // epoch
 pub const DEFAULT_SLASH_PENALTY: u8 = ((5 * u8::MAX as usize) / 100) as u8;
 
-// macro_rules! impl_borsh_stake_state {
-//     ($borsh:ident) => {
-//         impl $borsh::BorshDeserialize for StakeState {
-//             fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-//                 let enum_value: u32 = $borsh::BorshDeserialize::deserialize_reader(reader)?;
-//                 match enum_value {
-//                     0 => Ok(StakeState::Uninitialized),
-//                     1 => {
-//                         let meta: Meta = $borsh::BorshDeserialize::deserialize_reader(reader)?;
-//                         Ok(StakeState::Initialized(meta))
-//                     }
-//                     2 => {
-//                         let meta: Meta = $borsh::BorshDeserialize::deserialize_reader(reader)?;
-//                         let stake: Stake = $borsh::BorshDeserialize::deserialize_reader(reader)?;
-//                         Ok(StakeState::Stake(meta, stake))
-//                     }
-//                     3 => Ok(StakeState::RewardsPool),
-//                     _ => Err(io::Error::new(
-//                         io::ErrorKind::InvalidData,
-//                         "Invalid enum value",
-//                     )),
-//                 }
-//             }
-//         }
-//         impl $borsh::BorshSerialize for StakeState {
-//             fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-//                 match self {
-//                     StakeState::Uninitialized => writer.write_all(&0u32.to_le_bytes()),
-//                     StakeState::Initialized(meta) => {
-//                         writer.write_all(&1u32.to_le_bytes())?;
-//                         $borsh::BorshSerialize::serialize(&meta, writer)
-//                     }
-//                     StakeState::Stake(meta, stake) => {
-//                         writer.write_all(&2u32.to_le_bytes())?;
-//                         $borsh::BorshSerialize::serialize(&meta, writer)?;
-//                         $borsh::BorshSerialize::serialize(&stake, writer)
-//                     }
-//                     StakeState::RewardsPool => writer.write_all(&3u32.to_le_bytes()),
-//                 }
-//             }
-//         }
-//     };
-// }
-
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Copy)]
 #[allow(clippy::large_enum_variant)]
 pub enum StakeState {

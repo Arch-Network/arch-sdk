@@ -369,88 +369,17 @@ impl ProcessedTransaction {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::ParseProcessedTransactionError;
+    use super::ProcessedTransaction;
     use crate::Signature;
-    use arch_program::pubkey::Pubkey;
-    use arch_program::sanitized::SanitizedInstruction;
-    // use crate::processed_transaction::ProcessedTransaction;
-    // use crate::processed_transaction::RollbackStatus;
-    // use crate::processed_transaction::Status;
-    // use crate::runtime_transaction::RuntimeTransaction;
-    // use crate::signature::Signature;
-    // use arch_program::instruction::Instruction;
-    // use arch_program::message::Message;
-    // use arch_program::pubkey::Pubkey;
-    // use arch_program::sanitized::ArchMessage;
-    // use arch_program::sanitized::MessageHeader;
-    // use proptest::prelude::*;
-
-    // use proptest::strategy::Just;
-    //TODO: fix this to work with new ArchMessage
-
-    //     proptest! {
-    //         #[test]
-    //         fn fuzz_serialize_deserialize_processed_transaction(
-    //             version in any::<u32>(),
-    //             signatures in prop::collection::vec(prop::collection::vec(any::<u8>(), 64), 0..10),
-    //             signers in prop::collection::vec(any::<[u8; 32]>(), 0..10),
-    //             instructions in prop::collection::vec(prop::collection::vec(any::<u8>(), 0..100), 0..10),
-    //             bitcoin_txid in "[0-9a-f]{64}",
-    //             accounts_tags in prop::collection::vec("[0-9a-f]{64}", 0..10)
-    //         ) {
-    //             // Generate a random RuntimeTransaction
-    //             let signatures: Vec<Signature> = signatures.into_iter()
-    //                 .map(|sig_bytes| Signature::from_slice(&sig_bytes))
-    //                 .collect();
-
-    //             let signers: Vec<Pubkey> = signers.into_iter()
-    //                 .map(Pubkey::from)
-    //                 .collect();
-
-    //             let instructions: Vec<Instruction> = instructions.into_iter()
-    //                 .map(|data| Instruction {
-    //                     program_id: Pubkey::system_program(),
-    //                     accounts: vec![],
-    //                     data,
-    //                 })
-    //                 .collect();
-
-    //             // Create ArchMessage instead of Message
-    //             let message = ArchMessage
-
-    //             let runtime_transaction = RuntimeTransaction {
-    //                 version,
-    //                 signatures,
-    //                 message,
-    //             };
-
-    //             let processed_transaction = ProcessedTransaction {
-    //                 runtime_transaction,
-    //                 status: Status::Queued,
-    //                 bitcoin_txid: Some(bitcoin_txid.to_string()),
-    //                 accounts_tags: accounts_tags.iter().map(|s| s.to_string()).collect(),
-    //                 logs: vec![],
-    //                 rollback_status: false,
-    //             };
-
-    //             let serialized = processed_transaction.to_vec().unwrap();
-    //             let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
-
-    //             let reserialized = deserialized.to_vec().unwrap();
-    //             assert_eq!(serialized, reserialized);
-    //         }
-    //     }
-
-    use arch_program::hash::Hash;
-    use arch_program::sanitized::{ArchMessage, MessageHeader};
-
     use crate::{
         types::processed_transaction::ROLLBACK_MESSAGE_BUFFER_SIZE, RollbackStatus, Status,
     };
-
-    use super::ProcessedTransaction;
+    use arch_program::hash::Hash;
+    use arch_program::pubkey::Pubkey;
+    use arch_program::sanitized::SanitizedInstruction;
+    use arch_program::sanitized::{ArchMessage, MessageHeader};
+    use std::str::FromStr;
 
     #[test]
     fn test_rollback_with_message() {
