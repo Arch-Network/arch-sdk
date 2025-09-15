@@ -665,3 +665,21 @@ pub fn get_bitcoin_tx_confirmation(txid: [u8; 32]) -> bool {
 
     buf[0] == 1
 }
+
+pub fn get_transaction_to_sign() -> [u8; 1024] {
+    // setting it to 2048 as large allocation can cause stack allocation errors as we have limited
+    // stack space, we expect it to be useful only when debugging code
+    // in case you need more space, use the syscall directly
+
+    let mut buf = [0u8; 1024];
+
+    #[cfg(target_os = "solana")]
+    unsafe {
+        crate::syscalls::arch_get_transaction_to_sign(buf.as_mut_ptr(), buf.len() as u64)
+    };
+
+    #[cfg(not(target_os = "solana"))]
+    let _ = crate::program_stubs::arch_get_transaction_to_sign(buf.as_mut_ptr(), buf.len());
+
+    buf
+}

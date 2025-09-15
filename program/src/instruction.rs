@@ -379,6 +379,9 @@ pub enum InstructionError {
     #[error("Invalid transaction to sign")]
     InvalidTxToSign,
 
+    #[error("Invalid input to sign")]
+    InvalidInputToSign,
+
     #[error("Error occured during running of System Program {0}")]
     SystemError(SystemError), // Note: For any new error added here an equivalent ProgramError and its
     // conversions must also be added
@@ -417,6 +420,15 @@ pub enum InstructionError {
 
     #[error("Invalid chunk: {0}")]
     InvalidChunk(String),
+
+    #[error("Transaction to sign empty")]
+    TransactionToSignEmpty,
+
+    #[error("Invalid utxo id")]
+    InvalidUtxoId,
+
+    #[error("Invalid utxo signer")]
+    InvalidUtxoSigner,
 }
 
 impl From<SystemError> for InstructionError {
@@ -471,6 +483,9 @@ impl From<u64> for InstructionError {
             NOT_ENOUGH_COMPUTE_UNITS => Self::NotEnoughComputeUnits,
             TRANSCRIPT_VERIFICATION_FAILED => Self::TranscriptVerificationFailed,
             INVALID_CHUNK => Self::InvalidChunk("Unknown".to_string()),
+            TRANSACTION_TO_SIGN_EMPTY => Self::TransactionToSignEmpty,
+            INVALID_UTXO_ID => Self::InvalidUtxoId,
+            INVALID_UTXO_SIGNER => Self::InvalidUtxoSigner,
             _ => {
                 // A valid custom error has no bits set in the upper 32
                 if value >> BUILTIN_BIT_SHIFT == 0 {

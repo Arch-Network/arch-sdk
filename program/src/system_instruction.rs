@@ -92,12 +92,18 @@ pub enum SystemInstruction {
         vout: u32,
     },
 
+    SignInput {
+        index: u32,
+    },
+
     /// Transfer lamports
     ///
     /// # Account references
     ///   0. `[WRITE, SIGNER]` Funding account
     ///   1. `[WRITE]` Recipient account
-    Transfer { lamports: u64 },
+    Transfer {
+        lamports: u64,
+    },
 
     /// Allocate space in a (possibly new) account without funding
     ///
@@ -259,6 +265,15 @@ pub fn anchor(pubkey: &Pubkey, txid: [u8; 32], vout: u32) -> Instruction {
     Instruction::new_with_bincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::Anchor { txid, vout },
+        account_metas,
+    )
+}
+
+pub fn sign_input(index: u32, signer: &Pubkey) -> Instruction {
+    let account_metas = vec![AccountMeta::new(*signer, true)];
+    Instruction::new_with_bincode(
+        SYSTEM_PROGRAM_ID,
+        &SystemInstruction::SignInput { index },
         account_metas,
     )
 }

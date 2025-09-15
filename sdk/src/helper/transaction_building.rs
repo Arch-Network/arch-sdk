@@ -9,6 +9,7 @@ pub fn build_and_sign_transaction(
     signers: Vec<Keypair>,
     bitcoin_network: Network,
 ) -> Result<RuntimeTransaction, ArchError> {
+    println!("message {:?}", message);
     let digest_slice = message.hash();
     let signatures = message
         .account_keys

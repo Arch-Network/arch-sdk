@@ -94,6 +94,12 @@ pub enum ProgramError {
     TranscriptVerificationFailed,
     #[error("Invalid chunk: {0}")]
     InvalidChunk(String),
+    #[error("Transaction to sign empty")]
+    TransactionToSignEmpty,
+    #[error("Invalid utxo id")]
+    InvalidUtxoId,
+    #[error("Invalid utxo signer")]
+    InvalidUtxoSigner,
     #[error("Invalid state transition: {0}")]
     InvalidStateTransition(String),
 }
@@ -158,6 +164,9 @@ impl PrintProgramError for ProgramError {
             Self::IncorrectLength => msg!("Error: IncorrectLength"),
             Self::TranscriptVerificationFailed => msg!("Error: TranscriptVerificationFailed"),
             Self::InvalidChunk(_) => msg!("Error: invalid chunk"),
+            Self::TransactionToSignEmpty => msg!("Error: TransactionToSignEmpty"),
+            Self::InvalidUtxoId => msg!("Error: InvalidUtxoId"),
+            Self::InvalidUtxoSigner => msg!("Error: InvalidUtxoSigner"),
             Self::InvalidStateTransition(_) => msg!("Error: InvalidStateTransition"),
         }
     }
@@ -209,7 +218,10 @@ pub const INSUFFICIENT_DATA_LENGTH: u64 = to_builtin!(35);
 pub const INCORRECT_LENGTH: u64 = to_builtin!(36);
 pub const TRANSCRIPT_VERIFICATION_FAILED: u64 = to_builtin!(37);
 pub const INVALID_CHUNK: u64 = to_builtin!(38);
-pub const INVALID_STATE_TRANSITION: u64 = to_builtin!(39);
+pub const TRANSACTION_TO_SIGN_EMPTY: u64 = to_builtin!(39);
+pub const INVALID_UTXO_ID: u64 = to_builtin!(40);
+pub const INVALID_UTXO_SIGNER: u64 = to_builtin!(41);
+pub const INVALID_STATE_TRANSITION: u64 = to_builtin!(42);
 // Warning: Any new program errors added here must also be:
 // - Added to the below conversions
 // - Added as an equivalent to InstructionError
@@ -260,6 +272,9 @@ impl From<ProgramError> for u64 {
             ProgramError::IncorrectLength => INCORRECT_LENGTH,
             ProgramError::TranscriptVerificationFailed => TRANSCRIPT_VERIFICATION_FAILED,
             ProgramError::InvalidChunk(_) => INVALID_CHUNK,
+            ProgramError::TransactionToSignEmpty => TRANSACTION_TO_SIGN_EMPTY,
+            ProgramError::InvalidUtxoId => INVALID_UTXO_ID,
+            ProgramError::InvalidUtxoSigner => INVALID_UTXO_SIGNER,
             ProgramError::InvalidStateTransition(_) => INVALID_STATE_TRANSITION,
             ProgramError::Custom(error) => {
                 if error == 0 {
@@ -309,6 +324,9 @@ impl From<u64> for ProgramError {
             INCORRECT_LENGTH => Self::IncorrectLength,
             TRANSCRIPT_VERIFICATION_FAILED => Self::TranscriptVerificationFailed,
             INVALID_CHUNK => Self::InvalidChunk("Unknown".to_string()),
+            TRANSACTION_TO_SIGN_EMPTY => Self::TransactionToSignEmpty,
+            INVALID_UTXO_ID => Self::InvalidUtxoId,
+            INVALID_UTXO_SIGNER => Self::InvalidUtxoSigner,
             _ => Self::Custom(error as u32),
         }
     }

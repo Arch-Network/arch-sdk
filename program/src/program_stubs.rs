@@ -113,3 +113,8 @@ pub(crate) fn arch_get_bitcoin_tx_confirmation(_txid: &[u8; 32], _buf: *const u8
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED
 }
+
+pub(crate) fn arch_get_transaction_to_sign(_buf: *mut u8, _length: usize) -> u64 {
+    sol_log("UNAVAILABLE");
+    UNIMPLEMENTED
+}
