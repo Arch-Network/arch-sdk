@@ -29,6 +29,7 @@ const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
 const START_DKG: &str = "start_dkg";
+const CHECK_PRE_ANCHOR_CONFLICT: &str = "check_pre_anchor_conflict";
 
 /// AsyncArchRpcClient provides a simple interface for making asynchronous RPC calls to the Arch blockchain
 #[derive(Clone)]
@@ -361,6 +362,19 @@ impl AsyncArchRpcClient {
     pub async fn start_dkg(&self) -> Result<()> {
         self.call_method_raw(START_DKG).await?;
         Ok(())
+    }
+
+    pub async fn check_pre_anchor_conflict(&self, accounts: Vec<Pubkey>) -> Result<bool> {
+        let params = accounts;
+        match self
+            .call_method_with_params(CHECK_PRE_ANCHOR_CONFLICT, params)
+            .await?
+        {
+            Some(result) => Ok(result),
+            None => Err(ArchError::RpcRequestFailed(
+                "check_pre_anchor_conflict returned no result".to_string(),
+            )),
+        }
     }
 
     /// Send a single transaction

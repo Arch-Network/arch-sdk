@@ -73,6 +73,26 @@ impl From<Hash> for String {
     }
 }
 
+// Enable direct conversion from our Hash to bitcoin::Txid so callers can use `.into()` without hex.
+impl From<Hash> for bitcoin::Txid {
+    fn from(value: Hash) -> Self {
+        use bitcoin::hashes::Hash as _;
+
+        // Convert the 32-byte array into a sha256d::Hash and then into a Txid.
+        // This avoids any hex encode/decode round-trips and cannot fail.
+        let inner = bitcoin::hashes::sha256d::Hash::from_byte_array(value.to_array());
+        bitcoin::Txid::from_raw_hash(inner)
+    }
+}
+
+impl From<&Hash> for bitcoin::Txid {
+    fn from(value: &Hash) -> Self {
+        use bitcoin::hashes::Hash as _;
+        let inner = bitcoin::hashes::sha256d::Hash::from_byte_array(value.to_array());
+        bitcoin::Txid::from_raw_hash(inner)
+    }
+}
+
 impl TryFrom<String> for Hash {
     type Error = HashError;
 
