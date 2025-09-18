@@ -177,8 +177,9 @@ pub struct ProcessedTransaction {
 
 const ROLLBACK_MESSAGE_BUFFER_SIZE: usize = 1033;
 const LOG_MESSAGES_BYTES_LIMIT: usize = 255;
-const MAX_LOG_MESSAGES: usize = 100;
-const MAX_STATUS_FAILED_MESSAGE_SIZE: usize = 1000;
+pub const MAX_LOG_MESSAGES_COUNT: usize = 400;
+pub const MAX_LOG_MESSAGES_LEN: usize = 10_000 + 20; // adding extra 20 to the logs length field
+pub const MAX_STATUS_FAILED_MESSAGE_SIZE: usize = 1000;
 
 impl ProcessedTransaction {
     pub fn max_serialized_size() -> usize {
@@ -187,8 +188,9 @@ impl ProcessedTransaction {
             + RUNTIME_TX_SIZE_LIMIT  // max runtime transaction size
             + 1  // bitcoin_txid variant flag (None/Some)
             + 32  // bitcoin_txid hash (when Some)
-            + 8  // logs length field
-            + MAX_LOG_MESSAGES * (8 + LOG_MESSAGES_BYTES_LIMIT)  // max logs data
+            + 8  // logs count field
+            + MAX_LOG_MESSAGES_COUNT * 8 // max overhead for individual log lengths
+            + MAX_LOG_MESSAGES_LEN // max logs data
             + 1  // status variant flag (Queued/Processed/Failed)
             + 8  // error message length field (for Failed status)
             + MAX_STATUS_FAILED_MESSAGE_SIZE // reasonable max error message size
@@ -224,7 +226,10 @@ impl ProcessedTransaction {
             None => vec![0],
         });
 
-        if self.logs.len() > MAX_LOG_MESSAGES {
+        if self.logs.len() > MAX_LOG_MESSAGES_COUNT {
+            return Err(ParseProcessedTransactionError::TooManyLogMessages);
+        }
+        if self.logs.iter().map(|s| s.len()).sum::<usize>() > MAX_LOG_MESSAGES_LEN {
             return Err(ParseProcessedTransactionError::TooManyLogMessages);
         }
 
@@ -240,7 +245,7 @@ impl ProcessedTransaction {
             Status::Processed => vec![1_u8],
             Status::Failed(err) => {
                 let mut result = vec![2_u8];
-                if err.len() > 1000 {
+                if err.len() > MAX_STATUS_FAILED_MESSAGE_SIZE {
                     return Err(ParseProcessedTransactionError::StatusFailedMessageTooLong);
                 }
                 result.extend((err.len() as u64).to_le_bytes());
@@ -314,13 +319,14 @@ impl ProcessedTransaction {
         // Logs length - use get_const_slice
         let data_bytes = get_const_slice(data, size)?;
         let logs_len = u64::from_le_bytes(data_bytes) as usize;
-        if logs_len > MAX_LOG_MESSAGES {
+
+        if logs_len > MAX_LOG_MESSAGES_COUNT {
             return Err(ParseProcessedTransactionError::TooManyLogMessages);
         }
-
         size += 8;
         let mut logs = vec![];
 
+        let mut total_logs_size = 0;
         // Process each log - use get_const_slice and get_slice
         for _ in 0..logs_len {
             let log_len_bytes = get_const_slice(data, size)?;
@@ -328,6 +334,10 @@ impl ProcessedTransaction {
             size += 8;
             if log_len > LOG_MESSAGES_BYTES_LIMIT {
                 return Err(ParseProcessedTransactionError::LogMessageTooLong);
+            }
+            total_logs_size += log_len;
+            if total_logs_size > MAX_LOG_MESSAGES_LEN {
+                return Err(ParseProcessedTransactionError::TooManyLogMessages);
             }
             let log_data = get_slice(data, size, log_len)?;
             logs.push(String::from_utf8(log_data.to_vec())?);
@@ -512,10 +522,8 @@ mod tests {
     fn test_serialization_too_many_log_messages() {
         let mut processed_transaction = create_minimal_processed_transaction();
 
-        // Create MAX_LOG_MESSAGES + 1 log messages
-        processed_transaction.logs = (0..=super::MAX_LOG_MESSAGES)
-            .map(|i| format!("Log message {}", i))
-            .collect();
+        // Create logs that exceed MAX_LOG_MESSAGES_LEN in total size
+        processed_transaction.logs = vec!["a".to_string(); super::MAX_LOG_MESSAGES_COUNT + 1];
 
         let result = processed_transaction.to_vec();
         assert!(result.is_err());
@@ -529,10 +537,8 @@ mod tests {
     fn test_serialization_exactly_max_log_messages() {
         let mut processed_transaction = create_minimal_processed_transaction();
 
-        // Create exactly MAX_LOG_MESSAGES log messages
-        processed_transaction.logs = (0..super::MAX_LOG_MESSAGES)
-            .map(|i| format!("Log message {}", i))
-            .collect();
+        // Create logs that have a total size of exactly MAX_LOG_MESSAGES_LEN
+        processed_transaction.logs = vec!["a".to_string(); super::MAX_LOG_MESSAGES_COUNT];
 
         let result = processed_transaction.to_vec();
         assert!(result.is_ok());
@@ -563,8 +569,8 @@ mod tests {
         let bitcoin_txid_pos = runtime_tx_len_pos + 8 + runtime_tx_len;
         let logs_len_pos = bitcoin_txid_pos + 1; // +1 for the bitcoin_txid flag (0 in this case)
 
-        // Set logs_len to MAX_LOG_MESSAGES + 1
-        let corrupted_logs_len = (super::MAX_LOG_MESSAGES + 1) as u64;
+        // Set logs_len to MAX_LOG_MESSAGES_COUNT + 1
+        let corrupted_logs_len = (super::MAX_LOG_MESSAGES_COUNT + 1) as u64;
         serialized[logs_len_pos..logs_len_pos + 8]
             .copy_from_slice(&corrupted_logs_len.to_le_bytes());
 
@@ -734,13 +740,23 @@ mod tests {
         // Ensure the runtime transaction is within its limit
         assert!(runtime_transaction.check_tx_size_limit().is_ok());
 
+        let log_entry_overhead = 8;
+        let num_logs =
+            super::MAX_LOG_MESSAGES_LEN / (super::LOG_MESSAGES_BYTES_LIMIT + log_entry_overhead);
+        let mut logs: Vec<String> = (0..num_logs)
+            .map(|_| "X".repeat(super::LOG_MESSAGES_BYTES_LIMIT))
+            .collect();
+        let remaining_len = super::MAX_LOG_MESSAGES_LEN
+            - num_logs * (super::LOG_MESSAGES_BYTES_LIMIT + log_entry_overhead);
+        if remaining_len > log_entry_overhead {
+            logs.push("X".repeat(remaining_len - log_entry_overhead));
+        }
+
         let processed_transaction = ProcessedTransaction {
             runtime_transaction: runtime_transaction.clone(),
             status: Status::Failed("X".repeat(super::MAX_STATUS_FAILED_MESSAGE_SIZE)), // Large error message
             bitcoin_txid: Some(Hash::from([0xFF; 32])),
-            logs: (0..super::MAX_LOG_MESSAGES)
-                .map(|_| "X".repeat(super::LOG_MESSAGES_BYTES_LIMIT))
-                .collect(),
+            logs,
             rollback_status: RollbackStatus::Rolledback(
                 "X".repeat(ROLLBACK_MESSAGE_BUFFER_SIZE - 9),
             ),
