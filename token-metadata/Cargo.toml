@@ -9,12 +9,12 @@ keywords = ["arch", "token", "metadata", "program", "sbf"]
 categories = ["cryptography", "embedded", "no-std"]
 
 [dependencies]
-apl-token = { version = "2", features = ["no-entrypoint"] }
+apl-token = { version = "0.5.12", features = ["no-entrypoint"] }
 arch_program = "0.5.12"
-borsh.workspace = true
-num-derive.workspace = true
-num-traits.workspace = true
-thiserror.workspace = true
+borsh = { version = "1.4.0", features = ["derive"] }
+num-derive = "0.4.0"
+num-traits = "0.2"
+thiserror = "1.0"
 
 [lib]
 crate-type = ["cdylib", "lib"]
