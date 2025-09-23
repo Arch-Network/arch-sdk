@@ -1,0 +1,25 @@
+[package]
+name = "apl-token-metadata"
+version = "0.5.12"
+edition = "2021"
+license = "MIT"
+description = "On-chain program for Arch Token Metadata"
+readme = "README.md"
+keywords = ["arch", "token", "metadata", "program", "sbf"]
+categories = ["cryptography", "embedded", "no-std"]
+
+[dependencies]
+apl-token = { version = "2", features = ["no-entrypoint"] }
+arch_program = "0.5.12"
+borsh.workspace = true
+num-derive.workspace = true
+num-traits.workspace = true
+thiserror.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "apl_token_metadata"
+
+[features]
+default = []
+no-entrypoint = []
