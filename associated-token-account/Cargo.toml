@@ -1,6 +1,6 @@
 [package]
 name = "apl-associated-token-account"
-version = "0.5.11"
+version = "0.5.12"
 edition = "2021"
 description = "Associated Token Account program for Arch Network providing deterministic token account management and instructions."
 license = "MIT"
