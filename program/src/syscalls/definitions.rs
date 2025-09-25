@@ -26,6 +26,7 @@ define_syscall!(fn arch_get_transaction_to_sign(transaction_to_sign: *mut u8, le
 define_syscall!(fn arch_set_inputs_to_sign(inputs_to_sign: *const u8, length: u64) -> u64);
 define_syscall!(fn arch_get_bitcoin_tx(data: *mut u8, length: u64, txid: &[u8; 32]) -> u64);
 define_syscall!(fn arch_get_runes_from_output(data: *mut u8, length: u64, txid: &[u8; 32], output_index: u32) -> u64);
+define_syscall!(fn arch_get_rune_info(data: *mut u8, length: u64, block: u64, tx: u64) -> u64);
 define_syscall!(fn arch_get_bitcoin_tx_confirmation(txid: &[u8; 32], result: *mut u8) -> u64);
 define_syscall!(fn arch_get_network_xonly_pubkey(data: *mut u8) -> u64);
 define_syscall!(fn arch_validate_utxo_ownership(utxo: *const UtxoMeta, owner: *const Pubkey) -> u64);

@@ -188,3 +188,17 @@ where
     let s = <String as serde::Deserialize>::deserialize(deserializer)?;
     s.parse::<u128>().map_err(serde::de::Error::custom)
 }
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct SpacedRune {
+    pub rune: u128,
+    pub spacers: u32,
+}
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct RuneInfo {
+    pub max_supply: u128,
+    pub premine: u128,
+    pub divisibility: u8,
+    pub name: SpacedRune,
+}

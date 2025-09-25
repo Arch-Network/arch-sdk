@@ -6,7 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use crate::input_to_sign::InputToSign;
 use crate::instruction::Instruction;
 use crate::program_error::ProgramError;
-use crate::rune::RuneAmount;
+use crate::rune::{RuneAmount, RuneInfo};
 #[cfg(target_os = "solana")]
 use crate::stable_layout::stable_ins::StableInstruction;
 use crate::{msg, MAX_BTC_RUNE_OUTPUT_SIZE, MAX_BTC_TX_SIZE};
@@ -100,6 +100,10 @@ pub type BitcoinRuneOutput = FixedSizeBuffer<MAX_BTC_RUNE_OUTPUT_SIZE>;
 
 /// Type alias for Returned Data with a fixed 1024-byte buffer.
 pub type ReturnedData = FixedSizeBuffer<MAX_RETURN_DATA>;
+
+/// Type alias for RuneInfo data with a tight 64-byte buffer.
+/// Borsh-encoded `RuneInfo` is 53 bytes; 64 is a safe upper bound.
+pub type RuneInfoBuf = FixedSizeBuffer<64>;
 
 /// Invokes a program instruction through cross-program invocation.
 ///
@@ -534,6 +538,42 @@ pub fn get_runes_from_output(txid: [u8; 32], output_index: u32) -> Option<Vec<Ru
     } else {
         result.set_size(min(size as usize, MAX_BTC_RUNE_OUTPUT_SIZE));
         borsh::from_slice::<Vec<RuneAmount>>(result.as_slice()).ok()
+    }
+}
+
+/// Retrieves the runes from a Bitcoin output by its transaction ID and output index.
+///
+/// # Arguments
+/// * `txid` - 32-byte array containing the Bitcoin transaction ID
+/// * `output_index` - The output index to retrieve
+///
+/// # Returns
+/// * `Option<RuneInfo>` - The runes if found, None if not found
+#[inline(never)]
+pub fn get_rune_info(block: u64, tx: u64) -> Option<RuneInfo> {
+    use std::cmp::min;
+
+    let mut result: RuneInfoBuf = Default::default();
+
+    #[cfg(target_os = "solana")]
+    let size = unsafe {
+        crate::syscalls::arch_get_rune_info(
+            result.as_mut_ptr(),
+            result.capacity() as u64,
+            block,
+            tx,
+        )
+    };
+
+    #[cfg(not(target_os = "solana"))]
+    let size =
+        crate::program_stubs::arch_get_rune_info(result.as_mut_ptr(), result.capacity(), block, tx);
+
+    if size == 0 {
+        None
+    } else {
+        result.set_size(min(size as usize, result.capacity()));
+        borsh::from_slice::<RuneInfo>(result.as_slice()).ok()
     }
 }
 

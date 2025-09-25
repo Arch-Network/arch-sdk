@@ -59,6 +59,10 @@ pub(crate) fn arch_get_runes_from_output(
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED
 }
+pub(crate) fn arch_get_rune_info(_buf: *const u8, _buf_len: usize, _block: u64, _tx: u64) -> u64 {
+    sol_log("UNAVAILABLE");
+    UNIMPLEMENTED
+}
 pub(crate) fn arch_get_network_xonly_pubkey(_data: *mut u8) -> u64 {
     sol_log("UNAVAILABLE");
     UNIMPLEMENTED
