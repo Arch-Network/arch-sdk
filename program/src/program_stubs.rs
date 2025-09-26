@@ -5,6 +5,7 @@ use crate::{
     account::AccountInfo, clock::Clock, entrypoint::ProgramResult, instruction::Instruction,
     pubkey::Pubkey, utxo::UtxoMeta,
 };
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 
 pub(crate) fn sol_log(message: &str) {
     println!("{message}");
@@ -31,8 +32,23 @@ pub(crate) fn _sol_log_pubkey(_pubkey_addr: *const u8) {
     sol_log("UNAVAILABLE");
 }
 pub(crate) fn _sol_log_data(data: *const u8, data_len: u64) {
-    let slice = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
-    println!("sol_log_data: {:?}", slice);
+    let count = data_len as usize;
+    let word = core::mem::size_of::<usize>();
+    let mut parts: Vec<String> = Vec::with_capacity(count);
+    unsafe {
+        for i in 0..count {
+            let base = data.add(i * 2 * word);
+            let ptr_val = core::ptr::read_unaligned(base as *const usize);
+            let len_val = core::ptr::read_unaligned(base.add(word) as *const usize);
+            let bytes = if ptr_val == 0 || len_val == 0 {
+                &[]
+            } else {
+                core::slice::from_raw_parts(ptr_val as *const u8, len_val)
+            };
+            parts.push(BASE64_STANDARD.encode(bytes));
+        }
+    }
+    println!("Program data: {}", parts.join(" "));
 }
 pub(crate) fn _sol_get_return_data(_data: *mut u8, _length: u64, _program_id: *mut Pubkey) -> u64 {
     sol_log("UNAVAILABLE");

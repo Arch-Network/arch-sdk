@@ -109,13 +109,13 @@ pub fn sol_log_64(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) {
 
 /// Print binary data as base64.
 #[cfg(target_os = "solana")]
-pub fn sol_log_data(data: &[u8]) {
-    unsafe { crate::syscalls::sol_log_data(data.as_ptr(), data.len() as u64) };
+pub fn sol_log_data(chunks: &[&[u8]]) {
+    unsafe { crate::syscalls::sol_log_data(chunks.as_ptr() as *const u8, chunks.len() as u64) };
 }
 
 #[cfg(not(target_os = "solana"))]
-pub fn sol_log_data(data: &[u8]) {
-    crate::program_stubs::_sol_log_data(data.as_ptr(), data.len() as u64);
+pub fn sol_log_data(chunks: &[&[u8]]) {
+    crate::program_stubs::_sol_log_data(chunks.as_ptr() as *const u8, chunks.len() as u64);
 }
 
 /// Print the hexadecimal representation of a slice.
