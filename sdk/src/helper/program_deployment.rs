@@ -9,7 +9,6 @@ use crate::{
     types::{RuntimeTransaction, Signature, RUNTIME_TX_SIZE_LIMIT},
     Status,
 };
-use anyhow::Result;
 use arch_program::bpf_loader::{LoaderState, BPF_LOADER_ID};
 use arch_program::hash::Hash;
 use arch_program::hash::HashError;
@@ -129,6 +128,15 @@ impl ProgramDeployer {
                     ),
                     5,
                 );
+
+                if !account_info_result.is_executable {
+                    self.make_program_executable(
+                        program_pubkey,
+                        authority_pubkey,
+                        authority_keypair,
+                    )?;
+                }
+
                 return Ok(program_pubkey);
             }
             println!("\x1b[33m ELF mismatch with account content ! Redeploying \x1b[0m");
@@ -192,29 +200,7 @@ impl ProgramDeployer {
                 "\x1b[32m Step 3/3 Successful :\x1b[0m Program account is already executable !"
             );
         } else {
-            let recent_blockhash = self.client.get_best_finalized_block_hash()?;
-            let executability_tx = build_and_sign_transaction(
-                ArchMessage::new(
-                    &[loader_instruction::deploy(program_pubkey, authority_pubkey)],
-                    Some(authority_pubkey),
-                    recent_blockhash,
-                ),
-                vec![authority_keypair],
-                self.client.config.network,
-            )?;
-
-            let executability_txid = self.client.send_transaction(executability_tx)?;
-            let tx = self
-                .client
-                .wait_for_processed_transaction(&executability_txid)?;
-
-            if let Status::Failed(e) = tx.status {
-                return Err(ProgramDeployerError::TransactionError(format!(
-                    "Program account creation transaction failed: {}",
-                    e
-                )));
-            }
-            println!("\x1b[32m Step 3/3 Successful :\x1b[0m Made program account executable!");
+            self.make_program_executable(program_pubkey, authority_pubkey, authority_keypair)?;
         }
 
         let program_info_after_making_executable = self.client.read_account_info(program_pubkey)?;
@@ -263,6 +249,39 @@ impl ProgramDeployer {
         );
 
         Ok(program_pubkey)
+    }
+
+    fn make_program_executable(
+        &self,
+        program_pubkey: Pubkey,
+        authority_pubkey: Pubkey,
+        authority_keypair: Keypair,
+    ) -> Result<(), ProgramDeployerError> {
+        let recent_blockhash = self.client.get_best_finalized_block_hash()?;
+        let executability_tx = build_and_sign_transaction(
+            ArchMessage::new(
+                &[loader_instruction::deploy(program_pubkey, authority_pubkey)],
+                Some(authority_pubkey),
+                recent_blockhash,
+            ),
+            vec![authority_keypair],
+            self.client.config.network,
+        )?;
+
+        let executability_txid = self.client.send_transaction(executability_tx)?;
+        let tx = self
+            .client
+            .wait_for_processed_transaction(&executability_txid)?;
+
+        if let Status::Failed(e) = tx.status {
+            return Err(ProgramDeployerError::TransactionError(format!(
+                "Program account creation transaction failed: {}",
+                e
+            )));
+        }
+        println!("\x1b[32m Step 3/3 Successful :\x1b[0m Made program account executable!");
+
+        Ok(())
     }
 
     /// Deploy a program ELF
