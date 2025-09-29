@@ -429,6 +429,15 @@ pub enum InstructionError {
 
     #[error("Invalid utxo signer")]
     InvalidUtxoSigner,
+
+    #[error("Unable to find valid utxo for given account")]
+    InvalidUtxo,
+
+    #[error("Unable to fetch Utxo Tx")]
+    UnableToFetchUtxoTx,
+
+    #[error("Build Account Address Error")]
+    BuildAccountAddressError,
 }
 
 impl From<SystemError> for InstructionError {
