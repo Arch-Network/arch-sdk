@@ -697,8 +697,7 @@ pub fn get_bitcoin_tx_confirmation(txid: [u8; 32]) -> bool {
     let mut buf = [0u8; 1];
 
     #[cfg(target_os = "solana")]
-    let result =
-        unsafe { crate::syscalls::arch_get_bitcoin_tx_confirmation(&txid, buf.as_mut_ptr()) };
+    let _ = unsafe { crate::syscalls::arch_get_bitcoin_tx_confirmation(&txid, buf.as_mut_ptr()) };
 
     #[cfg(not(target_os = "solana"))]
     let _ = crate::program_stubs::arch_get_bitcoin_tx_confirmation(&txid, buf.as_mut_ptr());
