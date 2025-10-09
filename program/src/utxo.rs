@@ -170,6 +170,14 @@ impl UtxoMeta {
     pub fn serialize(&self) -> [u8; 36] {
         self.0
     }
+
+    /// Returns true if the UTXO is defined, i.e., the txid is not all zeros.
+    ///
+    /// This is used to determine whether an utxo meta has been initialized.
+    /// A zero txid indicates an uninitialized/undefined UTXO.
+    pub fn is_defined(&self) -> bool {
+        self.0[..32].iter().any(|b| *b != 0)
+    }
 }
 
 impl Default for UtxoMeta {
