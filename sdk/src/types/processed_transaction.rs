@@ -2,6 +2,7 @@ use std::{array::TryFromSliceError, string::FromUtf8Error};
 
 use anyhow::Result;
 use arch_program::hash::Hash;
+use arch_program::sanitized::{SanitizedInstruction, MAX_INSTRUCTION_COUNT_PER_TRANSACTION};
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -10,7 +11,10 @@ use serde_json::Value;
 #[cfg(feature = "fuzzing")]
 use libfuzzer_sys::arbitrary;
 
-use crate::RUNTIME_TX_SIZE_LIMIT;
+use crate::{
+    types::inner_instruction::{InnerInstruction, InnerInstructionsList},
+    RUNTIME_TX_SIZE_LIMIT,
+};
 
 use super::{RuntimeTransaction, RuntimeTransactionError};
 
@@ -45,6 +49,12 @@ pub enum ParseProcessedTransactionError {
 
     #[error("status failed message too long")]
     StatusFailedMessageTooLong,
+
+    #[error("too many instructions")]
+    TooManyInstructions,
+
+    #[error("too many inner instructions")]
+    TooManyInnerInstructions,
 }
 
 impl From<TryFromSliceError> for ParseProcessedTransactionError {
@@ -173,6 +183,7 @@ pub struct ProcessedTransaction {
     pub bitcoin_txid: Option<Hash>,
     pub logs: Vec<String>,
     pub rollback_status: RollbackStatus,
+    pub inner_instructions_list: InnerInstructionsList,
 }
 
 const ROLLBACK_MESSAGE_BUFFER_SIZE: usize = 1033;
@@ -180,6 +191,12 @@ const LOG_MESSAGES_BYTES_LIMIT: usize = 255;
 pub const MAX_LOG_MESSAGES_COUNT: usize = 400;
 pub const MAX_LOG_MESSAGES_LEN: usize = 10_000 + 20; // adding extra 20 to the logs length field
 pub const MAX_STATUS_FAILED_MESSAGE_SIZE: usize = 1000;
+
+// Conservative upper bounds for inner-instruction serialization sizing
+const MAX_INNER_INSTRUCTIONS_TOTAL: usize = u8::MAX as usize;
+const MAX_ACCOUNTS_PER_INSTRUCTION: usize = u8::MAX as usize; // bounded by pubkey indices
+const MAX_CPI_INSTRUCTION_SIZE: usize = 1280; // matches default in compute budget
+const MAX_CPI_INSTRUCTION_SERIALIZED_SIZE: usize = 1 /*program_id_index*/ + 4 /*accounts len*/ + MAX_ACCOUNTS_PER_INSTRUCTION + 4 /*data len*/ + MAX_CPI_INSTRUCTION_SIZE;
 
 impl ProcessedTransaction {
     pub fn max_serialized_size() -> usize {
@@ -194,6 +211,11 @@ impl ProcessedTransaction {
             + 1  // status variant flag (Queued/Processed/Failed)
             + 8  // error message length field (for Failed status)
             + MAX_STATUS_FAILED_MESSAGE_SIZE // reasonable max error message size
+            // inner instructions list serialization upper bound (conservative)
+            + 8 // outer instructions count field
+            + (MAX_INSTRUCTION_COUNT_PER_TRANSACTION * 8 )// per-outer inner count fields
+            + (MAX_INNER_INSTRUCTIONS_TOTAL
+                * (1 /*stack height*/ + MAX_CPI_INSTRUCTION_SERIALIZED_SIZE))
     }
 
     pub fn txid(&self) -> Hash {
@@ -253,6 +275,19 @@ impl ProcessedTransaction {
                 result
             }
         });
+
+        // Serialize inner instructions list
+        serialized.extend((self.inner_instructions_list.len() as u64).to_le_bytes());
+        for inner_instructions in &self.inner_instructions_list {
+            serialized.extend((inner_instructions.len() as u64).to_le_bytes());
+            for inner in inner_instructions {
+                // stack_height
+                serialized.push(inner.stack_height);
+                // instruction
+                let instr_bytes = inner.instruction.serialize();
+                serialized.extend(instr_bytes);
+            }
+        }
         Ok(serialized)
     }
 
@@ -345,23 +380,70 @@ impl ProcessedTransaction {
         }
 
         // Status processing - use get_byte, get_const_slice and get_slice
-        let status = match get_byte(data, size)? {
+        let status_flag = get_byte(data, size)?;
+        size += 1; // advance for status byte
+        let status = match status_flag {
             0 => Status::Queued,
             1 => Status::Processed,
             2 => {
-                size += 1;
                 let error_len_bytes = get_const_slice(data, size)?;
                 let error_len = u64::from_le_bytes(error_len_bytes) as usize;
-                if error_len > 1000 {
+                if error_len > MAX_STATUS_FAILED_MESSAGE_SIZE {
                     return Err(ParseProcessedTransactionError::StatusFailedMessageTooLong);
                 }
                 size += 8;
                 let error_data = get_slice(data, size, error_len)?;
                 let error = String::from_utf8(error_data.to_vec())?;
+                size += error_len;
                 Status::Failed(error)
             }
-            _ => unreachable!("status doesn't exist"),
+            _ => return Err(ParseProcessedTransactionError::TryFromSliceError),
         };
+
+        // Deserialize inner instructions list
+        let outer_len_bytes = get_const_slice::<8>(data, size)?;
+        let outer_len = u64::from_le_bytes(outer_len_bytes) as usize;
+        if outer_len > MAX_INSTRUCTION_COUNT_PER_TRANSACTION {
+            return Err(ParseProcessedTransactionError::TooManyInstructions);
+        }
+        size += 8;
+        let mut inner_instructions_list: InnerInstructionsList = Vec::with_capacity(outer_len);
+        let mut total_inners = 0usize;
+
+        for _ in 0..outer_len {
+            let inner_len_bytes = get_const_slice::<8>(data, size)?;
+            let inner_len = u64::from_le_bytes(inner_len_bytes) as usize;
+            total_inners = total_inners
+                .checked_add(inner_len)
+                .ok_or(ParseProcessedTransactionError::TooManyInnerInstructions)?;
+            if inner_len > MAX_INNER_INSTRUCTIONS_TOTAL
+                || total_inners > MAX_INNER_INSTRUCTIONS_TOTAL
+            {
+                return Err(ParseProcessedTransactionError::TooManyInnerInstructions);
+            }
+            size += 8;
+
+            let mut inners: Vec<InnerInstruction> = Vec::with_capacity(inner_len);
+            for _ in 0..inner_len {
+                // stack height
+                let stack_height = get_byte(data, size)?;
+                size += 1;
+
+                // instruction deserialization uses remaining slice
+                let remaining = data
+                    .get(size..)
+                    .ok_or(ParseProcessedTransactionError::TryFromSliceError)?;
+                let (instruction, consumed) = SanitizedInstruction::deserialize(remaining)
+                    .map_err(|_| ParseProcessedTransactionError::TryFromSliceError)?;
+                size += consumed;
+
+                inners.push(InnerInstruction {
+                    instruction,
+                    stack_height,
+                });
+            }
+            inner_instructions_list.push(inners);
+        }
 
         Ok(ProcessedTransaction {
             runtime_transaction,
@@ -369,11 +451,15 @@ impl ProcessedTransaction {
             bitcoin_txid,
             logs,
             rollback_status,
+            inner_instructions_list,
         })
     }
 
     pub fn compute_units_consumed(&self) -> Option<&str> {
-        self.logs[self.logs.len() - 2].get(82..86)
+        if self.logs.len() < 2 {
+            return None;
+        }
+        self.logs.get(self.logs.len() - 2)?.get(82..86)
     }
 }
 
@@ -381,6 +467,7 @@ impl ProcessedTransaction {
 mod tests {
     use super::ParseProcessedTransactionError;
     use super::ProcessedTransaction;
+    use crate::types::inner_instruction::InnerInstruction;
     use crate::Signature;
     use crate::{
         types::processed_transaction::ROLLBACK_MESSAGE_BUFFER_SIZE, RollbackStatus, Status,
@@ -416,6 +503,7 @@ mod tests {
             bitcoin_txid: None,
             logs: vec![],
             rollback_status: RollbackStatus::Rolledback(rollback_message),
+            inner_instructions_list: vec![],
         };
 
         let serialized = processed_transaction.to_vec().unwrap();
@@ -448,6 +536,7 @@ mod tests {
             bitcoin_txid: None,
             logs: vec![],
             rollback_status: RollbackStatus::Rolledback(rollback_message),
+            inner_instructions_list: vec![],
         };
 
         let serialized = processed_transaction.to_vec();
@@ -478,6 +567,7 @@ mod tests {
             bitcoin_txid: None,
             logs: vec![],
             rollback_status: RollbackStatus::NotRolledback,
+            inner_instructions_list: vec![],
         };
 
         let serialized = processed_transaction.to_vec().unwrap();
@@ -515,6 +605,7 @@ mod tests {
             bitcoin_txid: None,
             logs: vec![],
             rollback_status: RollbackStatus::NotRolledback,
+            inner_instructions_list: vec![],
         }
     }
 
@@ -675,6 +766,542 @@ mod tests {
     }
 
     #[test]
+    fn test_inner_instructions_empty_list_roundtrip() {
+        let mut tx = create_minimal_processed_transaction();
+        tx.inner_instructions_list = vec![];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_inner_instructions_single_outer_empty_roundtrip() {
+        let mut tx = create_minimal_processed_transaction();
+        tx.inner_instructions_list = vec![vec![]];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_inner_instructions_non_empty_roundtrip() {
+        let mut tx = create_minimal_processed_transaction();
+
+        let ii1 = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![0, 2],
+                data: vec![0xAA, 0xBB],
+            },
+            stack_height: 2,
+        };
+        let ii2 = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 3,
+                accounts: vec![],
+                data: vec![0x01],
+            },
+            stack_height: 3,
+        };
+
+        tx.inner_instructions_list = vec![vec![ii1.clone(), ii2.clone()], vec![ii2]];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_failed_status_with_inner_instructions_alignment() {
+        let mut tx = create_minimal_processed_transaction();
+        tx.status = Status::Failed("some error".to_string());
+
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![0],
+                data: vec![0x10, 0x20, 0x30],
+            },
+            stack_height: 2,
+        };
+        tx.inner_instructions_list = vec![vec![ii]];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_malformed_status_flag_returns_error() {
+        let mut tx = create_minimal_processed_transaction();
+        tx.logs = vec!["a".to_string()];
+        let mut bytes = tx.to_vec().unwrap();
+
+        // Compute offset to status flag
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let mut cursor = rollback_size;
+        let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8 + rt_len;
+
+        // bitcoin_txid flag
+        cursor += 1 + 0 * 32; // None => 0
+
+        // logs len and each entry
+        let logs_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8;
+        for _ in 0..logs_len {
+            let l = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+            cursor += 8 + l;
+        }
+
+        // Set invalid status flag
+        bytes[cursor] = 9;
+
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_truncated_inner_instruction_returns_error() {
+        let mut tx = create_minimal_processed_transaction();
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![0],
+                data: vec![0x01, 0x02],
+            },
+            stack_height: 2,
+        };
+        tx.inner_instructions_list = vec![vec![ii]];
+
+        let mut bytes = tx.to_vec().unwrap();
+        // Truncate last byte from inner instructions encoding
+        bytes.pop();
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_inner_instructions_length_mismatch_returns_error() {
+        let mut tx = create_minimal_processed_transaction();
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 2,
+                accounts: vec![0, 1],
+                data: vec![0xFF],
+            },
+            stack_height: 2,
+        };
+        tx.inner_instructions_list = vec![vec![ii]];
+        let mut bytes = tx.to_vec().unwrap();
+
+        // Walk to the first inner_len field to tamper it
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let mut cursor = rollback_size;
+        let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8 + rt_len;
+
+        // btc flag
+        cursor += 1;
+
+        // logs len
+        let logs_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8;
+        for _ in 0..logs_len {
+            let l = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+            cursor += 8 + l;
+        }
+
+        // status flag
+        cursor += 1;
+
+        // outer_len
+        let _outer_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8;
+
+        // inner_len of first outer: set to 2 while only 1 present
+        bytes[cursor..cursor + 8].copy_from_slice(&(2u64).to_le_bytes());
+
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_inner_instruction_zero_accounts_zero_data_roundtrip() {
+        let mut tx = create_minimal_processed_transaction();
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 0,
+                accounts: vec![],
+                data: vec![],
+            },
+            stack_height: 1,
+        };
+        tx.inner_instructions_list = vec![vec![ii]];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_inner_instruction_max_accounts_and_max_data_roundtrip() {
+        let mut tx = create_minimal_processed_transaction();
+        let accounts: Vec<u8> = (0..=254).collect(); // 255 accounts
+        let data: Vec<u8> = vec![0xAB; super::MAX_CPI_INSTRUCTION_SIZE];
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: u8::MAX,
+                accounts,
+                data,
+            },
+            stack_height: u8::MAX,
+        };
+        tx.inner_instructions_list = vec![vec![ii]];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_multiple_outers_mixed_empty_and_nonempty_roundtrip() {
+        let mut tx = create_minimal_processed_transaction();
+        let ii1 = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 5,
+                accounts: vec![1, 2, 3],
+                data: vec![0x01, 0x02],
+            },
+            stack_height: 2,
+        };
+        let ii2 = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 7,
+                accounts: vec![],
+                data: vec![0xFF],
+            },
+            stack_height: 3,
+        };
+        tx.inner_instructions_list =
+            vec![vec![], vec![ii1], vec![ii2.clone(), ii2.clone()], vec![]];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_outer_len_mismatch_returns_error() {
+        let mut tx = create_minimal_processed_transaction();
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![0],
+                data: vec![0x11],
+            },
+            stack_height: 2,
+        };
+        tx.inner_instructions_list = vec![vec![ii]];
+
+        let mut bytes = tx.to_vec().unwrap();
+
+        // Walk to outer_len
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let mut cursor = rollback_size;
+        let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8 + rt_len;
+        // btc flag
+        cursor += 1;
+        // logs
+        let logs_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8;
+        for _ in 0..logs_len {
+            let l = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+            cursor += 8 + l;
+        }
+        // status
+        if bytes[cursor] == 2 {
+            // failed: skip len + data as well
+            cursor += 1;
+            let e_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+            cursor += 8 + e_len;
+        } else {
+            cursor += 1;
+        }
+
+        // Now at outer_len
+        bytes[cursor..cursor + 8].copy_from_slice(&(2u64).to_le_bytes());
+
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_too_many_outer_instructions_returns_error() {
+        let tx = create_minimal_processed_transaction();
+        let mut bytes = tx.to_vec().unwrap();
+
+        // Walk to outer_len
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let mut cursor = rollback_size;
+        let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8 + rt_len;
+        // btc flag
+        cursor += 1;
+        // logs
+        let logs_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8;
+        for _ in 0..logs_len {
+            let l = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+            cursor += 8 + l;
+        }
+        // status (Queued => 0)
+        cursor += 1;
+
+        // Set outer_len to MAX_INSTRUCTION_COUNT_PER_TRANSACTION + 1
+        let excessive = (arch_program::sanitized::MAX_INSTRUCTION_COUNT_PER_TRANSACTION as u64) + 1;
+        bytes[cursor..cursor + 8].copy_from_slice(&excessive.to_le_bytes());
+
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(matches!(
+            res,
+            Err(ParseProcessedTransactionError::TooManyInstructions)
+        ));
+    }
+
+    #[test]
+    fn test_outer_len_at_max_roundtrip_ok() {
+        let mut tx = create_minimal_processed_transaction();
+        let max_outer = arch_program::sanitized::MAX_INSTRUCTION_COUNT_PER_TRANSACTION;
+        tx.inner_instructions_list = vec![vec![]; max_outer];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_total_inners_at_max_roundtrip_ok() {
+        let mut tx = create_minimal_processed_transaction();
+
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: vec![],
+            },
+            stack_height: 1,
+        };
+
+        // Single outer containing exactly MAX_INNER_INSTRUCTIONS_TOTAL inners
+        tx.inner_instructions_list = vec![vec![ii; super::MAX_INNER_INSTRUCTIONS_TOTAL]];
+
+        let bytes = tx.to_vec().unwrap();
+        let de = ProcessedTransaction::from_vec(&bytes).unwrap();
+        assert_eq!(tx, de);
+    }
+
+    #[test]
+    fn test_total_inners_cumulative_exceeds_returns_error() {
+        // Build a transaction with two outers: first has 1 inner, second has 0
+        // Then mutate second inner_len to MAX so total becomes MAX + 1 -> error
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: vec![],
+            },
+            stack_height: 1,
+        };
+
+        let mut tx = create_minimal_processed_transaction();
+        tx.inner_instructions_list = vec![vec![ii.clone()], vec![]];
+        let mut bytes = tx.to_vec().unwrap();
+
+        // Walk to outer_len
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let mut cursor = rollback_size;
+        let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8 + rt_len;
+        // btc flag
+        cursor += 1;
+        // logs
+        let logs_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8;
+        for _ in 0..logs_len {
+            let l = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+            cursor += 8 + l;
+        }
+        // status (Queued => 0)
+        // If Failed, we'd need to skip message; our minimal tx uses Processed by default
+        cursor += 1;
+
+        // outer_len
+        let outer_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        assert_eq!(outer_len, 2);
+        cursor += 8;
+
+        // inner_len[0]
+        let first_inner_len_pos = cursor;
+        let first_inner_len = u64::from_le_bytes(
+            bytes[first_inner_len_pos..first_inner_len_pos + 8]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        assert_eq!(first_inner_len, 1);
+        cursor += 8;
+
+        // Skip body of first outer: 1 byte stack + serialized instruction
+        let body_len = 1 + ii.instruction.serialize().len();
+        cursor += body_len;
+
+        // Now at second inner_len field; set it to MAX to cause cumulative overflow
+        let excessive = super::MAX_INNER_INSTRUCTIONS_TOTAL as u64;
+        bytes[cursor..cursor + 8].copy_from_slice(&excessive.to_le_bytes());
+
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(matches!(
+            res,
+            Err(ParseProcessedTransactionError::TooManyInnerInstructions)
+        ));
+    }
+
+    #[test]
+    fn test_too_many_inner_instructions_single_outer_returns_error() {
+        let mut tx = create_minimal_processed_transaction();
+        tx.inner_instructions_list = vec![vec![]];
+        let mut bytes = tx.to_vec().unwrap();
+
+        // Walk to outer_len
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let mut cursor = rollback_size;
+        let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8 + rt_len;
+        // btc flag
+        cursor += 1;
+        // logs
+        let logs_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8;
+        for _ in 0..logs_len {
+            let l = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+            cursor += 8 + l;
+        }
+        // status
+        cursor += 1;
+
+        // outer_len = 1
+        bytes[cursor..cursor + 8].copy_from_slice(&(1u64).to_le_bytes());
+        cursor += 8;
+
+        // inner_len[0] = MAX_INNER_INSTRUCTIONS_TOTAL + 1
+        let excessive_inners = (super::MAX_INNER_INSTRUCTIONS_TOTAL as u64) + 1;
+        bytes[cursor..cursor + 8].copy_from_slice(&excessive_inners.to_le_bytes());
+
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(matches!(
+            res,
+            Err(ParseProcessedTransactionError::TooManyInnerInstructions)
+        ));
+    }
+
+    #[test]
+    fn test_too_many_inner_instructions_cumulative_returns_error() {
+        let mut tx = create_minimal_processed_transaction();
+        tx.inner_instructions_list = vec![vec![], vec![]];
+        let mut bytes = tx.to_vec().unwrap();
+
+        // Walk to outer_len
+        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
+        let mut cursor = rollback_size;
+        let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8 + rt_len;
+        // btc flag
+        cursor += 1;
+        // logs
+        let logs_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+        cursor += 8;
+        for _ in 0..logs_len {
+            let l = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
+            cursor += 8 + l;
+        }
+        // status
+        cursor += 1;
+
+        // outer_len = 2
+        bytes[cursor..cursor + 8].copy_from_slice(&(2u64).to_le_bytes());
+        cursor += 8;
+
+        // inner_len[0] = MAX_INNER_INSTRUCTIONS_TOTAL + 1 -> triggers error early
+        let excessive = (super::MAX_INNER_INSTRUCTIONS_TOTAL as u64) + 1;
+        bytes[cursor..cursor + 8].copy_from_slice(&excessive.to_le_bytes());
+
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(matches!(
+            res,
+            Err(ParseProcessedTransactionError::TooManyInnerInstructions)
+        ));
+    }
+
+    #[test]
+    fn test_compute_units_consumed_edge_cases() {
+        let mut tx = create_minimal_processed_transaction();
+        // No logs
+        tx.logs = vec![];
+        assert_eq!(tx.compute_units_consumed(), None);
+
+        // Only one log
+        tx.logs = vec!["only one".to_string()];
+        assert_eq!(tx.compute_units_consumed(), None);
+
+        // Second last too short
+        tx.logs = vec!["a".to_string(), "short".to_string()];
+        assert_eq!(tx.compute_units_consumed(), None);
+
+        // Properly formatted second last log: take slice 82..86
+        let mut mid = "x".repeat(82);
+        mid.push_str("1234");
+        mid.push_str("rest");
+        tx.logs = vec!["first".to_string(), mid.clone(), "last".to_string()];
+        assert_eq!(tx.compute_units_consumed(), Some("1234"));
+    }
+
+    #[test]
+    fn test_corrupt_accounts_length_in_instruction_returns_error() {
+        let mut tx = create_minimal_processed_transaction();
+        let ii = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: 42,
+                accounts: vec![1, 2, 3, 4],
+                data: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            },
+            stack_height: 9,
+        };
+        tx.inner_instructions_list = vec![vec![ii.clone()]];
+
+        let mut bytes = tx.to_vec().unwrap();
+
+        // Find the serialized instruction bytes inside the buffer
+        let needle = ii.instruction.serialize();
+        if let Some(pos) = bytes
+            .windows(needle.len())
+            .position(|w| w == needle.as_slice())
+        {
+            // accounts length is at offset 1 of the instruction encoding, corrupt it to an impossible large value
+            let accounts_len_offset = pos + 1;
+            bytes[accounts_len_offset..accounts_len_offset + 4]
+                .copy_from_slice(&(u32::MAX).to_le_bytes());
+        } else {
+            panic!("could not locate instruction bytes inside serialized transaction");
+        }
+
+        let res = ProcessedTransaction::from_vec(&bytes);
+        assert!(res.is_err());
+    }
+
+    #[test]
     fn test_empty_log_messages() {
         let mut processed_transaction = create_minimal_processed_transaction();
 
@@ -740,17 +1367,34 @@ mod tests {
         // Ensure the runtime transaction is within its limit
         assert!(runtime_transaction.check_tx_size_limit().is_ok());
 
-        let log_entry_overhead = 8;
-        let num_logs =
-            super::MAX_LOG_MESSAGES_LEN / (super::LOG_MESSAGES_BYTES_LIMIT + log_entry_overhead);
-        let mut logs: Vec<String> = (0..num_logs)
-            .map(|_| "X".repeat(super::LOG_MESSAGES_BYTES_LIMIT))
-            .collect();
-        let remaining_len = super::MAX_LOG_MESSAGES_LEN
-            - num_logs * (super::LOG_MESSAGES_BYTES_LIMIT + log_entry_overhead);
-        if remaining_len > log_entry_overhead {
-            logs.push("X".repeat(remaining_len - log_entry_overhead));
+        let n = super::MAX_LOG_MESSAGES_COUNT;
+        let base = super::MAX_LOG_MESSAGES_LEN / n; // floor
+        let rem = super::MAX_LOG_MESSAGES_LEN % n; // remainder
+        assert!(base <= super::LOG_MESSAGES_BYTES_LIMIT);
+        let mut logs: Vec<String> = Vec::with_capacity(n);
+        for i in 0..n {
+            let len = base + if i < rem { 1 } else { 0 };
+            logs.push("X".repeat(len));
         }
+
+        // Build maximum-sized inner instructions list
+        let max_accounts: Vec<u8> = (0..=254).collect(); // 255 accounts
+        let max_data: Vec<u8> = vec![0xAB; super::MAX_CPI_INSTRUCTION_SIZE];
+        let max_inner = InnerInstruction {
+            instruction: SanitizedInstruction {
+                program_id_index: u8::MAX,
+                accounts: max_accounts,
+                data: max_data,
+            },
+            stack_height: u8::MAX,
+        };
+
+        // Outer length = MAX_INSTRUCTION_COUNT_PER_TRANSACTION
+        // Total inners = MAX_INNER_INSTRUCTIONS_TOTAL (1 per outer across 255 outers)
+        let inner_instructions_list: Vec<Vec<InnerInstruction>> = (0
+            ..arch_program::sanitized::MAX_INSTRUCTION_COUNT_PER_TRANSACTION)
+            .map(|_| vec![max_inner.clone()])
+            .collect();
 
         let processed_transaction = ProcessedTransaction {
             runtime_transaction: runtime_transaction.clone(),
@@ -760,6 +1404,7 @@ mod tests {
             rollback_status: RollbackStatus::Rolledback(
                 "X".repeat(ROLLBACK_MESSAGE_BUFFER_SIZE - 9),
             ),
+            inner_instructions_list,
         };
 
         let processed_transaction_serialized_len = processed_transaction.to_vec().unwrap();
@@ -775,7 +1420,7 @@ mod tests {
 
         assert!(
             processed_transaction_serialized_len.len()
-                <= ProcessedTransaction::max_serialized_size()
+                == ProcessedTransaction::max_serialized_size()
         );
     }
 

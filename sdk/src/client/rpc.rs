@@ -740,6 +740,7 @@ mod tests {
             bitcoin_txid: None,
             logs: Vec::new(),
             rollback_status: RollbackStatus::NotRolledback,
+            inner_instructions_list: vec![],
         };
         assert!(is_transaction_finalized(&processed_tx));
 
@@ -749,6 +750,7 @@ mod tests {
             bitcoin_txid: None,
             logs: Vec::new(),
             rollback_status: RollbackStatus::NotRolledback,
+            inner_instructions_list: vec![],
         };
         assert!(is_transaction_finalized(&failed_tx));
 
@@ -758,6 +760,7 @@ mod tests {
             bitcoin_txid: None,
             logs: Vec::new(),
             rollback_status: RollbackStatus::NotRolledback,
+            inner_instructions_list: vec![],
         };
         assert!(!is_transaction_finalized(&queued_tx));
     }
@@ -908,6 +911,7 @@ mod tests {
             bitcoin_txid: None,
             logs: vec!["Log entry 1".to_string(), "Log entry 2".to_string()],
             rollback_status: RollbackStatus::NotRolledback,
+            inner_instructions_list: vec![],
         };
 
         let mock = mock_rpc_response_with_params(

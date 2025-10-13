@@ -525,6 +525,14 @@ impl SanitizedInstruction {
             cursor, // Return total bytes consumed
         ))
     }
+
+    pub fn new_from_raw_parts(program_id_index: u8, data: Vec<u8>, accounts: Vec<u8>) -> Self {
+        Self {
+            program_id_index,
+            accounts,
+            data,
+        }
+    }
 }
 
 #[cfg(test)]
