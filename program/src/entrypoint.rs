@@ -187,6 +187,36 @@ macro_rules! custom_heap_default {
 }
 
 #[macro_export]
+macro_rules! custom_heap {
+    ($len:expr) => {
+        #[global_allocator]
+        static A: $crate::entrypoint::BumpAllocator = $crate::entrypoint::BumpAllocator {
+            start: $crate::entrypoint::HEAP_START_ADDRESS as usize,
+            len: $len,
+        };
+    };
+}
+
+#[macro_export]
+macro_rules! entrypoint_with_heap {
+    ($process_instruction:ident, $heap_len:expr) => {
+        /// # Safety
+        #[no_mangle]
+        pub unsafe extern "C" fn entrypoint(input: *mut u8) -> u64 {
+            use std::collections::HashMap;
+            let (program_id, utxos, instruction_data) =
+                unsafe { $crate::entrypoint::deserialize(input) };
+            match $process_instruction(&program_id, &utxos, &instruction_data) {
+                Ok(()) => $crate::entrypoint::SUCCESS,
+                Err(error) => error.into(),
+            }
+        }
+        $crate::custom_heap!($heap_len);
+        $crate::custom_panic_default!();
+    };
+}
+
+#[macro_export]
 macro_rules! custom_panic_default {
     () => {
         #[no_mangle]
