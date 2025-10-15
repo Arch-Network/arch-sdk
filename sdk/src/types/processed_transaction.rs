@@ -186,7 +186,7 @@ pub struct ProcessedTransaction {
     pub inner_instructions_list: InnerInstructionsList,
 }
 
-const ROLLBACK_MESSAGE_BUFFER_SIZE: usize = 1033;
+pub const ROLLBACK_MESSAGE_BUFFER_SIZE: usize = 1033;
 const LOG_MESSAGES_BYTES_LIMIT: usize = 255;
 pub const MAX_LOG_MESSAGES_COUNT: usize = 400;
 pub const MAX_LOG_MESSAGES_LEN: usize = 10_000 + 20; // adding extra 20 to the logs length field
