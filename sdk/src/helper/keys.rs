@@ -3,7 +3,7 @@ use arch_program::pubkey::Pubkey;
 
 use bitcoin::{
     address::Address,
-    key::UntweakedKeypair,
+    key::{Parity, UntweakedKeypair},
     secp256k1::{Secp256k1, SecretKey},
     XOnlyPublicKey,
 };
@@ -56,4 +56,8 @@ pub fn with_secret_key_file(file_path: &str) -> Result<(UntweakedKeypair, Pubkey
     let pubkey = Pubkey::from_slice(&XOnlyPublicKey::from_keypair(&keypair).0.serialize());
 
     Ok((keypair, pubkey))
+}
+
+pub fn is_parity_even(key_pair: &UntweakedKeypair) -> bool {
+    key_pair.x_only_public_key().1 == Parity::Even
 }

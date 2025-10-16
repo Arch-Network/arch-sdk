@@ -4,22 +4,29 @@ use crate::pubkey::Pubkey;
 
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct VoteInit {
-    pub node_pubkey: Pubkey,
-    pub authority: Pubkey,
-    pub commission: u8,
+    node_pubkey: Pubkey,
+    node_pubkey_parity_even: bool,
+    authority: Pubkey,
+    commission: u8,
 }
 
 impl VoteInit {
-    pub fn new(node_pubkey: Pubkey, authority: Pubkey, commission: u8) -> Self {
+    pub fn new(
+        node_pubkey: Pubkey,
+        node_pubkey_parity_even: bool,
+        authority: Pubkey,
+        commission: u8,
+    ) -> Self {
         Self {
             node_pubkey,
+            node_pubkey_parity_even,
             authority,
             commission,
         }
     }
 
     pub const fn size_of() -> usize {
-        32 + 32 + 32 + 1
+        32 + 1 + 32 + 32 + 1
     }
 }
 
@@ -27,6 +34,9 @@ impl VoteInit {
 pub struct VoteState {
     /// the node that votes in this account
     pub node_pubkey: Pubkey,
+
+    /// If the public key parity if even/odd.
+    pub node_pubkey_parity_even: bool,
 
     /// the signer for withdrawals
     pub authority: Pubkey,
@@ -40,13 +50,14 @@ impl VoteState {
     pub fn new(vote_init: &VoteInit) -> Self {
         Self {
             node_pubkey: vote_init.node_pubkey,
+            node_pubkey_parity_even: vote_init.node_pubkey_parity_even,
             authority: vote_init.authority,
             commission: vote_init.commission,
         }
     }
 
     pub const fn size_of_new() -> usize {
-        32 + 32 + 1
+        32 + 1 + 32 + 1
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -55,6 +66,18 @@ impl VoteState {
 
     pub fn deserialize(data: &[u8]) -> Self {
         bincode::deserialize(data).unwrap()
+    }
+
+    /// Returns the node public key in compressed format.
+    pub fn node_pubkey_serialized(&self) -> [u8; 33] {
+        let mut ret = [0_u8; 33];
+        if self.node_pubkey_parity_even {
+            ret[0] = 0x02;
+        } else {
+            ret[0] = 0x03;
+        }
+        ret[1..].copy_from_slice(&self.node_pubkey.serialize()[..]);
+        ret
     }
 }
 
