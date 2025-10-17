@@ -359,6 +359,17 @@ pub enum TokenInstruction<'a> {
         /// The new account's owner/multisignature.
         owner: Pubkey,
     },
+    /// Given a wrapped / native token account (a token account containing SOL)
+    /// updates its amount field based on the account's underlying `lamports`.
+    /// This is useful if a non-wrapped SOL account uses
+    /// `system_instruction::transfer` to move lamports to a wrapped token
+    /// account, and needs to have its token `amount` field updated.
+    ///
+    /// Accounts expected by this instruction:
+    ///
+    ///   0. `[writable]`  The native token account to sync with its underlying
+    ///      lamports.
+    SyncNative,
     /// Like [`InitializeAccount2`], but does not require the Rent sysvar to be
     /// provided
     ///
@@ -528,11 +539,12 @@ impl<'a> TokenInstruction<'a> {
                 let (owner, _rest) = Self::unpack_pubkey(rest)?;
                 Self::InitializeAccount2 { owner }
             }
-            17 => {
+            17 => Self::SyncNative,
+            18 => {
                 let (owner, _rest) = Self::unpack_pubkey(rest)?;
                 Self::InitializeAccount3 { owner }
             }
-            18 => {
+            19 => {
                 let (&decimals, rest) = rest.split_first().ok_or(InvalidInstruction)?;
                 let (mint_authority, rest) = Self::unpack_pubkey(rest)?;
                 let (freeze_authority, _rest) = Self::unpack_pubkey_option(rest)?;
@@ -542,17 +554,17 @@ impl<'a> TokenInstruction<'a> {
                     decimals,
                 }
             }
-            19 => Self::GetAccountDataSize,
-            20 => Self::InitializeImmutableOwner,
-            21 => {
+            20 => Self::GetAccountDataSize,
+            21 => Self::InitializeImmutableOwner,
+            22 => {
                 let (amount, _rest) = Self::unpack_u64(rest)?;
                 Self::AmountToUiAmount { amount }
             }
-            22 => {
+            23 => {
                 let ui_amount = std::str::from_utf8(rest).map_err(|_| InvalidInstruction)?;
                 Self::UiAmountToAmount { ui_amount }
             }
-            23 => {
+            24 => {
                 let (txid, input_to_sign) = Self::unpack_txid(rest)?;
                 let input_to_sign = InputToSign::from_slice(input_to_sign)?;
                 Self::Anchor {
@@ -636,8 +648,11 @@ impl<'a> TokenInstruction<'a> {
                 buf.push(16);
                 buf.extend_from_slice(owner.as_ref());
             }
-            &Self::InitializeAccount3 { owner } => {
+            &Self::SyncNative => {
                 buf.push(17);
+            }
+            &Self::InitializeAccount3 { owner } => {
+                buf.push(18);
                 buf.extend_from_slice(owner.as_ref());
             }
             &Self::InitializeMint2 {
@@ -645,30 +660,30 @@ impl<'a> TokenInstruction<'a> {
                 ref freeze_authority,
                 decimals,
             } => {
-                buf.push(18);
+                buf.push(19);
                 buf.push(decimals);
                 buf.extend_from_slice(mint_authority.as_ref());
                 Self::pack_pubkey_option(freeze_authority, &mut buf);
             }
             &Self::GetAccountDataSize => {
-                buf.push(19);
-            }
-            &Self::InitializeImmutableOwner => {
                 buf.push(20);
             }
-            &Self::AmountToUiAmount { amount } => {
+            &Self::InitializeImmutableOwner => {
                 buf.push(21);
+            }
+            &Self::AmountToUiAmount { amount } => {
+                buf.push(22);
                 buf.extend_from_slice(&amount.to_le_bytes());
             }
             Self::UiAmountToAmount { ui_amount } => {
-                buf.push(22);
+                buf.push(23);
                 buf.extend_from_slice(ui_amount.as_bytes());
             }
             Self::Anchor {
                 txid,
                 input_to_sign,
             } => {
-                buf.push(23);
+                buf.push(24);
                 buf.extend_from_slice(txid);
                 buf.extend_from_slice(&input_to_sign.serialise());
             }
@@ -1321,6 +1336,20 @@ pub fn burn_checked(
     })
 }
 
+/// Creates a `SyncNative` instruction
+pub fn sync_native(
+    token_program_id: &Pubkey,
+    account_pubkey: &Pubkey,
+) -> Result<Instruction, ProgramError> {
+    check_program_account(token_program_id)?;
+
+    Ok(Instruction {
+        program_id: *token_program_id,
+        accounts: vec![AccountMeta::new(*account_pubkey, false)],
+        data: TokenInstruction::SyncNative.pack(),
+    })
+}
+
 /// Creates a `GetAccountDataSize` instruction
 pub fn get_account_data_size(
     token_program_id: &Pubkey,
@@ -1573,11 +1602,18 @@ mod test {
         let unpacked = TokenInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
 
+        let check = TokenInstruction::SyncNative;
+        let packed = check.pack();
+        let expect = vec![17u8];
+        assert_eq!(packed, expect);
+        let unpacked = TokenInstruction::unpack(&expect).unwrap();
+        assert_eq!(unpacked, check);
+
         let check = TokenInstruction::InitializeAccount3 {
             owner: Pubkey::from_slice(&[2u8; 32]),
         };
         let packed = check.pack();
-        let mut expect = vec![17u8];
+        let mut expect = vec![18u8];
         expect.extend_from_slice(&[2u8; 32]);
         assert_eq!(packed, expect);
         let unpacked = TokenInstruction::unpack(&expect).unwrap();
@@ -1589,7 +1625,7 @@ mod test {
             freeze_authority: COption::None,
         };
         let packed = check.pack();
-        let mut expect = Vec::from([18u8, 2]);
+        let mut expect = Vec::from([19u8, 2]);
         expect.extend_from_slice(&[1u8; 32]);
         expect.extend_from_slice(&[0]);
         assert_eq!(packed, expect);
@@ -1602,7 +1638,7 @@ mod test {
             freeze_authority: COption::Some(Pubkey::from_slice(&[3u8; 32])),
         };
         let packed = check.pack();
-        let mut expect = vec![18u8, 2];
+        let mut expect = vec![19u8, 2];
         expect.extend_from_slice(&[2u8; 32]);
         expect.extend_from_slice(&[1]);
         expect.extend_from_slice(&[3u8; 32]);
@@ -1612,28 +1648,28 @@ mod test {
 
         let check = TokenInstruction::GetAccountDataSize;
         let packed = check.pack();
-        let expect = vec![19u8];
+        let expect = vec![20u8];
         assert_eq!(packed, expect);
         let unpacked = TokenInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
 
         let check = TokenInstruction::InitializeImmutableOwner;
         let packed = check.pack();
-        let expect = vec![20u8];
+        let expect = vec![21u8];
         assert_eq!(packed, expect);
         let unpacked = TokenInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
 
         let check = TokenInstruction::AmountToUiAmount { amount: 42 };
         let packed = check.pack();
-        let expect = vec![21u8, 42, 0, 0, 0, 0, 0, 0, 0];
+        let expect = vec![22u8, 42, 0, 0, 0, 0, 0, 0, 0];
         assert_eq!(packed, expect);
         let unpacked = TokenInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
 
         let check = TokenInstruction::UiAmountToAmount { ui_amount: "0.42" };
         let packed = check.pack();
-        let expect = vec![22u8, 48, 46, 52, 50];
+        let expect = vec![23u8, 48, 46, 52, 50];
         assert_eq!(packed, expect);
         let unpacked = TokenInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
@@ -1646,7 +1682,7 @@ mod test {
             },
         };
         let packed = check.pack();
-        let mut expect = vec![23u8];
+        let mut expect = vec![24u8];
         expect.extend_from_slice(&[1u8; 32]);
         // expect.extend_from_slice(&[0]);
         expect.extend_from_slice(&[0, 0, 0, 0]);

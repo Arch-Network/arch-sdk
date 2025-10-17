@@ -7,6 +7,7 @@
 
 pub mod error;
 pub mod instruction;
+pub mod native_mint;
 pub mod processor;
 pub mod state;
 
@@ -91,8 +92,8 @@ pub fn id() -> Pubkey {
 pub const ID: Pubkey = Pubkey::new_from_array(*b"AplToken111111111111111111111111");
 
 /// Checks that the supplied program ID is the correct one for APL-token
-pub fn check_program_account(spl_token_program_id: &Pubkey) -> ProgramResult {
-    if spl_token_program_id != &id() {
+pub fn check_program_account(apl_token_program_id: &Pubkey) -> ProgramResult {
+    if apl_token_program_id != &id() {
         return Err(ProgramError::IncorrectProgramId);
     }
     Ok(())

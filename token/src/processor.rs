@@ -5,7 +5,7 @@ use {
         amount_to_ui_amount_string_trimmed,
         error::TokenError,
         instruction::{is_valid_signer_index, AuthorityType, TokenInstruction, MAX_SIGNERS},
-        state::{Account, AccountState, Mint, Multisig},
+        state::{is_rent_exempt_account, Account, AccountState, Mint, Multisig},
         try_ui_amount_into_amount,
     },
     arch_program::{
@@ -38,6 +38,10 @@ impl Processor {
         let mut mint = Mint::unpack_unchecked(&mint_info.data.borrow())?;
         if mint.is_initialized {
             return Err(TokenError::AlreadyInUse.into());
+        }
+
+        if !is_rent_exempt_account(mint_info.lamports(), mint_info.data_len()) {
+            return Err(TokenError::NotRentExempt.into());
         }
 
         mint.mint_authority = COption::Some(mint_authority);
@@ -90,9 +94,16 @@ impl Processor {
             return Err(TokenError::AlreadyInUse.into());
         }
 
-        Self::check_account_owner(program_id, mint_info)?;
-        let _ = Mint::unpack(&mint_info.data.borrow_mut())
-            .map_err(|_| Into::<ProgramError>::into(TokenError::InvalidMint))?;
+        if !is_rent_exempt_account(new_account_info.lamports(), new_account_info.data_len()) {
+            return Err(TokenError::NotRentExempt.into());
+        }
+
+        let is_native_mint = Self::cmp_pubkeys(mint_info.key, &crate::native_mint::id());
+        if !is_native_mint {
+            Self::check_account_owner(program_id, mint_info)?;
+            let _ = Mint::unpack(&mint_info.data.borrow_mut())
+                .map_err(|_| Into::<ProgramError>::into(TokenError::InvalidMint))?;
+        }
 
         account.mint = *mint_info.key;
         account.owner = *owner;
@@ -100,6 +111,17 @@ impl Processor {
         account.delegate = COption::None;
         account.delegated_amount = 0;
         account.state = AccountState::Initialized;
+        if is_native_mint {
+            let rent_exempt_reserve = arch_program::rent::minimum_rent(new_account_info.data_len());
+            account.is_native = COption::Some(rent_exempt_reserve);
+            account.amount = new_account_info
+                .lamports()
+                .checked_sub(rent_exempt_reserve)
+                .ok_or(TokenError::Overflow)?;
+        } else {
+            account.is_native = COption::None;
+            account.amount = 0;
+        };
 
         Account::pack(account, &mut new_account_info.data.borrow_mut())?;
 
@@ -142,6 +164,9 @@ impl Processor {
         let mut multisig = Multisig::unpack_unchecked(&multisig_info.data.borrow())?;
         if multisig.is_initialized {
             return Err(TokenError::AlreadyInUse.into());
+        }
+        if !is_rent_exempt_account(multisig_info.lamports(), multisig_info.data_len()) {
+            return Err(TokenError::NotRentExempt.into());
         }
 
         let signer_infos = account_info_iter.as_slice();
@@ -264,6 +289,18 @@ impl Processor {
             .amount
             .checked_add(amount)
             .ok_or(TokenError::Overflow)?;
+
+        if source_account.is_native() {
+            let source_starting_lamports = source_account_info.lamports();
+            **source_account_info.lamports.borrow_mut() = source_starting_lamports
+                .checked_sub(amount)
+                .ok_or(TokenError::Overflow)?;
+
+            let destination_starting_lamports = destination_account_info.lamports();
+            **destination_account_info.lamports.borrow_mut() = destination_starting_lamports
+                .checked_add(amount)
+                .ok_or(TokenError::Overflow)?;
+        }
 
         Account::pack(source_account, &mut source_account_info.data.borrow_mut())?;
         Account::pack(
@@ -464,6 +501,10 @@ impl Processor {
             return Err(TokenError::AccountFrozen.into());
         }
 
+        if destination_account.is_native() {
+            return Err(TokenError::NativeNotSupported.into());
+        }
+
         if !Self::cmp_pubkeys(mint_info.key, &destination_account.mint) {
             return Err(TokenError::MintMismatch.into());
         }
@@ -527,6 +568,9 @@ impl Processor {
 
         if source_account.is_frozen() {
             return Err(TokenError::AccountFrozen.into());
+        }
+        if source_account.is_native() {
+            return Err(TokenError::NativeNotSupported.into());
         }
         if source_account.amount < amount {
             return Err(TokenError::InsufficientFunds.into());
@@ -603,7 +647,7 @@ impl Processor {
         }
 
         let source_account = Account::unpack(&source_account_info.data.borrow())?;
-        if source_account.amount != 0 {
+        if !source_account.is_native() && source_account.amount != 0 {
             return Err(TokenError::NonNativeHasBalance.into());
         }
 
@@ -648,6 +692,9 @@ impl Processor {
         if freeze && source_account.is_frozen() || !freeze && !source_account.is_frozen() {
             return Err(TokenError::InvalidState.into());
         }
+        if source_account.is_native() {
+            return Err(TokenError::NativeNotSupported.into());
+        }
         if !Self::cmp_pubkeys(mint_info.key, &source_account.mint) {
             return Err(TokenError::MintMismatch.into());
         }
@@ -671,6 +718,31 @@ impl Processor {
 
         Account::pack(source_account, &mut source_account_info.data.borrow_mut())?;
 
+        Ok(())
+    }
+
+    /// Processes a [`SyncNative`](enum.TokenInstruction.html) instruction
+    pub fn process_sync_native(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let native_account_info = next_account_info(account_info_iter)?;
+        Self::check_account_owner(program_id, native_account_info)?;
+
+        let mut native_account = Account::unpack(&native_account_info.data.borrow())?;
+
+        if let COption::Some(rent_exempt_reserve) = native_account.is_native {
+            let new_amount = native_account_info
+                .lamports()
+                .checked_sub(rent_exempt_reserve)
+                .ok_or(TokenError::Overflow)?;
+            if new_amount < native_account.amount {
+                return Err(TokenError::InvalidState.into());
+            }
+            native_account.amount = new_amount;
+        } else {
+            return Err(TokenError::NonNativeNotSupported.into());
+        }
+
+        Account::pack(native_account, &mut native_account_info.data.borrow_mut())?;
         Ok(())
     }
 
@@ -699,7 +771,7 @@ impl Processor {
         if account.is_initialized() {
             return Err(TokenError::AlreadyInUse.into());
         }
-        msg!("Please upgrade to SPL Token 2022 for immutable owner support");
+        msg!("Not supported");
         Ok(())
     }
 
@@ -861,6 +933,10 @@ impl Processor {
             TokenInstruction::BurnChecked { amount, decimals } => {
                 msg!("Instruction: BurnChecked");
                 Self::process_burn(program_id, accounts, amount, Some(decimals))
+            }
+            TokenInstruction::SyncNative => {
+                msg!("Instruction: SyncNative");
+                Self::process_sync_native(program_id, accounts)
             }
             TokenInstruction::GetAccountDataSize => {
                 msg!("Instruction: GetAccountDataSize");
