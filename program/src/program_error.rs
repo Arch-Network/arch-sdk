@@ -84,8 +84,6 @@ pub enum ProgramError {
     AccountNotAnchored,
     #[error("Not enough compute units available to complete the instruction")]
     NotEnoughComputeUnits,
-    #[error("Invalid input to sign type")]
-    InvalidInputToSignType,
     #[error("Insufficient data length")]
     InsufficientDataLength,
     #[error("Incorrect length")]
@@ -159,7 +157,6 @@ impl PrintProgramError for ProgramError {
             Self::ExecutableLamportChange => msg!("Error: ExecutableLamportChange"),
             Self::AccountNotAnchored => msg!("Error: AccountNotAnchored"),
             Self::NotEnoughComputeUnits => msg!("Error: NotEnoughComputeUnits"),
-            Self::InvalidInputToSignType => msg!("Error: InvalidInputToSignType"),
             Self::InsufficientDataLength => msg!("Error: InsufficientDataLength"),
             Self::IncorrectLength => msg!("Error: IncorrectLength"),
             Self::TranscriptVerificationFailed => msg!("Error: TranscriptVerificationFailed"),
@@ -213,7 +210,6 @@ pub const READONLY_LAMPORT_CHANGE: u64 = to_builtin!(30);
 pub const EXECUTABLE_LAMPORT_CHANGE: u64 = to_builtin!(31);
 pub const ACCOUNT_NOT_ANCHORED: u64 = to_builtin!(32);
 pub const NOT_ENOUGH_COMPUTE_UNITS: u64 = to_builtin!(33);
-pub const INVALID_INPUT_TO_SIGN_TYPE: u64 = to_builtin!(34);
 pub const INSUFFICIENT_DATA_LENGTH: u64 = to_builtin!(35);
 pub const INCORRECT_LENGTH: u64 = to_builtin!(36);
 pub const TRANSCRIPT_VERIFICATION_FAILED: u64 = to_builtin!(37);
@@ -267,7 +263,6 @@ impl From<ProgramError> for u64 {
             ProgramError::ExecutableLamportChange => EXECUTABLE_LAMPORT_CHANGE,
             ProgramError::AccountNotAnchored => ACCOUNT_NOT_ANCHORED,
             ProgramError::NotEnoughComputeUnits => NOT_ENOUGH_COMPUTE_UNITS,
-            ProgramError::InvalidInputToSignType => INVALID_INPUT_TO_SIGN_TYPE,
             ProgramError::InsufficientDataLength => INSUFFICIENT_DATA_LENGTH,
             ProgramError::IncorrectLength => INCORRECT_LENGTH,
             ProgramError::TranscriptVerificationFailed => TRANSCRIPT_VERIFICATION_FAILED,
@@ -319,7 +314,6 @@ impl From<u64> for ProgramError {
             FROM_HEX_ERROR => Self::FromHexError,
             ACCOUNT_NOT_ANCHORED => Self::AccountNotAnchored,
             NOT_ENOUGH_COMPUTE_UNITS => Self::NotEnoughComputeUnits,
-            INVALID_INPUT_TO_SIGN_TYPE => Self::InvalidInputToSignType,
             INSUFFICIENT_DATA_LENGTH => Self::InsufficientDataLength,
             INCORRECT_LENGTH => Self::IncorrectLength,
             TRANSCRIPT_VERIFICATION_FAILED => Self::TranscriptVerificationFailed,
