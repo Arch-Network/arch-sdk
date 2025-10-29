@@ -21,6 +21,7 @@ const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
 const SEND_TRANSACTION: &str = "send_transaction";
 const SEND_TRANSACTIONS: &str = "send_transactions";
 const GET_BLOCK: &str = "get_block";
+const GET_FULL_BLOCK_WITH_TXIDS: &str = "get_full_block_with_txids";
 const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
 const GET_BLOCK_COUNT: &str = "get_block_count";
 const GET_BLOCK_HASH: &str = "get_block_hash";
@@ -288,6 +289,21 @@ impl AsyncArchRpcClient {
         }
     }
 
+    /// Get full block with txids by hash
+    pub async fn get_full_block_with_txids(
+        &self,
+        block_hash: &str,
+    ) -> Result<(Block, Vec<ProcessedTransaction>)> {
+        match self
+            .call_method_with_params(GET_FULL_BLOCK_WITH_TXIDS, block_hash)
+            .await?
+        {
+            Some(info) => Ok(info),
+            None => Err(ArchError::RpcRequestFailed(
+                "get_full_block_with_txids returned no result".to_string(),
+            )),
+        }
+    }
     /// Get block by height with signatures only
     pub async fn get_block_by_height(&self, block_height: u64) -> Result<Option<Block>> {
         // For signatures only, we can just pass the block hash directly

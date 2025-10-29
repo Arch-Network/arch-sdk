@@ -23,6 +23,7 @@ const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
 const SEND_TRANSACTION: &str = "send_transaction";
 const SEND_TRANSACTIONS: &str = "send_transactions";
 const GET_BLOCK: &str = "get_block";
+const GET_FULL_BLOCK_WITH_TXIDS: &str = "GET_FULL_BLOCK_WITH_TXIDS";
 const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
 const GET_BLOCK_COUNT: &str = "get_block_count";
 const GET_BLOCK_HASH: &str = "get_block_hash";
@@ -177,6 +178,20 @@ impl ArchRpcClient {
     /// Get a processed transaction by ID
     pub fn get_processed_transaction(&self, tx_id: &Hash) -> Result<Option<ProcessedTransaction>> {
         self.call_method_with_params(GET_PROCESSED_TRANSACTION, tx_id.to_string())
+    }
+
+    /// Get a block with its transactions by ID
+    pub fn get_full_block_with_txids(
+        &self,
+        block_id: &Hash,
+    ) -> Result<(Block, Vec<ProcessedTransaction>)> {
+        match self.call_method_with_params(GET_FULL_BLOCK_WITH_TXIDS, block_id.to_string())? {
+            Some(info) => Ok(info),
+            None => Err(ArchError::NotFound(format!(
+                "Block with txids not found for block id: {}",
+                block_id
+            ))),
+        }
     }
 
     /// Waits for a transaction to be processed, polling until it reaches "Processed" or "Failed" status
