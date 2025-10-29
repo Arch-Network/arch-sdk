@@ -2,6 +2,8 @@ use arch_program::pubkey::Pubkey;
 use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 
+use crate::client::transport::tcp::TcpClientError;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, thiserror::Error)]
 pub enum ArchError {
     #[error("RPC request failed: {0}")]
@@ -33,6 +35,9 @@ pub enum ArchError {
 
     #[error("Required signer not found for key: {0}")]
     RequiredSignerNotFound(Pubkey),
+
+    #[error("TCP client error: {0}")]
+    TcpClientError(String),
 }
 
 impl From<serde_json::Error> for ArchError {
@@ -68,6 +73,12 @@ impl From<&str> for ArchError {
 impl From<FromHexError> for ArchError {
     fn from(err: FromHexError) -> Self {
         ArchError::FromHexError(err.to_string())
+    }
+}
+
+impl From<TcpClientError> for ArchError {
+    fn from(err: TcpClientError) -> Self {
+        ArchError::TcpClientError(err.to_string())
     }
 }
 

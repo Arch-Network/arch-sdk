@@ -1,5 +1,6 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
+use crate::client::transport::{HttpClient, RpcTransport, TcpClient};
 use crate::{
     sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, Config, FullBlock,
     MAX_TX_BATCH_SIZE, NOT_FOUND_CODE,
@@ -9,6 +10,7 @@ use bitcoin::key::Keypair;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_str, json, Value};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 // Import the appropriate result types
@@ -39,14 +41,26 @@ const CHECK_PRE_ANCHOR_CONFLICT: &str = "check_pre_anchor_conflict";
 #[derive(Clone)]
 pub struct ArchRpcClient {
     pub config: Config,
+    transport: Arc<dyn RpcTransport>,
 }
 
 impl ArchRpcClient {
     /// Create a new ArchRpcClient with the specified URL
     pub fn new(config: &Config) -> Self {
+        let http = HttpClient::new(config.arch_node_url.clone());
         Self {
             config: config.clone(),
+            transport: Arc::new(http),
         }
+    }
+
+    /// Create a new ArchRpcClient with the specified TCP server address.
+    pub fn new_tcp(config: &Config, addr: String) -> Result<Self> {
+        let tcp = TcpClient::new(addr)?;
+        Ok(Self {
+            config: config.clone(),
+            transport: Arc::new(tcp),
+        })
     }
 
     /// Make a raw RPC call with no parameters and parse the result
@@ -507,26 +521,12 @@ impl ArchRpcClient {
     }
 
     fn post(&self, method: &str) -> Result<String> {
-        let client = reqwest::blocking::Client::new();
-        match client
-            .post(&self.config.arch_node_url)
-            .header("content-type", "application/json")
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "id": "curlycurl",
-                "method": method,
-            }))
-            .send()
-        {
-            Ok(res) => match res.text() {
-                Ok(text) => Ok(text),
-                Err(e) => Err(ArchError::NetworkError(format!(
-                    "Failed to read response text: {}",
-                    e
-                ))),
-            },
-            Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
-        }
+        let json = json!({
+            "jsonrpc": "2.0",
+            "id": "curlycurl",
+            "method": method,
+        });
+        self.transport.call(&json)
     }
 
     pub fn post_data<T: Serialize + std::fmt::Debug>(
@@ -534,27 +534,13 @@ impl ArchRpcClient {
         method: &str,
         params: T,
     ) -> Result<String> {
-        let client = reqwest::blocking::Client::new();
-        match client
-            .post(&self.config.arch_node_url)
-            .header("content-type", "application/json")
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "id": "curlycurl",
-                "method": method,
-                "params": params,
-            }))
-            .send()
-        {
-            Ok(res) => match res.text() {
-                Ok(text) => Ok(text),
-                Err(e) => Err(ArchError::NetworkError(format!(
-                    "Failed to get response text: {}",
-                    e
-                ))),
-            },
-            Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
-        }
+        let json = json!({
+            "jsonrpc": "2.0",
+            "id": "curlycurl",
+            "method": method,
+            "params": params,
+        });
+        self.transport.call(&json)
     }
 }
 

@@ -2,6 +2,7 @@ mod async_rpc;
 mod config;
 mod error;
 mod rpc;
+mod transport;
 mod websocket;
 
 pub use async_rpc::*;
