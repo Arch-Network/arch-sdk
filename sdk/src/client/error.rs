@@ -38,6 +38,9 @@ pub enum ArchError {
 
     #[error("TCP client error: {0}")]
     TcpClientError(String),
+
+    #[error("Program error: {0}")]
+    ProgramError(String),
 }
 
 impl From<serde_json::Error> for ArchError {
