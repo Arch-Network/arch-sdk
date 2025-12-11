@@ -45,10 +45,10 @@ pub enum VoteInstruction {
     Initialize(VoteInit),
     Authorize(Pubkey),
     UpdateCommission(u8),
-    InitializeSharedValidatorAccount(Pubkey, Vec<u8>, Vec<Pubkey>),
+    InitializeSharedValidatorAccount(Vec<u8>, Vec<u8>, Vec<Vec<u8>>),
     UpdatePubkeyPackage(Vec<u8>),
-    AddPeerToWhitelist(Pubkey),
-    RemovePeerFromWhitelist(Pubkey),
+    AddPeerToWhitelist(Vec<u8>),
+    RemovePeerFromWhitelist(Vec<u8>),
 }
 
 pub fn initialize(vote_pubkey: &Pubkey, vote_init: &VoteInit) -> Instruction {
@@ -101,16 +101,16 @@ pub fn update_commission(vote_pubkey: &Pubkey, authority: &Pubkey, commission: u
 
 pub fn initialize_shared_validator_account(
     shared_validator_pubkey: &Pubkey,
-    bootnode_pubkey: &Pubkey,
+    bootnode_pubkey: &[u8; 33],
     serialized_pubkey_package: &[u8],
-    whitelist: &[Pubkey],
+    whitelist: &[[u8; 33]],
 ) -> Instruction {
     Instruction::new_with_bincode(
         VOTE_PROGRAM_ID,
         VoteInstruction::InitializeSharedValidatorAccount(
-            *bootnode_pubkey,
+            bootnode_pubkey.to_vec(),
             serialized_pubkey_package.to_vec(),
-            whitelist.to_owned(),
+            whitelist.iter().map(|p| p.to_vec()).collect(),
         ),
         vec![AccountMeta::new(*shared_validator_pubkey, false)],
     )
@@ -129,30 +129,30 @@ pub fn update_pubkey_package(
 
 pub fn add_peer_to_whitelist(
     shared_validator_pubkey: &Pubkey,
-    bootnode_pubkey: &Pubkey,
-    peer_pubkey: Pubkey,
+    bootnode_pubkey: &[u8; 33],
+    peer_pubkey: &[u8; 33],
 ) -> Instruction {
     Instruction::new_with_bincode(
         VOTE_PROGRAM_ID,
-        VoteInstruction::AddPeerToWhitelist(peer_pubkey),
+        VoteInstruction::AddPeerToWhitelist(peer_pubkey.to_vec()),
         vec![
             AccountMeta::new(*shared_validator_pubkey, false),
-            AccountMeta::new(*bootnode_pubkey, true),
+            AccountMeta::new(Pubkey::from_slice(&bootnode_pubkey[1..33]), true),
         ],
     )
 }
 
 pub fn remove_peer_from_whitelist(
     shared_validator_pubkey: &Pubkey,
-    bootnode_pubkey: &Pubkey,
-    peer_pubkey: Pubkey,
+    bootnode_pubkey: &[u8; 33],
+    peer_pubkey: &[u8; 33],
 ) -> Instruction {
     Instruction::new_with_bincode(
         VOTE_PROGRAM_ID,
-        VoteInstruction::RemovePeerFromWhitelist(peer_pubkey),
+        VoteInstruction::RemovePeerFromWhitelist(peer_pubkey.to_vec()),
         vec![
             AccountMeta::new(*shared_validator_pubkey, false),
-            AccountMeta::new(*bootnode_pubkey, true),
+            AccountMeta::new(Pubkey::from_slice(&bootnode_pubkey[1..33]), true),
         ],
     )
 }

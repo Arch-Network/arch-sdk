@@ -4,20 +4,23 @@ use super::program::VOTE_PROGRAM_ID;
 
 pub const VALIDATOR_STATE_SEED_PREFIX: &[u8] = b"validator-state";
 
+/// It would be better to have the bootnode pubkey and whitelist saved as [u8;33] instead of Vec<u8>
+/// However, Serialize can only be derived for slices whose length is <= 32.
+/// A custom serializer would be needed to support this.
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct SharedValidatorState {
     /// The account that will hold the whitelist, we check it against the bootnode input to the validator
-    pub bootnode_pubkey: Pubkey,
+    pub bootnode_pubkey: Vec<u8>,
 
     /// The pubkey package of the network
     pub pubkey_package: Vec<u8>,
 
     /// The whitelist of the network
-    pub whitelist: Vec<Pubkey>,
+    pub whitelist: Vec<Vec<u8>>,
 }
 
 impl SharedValidatorState {
-    pub fn new(bootnode_pubkey: Pubkey, pubkey_package: Vec<u8>, whitelist: Vec<Pubkey>) -> Self {
+    pub fn new(bootnode_pubkey: Vec<u8>, pubkey_package: Vec<u8>, whitelist: Vec<Vec<u8>>) -> Self {
         Self {
             bootnode_pubkey,
             pubkey_package,
