@@ -34,7 +34,6 @@ const GET_BEST_FINALIZED_BLOCK_HASH: &str = "get_best_finalized_block_hash";
 const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
-const START_DKG: &str = "start_dkg";
 const CHECK_PRE_ANCHOR_CONFLICT: &str = "check_pre_anchor_conflict";
 
 /// ArchRpcClient provides a simple interface for making RPC calls to the Arch blockchain
@@ -419,12 +418,6 @@ impl ArchRpcClient {
                 program_id
             ))),
         }
-    }
-
-    /// Start distributed key generation
-    pub fn start_dkg(&self) -> Result<()> {
-        self.call_method_raw(START_DKG)?;
-        Ok(())
     }
 
     pub fn check_pre_anchor_conflict(&self, accounts: Vec<Pubkey>) -> Result<bool> {
@@ -975,18 +968,6 @@ mod tests {
         let result = client.send_transactions(transactions).unwrap();
 
         assert_eq!(result, expected_tx_ids);
-        mock.assert();
-    }
-
-    #[test]
-    fn test_start_dkg() {
-        let mut server = Server::new();
-        let mock = mock_rpc_response(&mut server, START_DKG, json!(null));
-
-        let client = get_test_client(&server);
-        let result = client.start_dkg();
-
-        assert!(result.is_ok());
         mock.assert();
     }
 

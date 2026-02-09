@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde_json::Value;
 use std::io::{Read, Write};
@@ -6,7 +7,7 @@ use std::str::FromStr;
 use std::sync::Mutex;
 
 use crate::client::error::Result;
-use crate::client::transport::RpcTransport;
+use crate::client::transport::{AsyncRpcTransport, RpcTransport};
 
 pub struct TcpClient {
     stream: Mutex<TcpStream>,
@@ -63,6 +64,19 @@ impl TcpClient {
 
 impl RpcTransport for TcpClient {
     fn call(&self, json: &Value) -> Result<String> {
+        let mut stream = self
+            .stream
+            .lock()
+            .map_err(|err| TcpClientError::PoisonedLock(err.to_string()))?;
+        Self::write(&mut stream, &json.to_string())?;
+        let ret: String = Self::read(&mut stream)?;
+        Ok(ret)
+    }
+}
+
+#[async_trait]
+impl AsyncRpcTransport for TcpClient {
+    async fn call(&self, json: &Value) -> Result<String> {
         let mut stream = self
             .stream
             .lock()

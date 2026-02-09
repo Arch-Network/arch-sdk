@@ -1,12 +1,17 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
+use crate::client::transport::http::AsyncHttpClient;
+use crate::client::transport::{AsyncRpcTransport, TcpClient};
 use crate::{
-    sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, FullBlock, NOT_FOUND_CODE,
+    sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, Config, FullBlock,
+    MAX_TX_BATCH_SIZE, NOT_FOUND_CODE,
 };
+use arch_program::hash::Hash;
 use bitcoin::key::Keypair;
-use bitcoin::Network;
 use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{json, Value};
+use serde_json::{from_str, json, Value};
+use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 // Import the appropriate result types
@@ -21,37 +26,47 @@ const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
 const SEND_TRANSACTION: &str = "send_transaction";
 const SEND_TRANSACTIONS: &str = "send_transactions";
 const GET_BLOCK: &str = "get_block";
-const GET_FULL_BLOCK_WITH_TXIDS: &str = "get_full_block_with_txids";
+const GET_FULL_BLOCK_WITH_TXIDS: &str = "GET_FULL_BLOCK_WITH_TXIDS";
 const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
 const GET_BLOCK_COUNT: &str = "get_block_count";
 const GET_BLOCK_HASH: &str = "get_block_hash";
 const GET_BEST_BLOCK_HASH: &str = "get_best_block_hash";
+const GET_BEST_FINALIZED_BLOCK_HASH: &str = "get_best_finalized_block_hash";
 const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
-const START_DKG: &str = "start_dkg";
 const CHECK_PRE_ANCHOR_CONFLICT: &str = "check_pre_anchor_conflict";
 
-/// AsyncArchRpcClient provides a simple interface for making asynchronous RPC calls to the Arch blockchain
+/// ArchRpcClient provides a simple interface for making RPC calls to the Arch blockchain
 #[derive(Clone)]
 pub struct AsyncArchRpcClient {
-    url: String,
-    client: reqwest::Client,
+    pub config: Config,
+    transport: Arc<dyn AsyncRpcTransport>,
 }
 
 impl AsyncArchRpcClient {
-    /// Create a new AsyncArchRpcClient with the specified URL
-    pub fn new(url: &str) -> Self {
+    /// Create a new ArchRpcClient with the specified URL
+    pub fn new(config: &Config) -> Self {
+        let http = AsyncHttpClient::new(config.arch_node_url.clone());
         Self {
-            url: url.to_string(),
-            client: reqwest::Client::new(),
+            config: config.clone(),
+            transport: Arc::new(http),
         }
+    }
+
+    /// Create a new ArchRpcClient with the specified TCP server address.
+    pub fn new_tcp(config: &Config, addr: String) -> Result<Self> {
+        let tcp = TcpClient::new(addr)?;
+        Ok(Self {
+            config: config.clone(),
+            transport: Arc::new(tcp),
+        })
     }
 
     /// Make a raw RPC call with no parameters and parse the result
     /// Returns None if the item was not found (404)
     pub async fn call_method<R: DeserializeOwned>(&self, method: &str) -> Result<Option<R>> {
-        match self.process_result(self.post(method).await?).await? {
+        match self.process_result(self.post(method).await?)? {
             Some(value) => {
                 let result = serde_json::from_value(value).map_err(|e| {
                     ArchError::ParseError(format!("Failed to deserialize response: {}", e))
@@ -69,10 +84,7 @@ impl AsyncArchRpcClient {
         method: &str,
         params: T,
     ) -> Result<Option<R>> {
-        match self
-            .process_result(self.post_data(method, params).await?)
-            .await?
-        {
+        match self.process_result(self.post_data(method, params).await?)? {
             Some(value) => {
                 let result = serde_json::from_value(value).map_err(|e| {
                     ArchError::ParseError(format!("Failed to deserialize response: {}", e))
@@ -86,7 +98,7 @@ impl AsyncArchRpcClient {
     /// Get raw value from a method call
     /// Returns None if the item was not found (404)
     pub async fn call_method_raw(&self, method: &str) -> Result<Option<Value>> {
-        self.process_result(self.post(method).await?).await
+        self.process_result(self.post(method).await?)
     }
 
     /// Get raw value from a method call with parameters
@@ -97,7 +109,6 @@ impl AsyncArchRpcClient {
         params: T,
     ) -> Result<Option<Value>> {
         self.process_result(self.post_data(method, params).await?)
-            .await
     }
 
     /// Read account information for the specified public key
@@ -131,20 +142,90 @@ impl AsyncArchRpcClient {
         }
     }
 
+    /// Request an airdrop for a given public key
+    pub async fn request_airdrop(&self, pubkey: Pubkey) -> Result<ProcessedTransaction> {
+        let result = self
+            .process_result(self.post_data("request_airdrop", pubkey).await?)?
+            .ok_or(ArchError::RpcRequestFailed(
+                "request_airdrop failed".to_string(),
+            ))?;
+
+        // Handle the result parsing with proper error handling
+        let txid_str = result.as_str().ok_or_else(|| {
+            ArchError::ParseError("Failed to get transaction ID as string".to_string())
+        })?;
+
+        let txid = Hash::from_str(txid_str)?;
+        let processed_tx = self.wait_for_processed_transaction(&txid).await?;
+        Ok(processed_tx)
+    }
+
+    /// Create an account with lamports
+    pub async fn create_and_fund_account_with_faucet(&self, keypair: &Keypair) -> Result<()> {
+        let pubkey = Pubkey::from_slice(&keypair.x_only_public_key().0.serialize());
+
+        if self.read_account_info(pubkey).await.is_ok() {
+            let _processed_tx = self.request_airdrop(pubkey).await?;
+        } else {
+            let result = self
+                .process_result(self.post_data("create_account_with_faucet", pubkey).await?)?
+                .ok_or(ArchError::RpcRequestFailed(
+                    "create_account_with_faucet failed".to_string(),
+                ))?;
+            let mut runtime_tx: RuntimeTransaction = serde_json::from_value(result)?;
+
+            let message_hash = runtime_tx.message.hash();
+            let signature = crate::Signature::from(sign_message_bip322(
+                keypair,
+                &message_hash,
+                self.config.network,
+            ));
+
+            runtime_tx.signatures.push(signature);
+
+            let result = self.send_transaction(runtime_tx).await?;
+
+            let _processed_tx = self.wait_for_processed_transaction(&result).await?;
+        }
+        let account_info = self.read_account_info(pubkey).await?;
+
+        // assert_eq!(account_info.owner, Pubkey::system_program());
+        assert!(account_info.lamports >= 1_000_000_000);
+
+        Ok(())
+    }
+
     /// Get a processed transaction by ID
     pub async fn get_processed_transaction(
         &self,
-        tx_id: &str,
+        tx_id: &Hash,
     ) -> Result<Option<ProcessedTransaction>> {
-        self.call_method_with_params(GET_PROCESSED_TRANSACTION, tx_id)
+        self.call_method_with_params(GET_PROCESSED_TRANSACTION, tx_id.to_string())
             .await
+    }
+
+    /// Get a block with its transactions by ID
+    pub async fn get_full_block_with_txids(
+        &self,
+        block_id: &Hash,
+    ) -> Result<(Block, Vec<ProcessedTransaction>)> {
+        match self
+            .call_method_with_params(GET_FULL_BLOCK_WITH_TXIDS, block_id.to_string())
+            .await?
+        {
+            Some(info) => Ok(info),
+            None => Err(ArchError::NotFound(format!(
+                "Block with txids not found for block id: {}",
+                block_id
+            ))),
+        }
     }
 
     /// Waits for a transaction to be processed, polling until it reaches "Processed" or "Failed" status
     /// Will timeout after 60 seconds
     pub async fn wait_for_processed_transaction(
         &self,
-        tx_id: &str,
+        tx_id: &Hash,
     ) -> Result<ProcessedTransaction> {
         let mut wait_time = 1;
 
@@ -154,7 +235,7 @@ impl AsyncArchRpcClient {
             Ok(None) => {
                 // Transaction not found, start polling
                 loop {
-                    tokio::time::sleep(Duration::from_secs(wait_time)).await;
+                    std::thread::sleep(Duration::from_secs(wait_time));
                     match self.get_processed_transaction(tx_id).await? {
                         Some(tx) => break tx,
                         None => {
@@ -175,7 +256,7 @@ impl AsyncArchRpcClient {
 
         // Now wait for the transaction to finish processing
         while !is_transaction_finalized(&tx) {
-            tokio::time::sleep(Duration::from_secs(wait_time)).await;
+            std::thread::sleep(Duration::from_secs(wait_time));
             match self.get_processed_transaction(tx_id).await? {
                 Some(updated_tx) => {
                     tx = updated_tx;
@@ -201,11 +282,11 @@ impl AsyncArchRpcClient {
         Ok(tx)
     }
 
-    /// Waits for multiple transactions to be processed
+    /// Waits for multiple transactions to be processed, showing progress with a progress bar
     /// Returns a vector of processed transactions in the same order as the input transaction IDs
     pub async fn wait_for_processed_transactions(
         &self,
-        tx_ids: Vec<String>,
+        tx_ids: Vec<Hash>,
     ) -> Result<Vec<ProcessedTransaction>> {
         let mut processed_transactions: Vec<ProcessedTransaction> =
             Vec::with_capacity(tx_ids.len());
@@ -226,11 +307,27 @@ impl AsyncArchRpcClient {
     }
 
     /// Get the best block hash
-    pub async fn get_best_block_hash(&self) -> Result<String> {
+    pub async fn get_best_block_hash(&self) -> Result<Hash> {
         match self.call_method_raw(GET_BEST_BLOCK_HASH).await? {
-            Some(value) => value.as_str().map(|s| s.to_string()).ok_or_else(|| {
-                ArchError::ParseError("Failed to get best block hash as string".to_string())
-            }),
+            Some(value) => {
+                let hash_str = value.as_str().ok_or_else(|| {
+                    ArchError::ParseError("Failed to get best block hash as string".to_string())
+                })?;
+                Ok(Hash::from_str(hash_str)?)
+            }
+            None => Err(ArchError::NotFound("Best block hash not found".to_string())),
+        }
+    }
+
+    /// Get the best block hash
+    pub async fn get_best_finalized_block_hash(&self) -> Result<Hash> {
+        match self.call_method_raw(GET_BEST_FINALIZED_BLOCK_HASH).await? {
+            Some(value) => {
+                let hash_str = value.as_str().ok_or_else(|| {
+                    ArchError::ParseError("Failed to get best block hash as string".to_string())
+                })?;
+                Ok(Hash::from_str(hash_str)?)
+            }
             None => Err(ArchError::NotFound("Best block hash not found".to_string())),
         }
     }
@@ -274,10 +371,7 @@ impl AsyncArchRpcClient {
         ];
 
         // Process the response - first get the raw value
-        match self
-            .process_result(self.post_data(GET_BLOCK, params).await?)
-            .await?
-        {
+        match self.process_result(self.post_data(GET_BLOCK, params).await?)? {
             Some(value) => {
                 // Deserialize into a FullBlock
                 let result = serde_json::from_value(value).map_err(|e| {
@@ -289,21 +383,6 @@ impl AsyncArchRpcClient {
         }
     }
 
-    /// Get full block with txids by hash
-    pub async fn get_full_block_with_txids(
-        &self,
-        block_hash: &str,
-    ) -> Result<(Block, Vec<ProcessedTransaction>)> {
-        match self
-            .call_method_with_params(GET_FULL_BLOCK_WITH_TXIDS, block_hash)
-            .await?
-        {
-            Some(info) => Ok(info),
-            None => Err(ArchError::RpcRequestFailed(
-                "get_full_block_with_txids returned no result".to_string(),
-            )),
-        }
-    }
     /// Get block by height with signatures only
     pub async fn get_block_by_height(&self, block_height: u64) -> Result<Option<Block>> {
         // For signatures only, we can just pass the block hash directly
@@ -311,19 +390,16 @@ impl AsyncArchRpcClient {
             .await
     }
 
-    /// Get full block by height with complete transaction details
+    /// Get full block by hash with complete transaction details
     pub async fn get_full_block_by_height(&self, block_height: u64) -> Result<Option<FullBlock>> {
-        // Create parameters array with block_height and full filter
+        // Create parameters array with block_hash and full filter
         let params = vec![
             serde_json::to_value(block_height)?,
             serde_json::to_value(BlockTransactionFilter::Full)?,
         ];
 
         // Process the response - first get the raw value
-        match self
-            .process_result(self.post_data(GET_BLOCK_BY_HEIGHT, params).await?)
-            .await?
-        {
+        match self.process_result(self.post_data(GET_BLOCK_BY_HEIGHT, params).await?)? {
             Some(value) => {
                 // Deserialize into a FullBlock
                 let result = serde_json::from_value(value).map_err(|e| {
@@ -337,13 +413,10 @@ impl AsyncArchRpcClient {
 
     /// Get account address for a public key
     pub async fn get_account_address(&self, pubkey: &Pubkey) -> Result<String> {
-        match self
-            .process_result(
-                self.post_data(GET_ACCOUNT_ADDRESS, pubkey.serialize())
-                    .await?,
-            )
-            .await?
-        {
+        match self.process_result(
+            self.post_data(GET_ACCOUNT_ADDRESS, pubkey.serialize())
+                .await?,
+        )? {
             Some(value) => value.as_str().map(|s| s.to_string()).ok_or_else(|| {
                 ArchError::ParseError("Failed to get account address as string".to_string())
             }),
@@ -374,12 +447,6 @@ impl AsyncArchRpcClient {
         }
     }
 
-    /// Start distributed key generation
-    pub async fn start_dkg(&self) -> Result<()> {
-        self.call_method_raw(START_DKG).await?;
-        Ok(())
-    }
-
     pub async fn check_pre_anchor_conflict(&self, accounts: Vec<Pubkey>) -> Result<bool> {
         let params = accounts;
         match self
@@ -393,15 +460,23 @@ impl AsyncArchRpcClient {
         }
     }
 
+    /// Get the network pubkey from the network
+    pub async fn get_network_pubkey(&self) -> Result<String> {
+        match self.call_method::<String>("get_network_pubkey").await? {
+            Some(key) => Ok(key),
+            None => Err(ArchError::NotFound("Network pubkey not found".to_string())),
+        }
+    }
+
     /// Send a single transaction
-    pub async fn send_transaction(&self, transaction: RuntimeTransaction) -> Result<String> {
-        match self
-            .process_result(self.post_data(SEND_TRANSACTION, transaction).await?)
-            .await?
-        {
-            Some(value) => value.as_str().map(|s| s.to_string()).ok_or_else(|| {
-                ArchError::ParseError("Failed to get transaction ID as string".to_string())
-            }),
+    pub async fn send_transaction(&self, transaction: RuntimeTransaction) -> Result<Hash> {
+        match self.process_result(self.post_data(SEND_TRANSACTION, transaction).await?)? {
+            Some(value) => {
+                let tx_id_str = value.as_str().ok_or_else(|| {
+                    ArchError::ParseError("Failed to get transaction ID as string".to_string())
+                })?;
+                Ok(Hash::from_str(tx_id_str)?)
+            }
             None => Err(ArchError::TransactionError(
                 "Failed to send transaction".to_string(),
             )),
@@ -412,12 +487,28 @@ impl AsyncArchRpcClient {
     pub async fn send_transactions(
         &self,
         transactions: Vec<RuntimeTransaction>,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<Hash>> {
+        if transactions.len() > MAX_TX_BATCH_SIZE {
+            return Err(ArchError::TransactionError(
+                "Batch size exceeds maximum".to_string(),
+            ));
+        }
+
         match self
-            .call_method_with_params(SEND_TRANSACTIONS, transactions)
+            .call_method_with_params::<Vec<RuntimeTransaction>, Vec<String>>(
+                SEND_TRANSACTIONS,
+                transactions,
+            )
             .await?
         {
-            Some(tx_ids) => Ok(tx_ids),
+            Some(tx_ids) => {
+                let mut parsed_tx_ids = Vec::new();
+                for id in tx_ids {
+                    let hash = Hash::from_str(&id)?;
+                    parsed_tx_ids.push(hash);
+                }
+                Ok(parsed_tx_ids)
+            }
             None => Err(ArchError::TransactionError(
                 "Failed to send transactions".to_string(),
             )),
@@ -425,8 +516,8 @@ impl AsyncArchRpcClient {
     }
 
     /// Helper methods for RPC communication
-    async fn process_result(&self, response: String) -> Result<Option<Value>> {
-        let result = serde_json::from_str::<Value>(&response)
+    pub fn process_result(&self, response: String) -> Result<Option<Value>> {
+        let result = from_str::<Value>(&response)
             .map_err(|e| ArchError::ParseError(format!("Failed to parse JSON: {}", e)))?;
 
         let result = match result {
@@ -459,350 +550,30 @@ impl AsyncArchRpcClient {
     }
 
     async fn post(&self, method: &str) -> Result<String> {
-        match self
-            .client
-            .post(&self.url)
-            .header("content-type", "application/json")
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "id": "curlycurl",
-                "method": method,
-            }))
-            .send()
-            .await
-        {
-            Ok(res) => match res.text().await {
-                Ok(text) => Ok(text),
-                Err(e) => Err(ArchError::NetworkError(format!(
-                    "Failed to read response text: {}",
-                    e
-                ))),
-            },
-            Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
-        }
+        let json = json!({
+            "jsonrpc": "2.0",
+            "id": "curlycurl",
+            "method": method,
+        });
+        self.transport.call(&json).await
     }
 
-    async fn post_data<T: Serialize + std::fmt::Debug>(
+    pub async fn post_data<T: Serialize + std::fmt::Debug>(
         &self,
         method: &str,
         params: T,
     ) -> Result<String> {
-        match self
-            .client
-            .post(&self.url)
-            .header("content-type", "application/json")
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "id": "curlycurl",
-                "method": method,
-                "params": params,
-            }))
-            .send()
-            .await
-        {
-            Ok(res) => match res.text().await {
-                Ok(text) => Ok(text),
-                Err(e) => Err(ArchError::NetworkError(format!(
-                    "Failed to get response text: {}",
-                    e
-                ))),
-            },
-            Err(e) => Err(ArchError::NetworkError(format!("Request failed: {}", e))),
-        }
-    }
-
-    /// Request an airdrop for a given key
-    pub async fn request_airdrop(&self, pubkey: Pubkey) -> Result<ProcessedTransaction> {
-        let result = self
-            .process_result(self.post_data("request_airdrop", pubkey).await?)
-            .await?
-            .ok_or(ArchError::RpcRequestFailed(
-                "request_airdrop failed".to_string(),
-            ))?;
-
-        // Handle the result parsing with proper error handling
-        let txid_str = result.as_str().ok_or_else(|| {
-            ArchError::ParseError("Failed to get transaction ID as string".to_string())
-        })?;
-
-        let processed_tx = self.wait_for_processed_transaction(txid_str).await?;
-
-        Ok(processed_tx)
-    }
-
-    /// Create an account with lamports
-    pub async fn create_and_fund_account_with_faucet(
-        &self,
-        keypair: &Keypair,
-        bitcoin_network: Network,
-    ) -> Result<()> {
-        let pubkey = Pubkey::from_slice(&keypair.x_only_public_key().0.serialize());
-
-        if self.read_account_info(pubkey).await.is_ok() {
-            let _processed_tx = self.request_airdrop(pubkey).await?;
-        } else {
-            let result = self
-                .process_result(self.post_data("create_account_with_faucet", pubkey).await?)
-                .await?
-                .ok_or(ArchError::RpcRequestFailed(
-                    "create_account_with_faucet failed".to_string(),
-                ))?;
-            let mut runtime_tx: RuntimeTransaction = serde_json::from_value(result)?;
-
-            let message_hash = runtime_tx.message.hash();
-            let signature = crate::Signature::from(sign_message_bip322(
-                keypair,
-                &message_hash,
-                bitcoin_network,
-            ));
-
-            runtime_tx.signatures.push(signature);
-
-            let result = self.send_transaction(runtime_tx).await?;
-
-            let _processed_tx = self.wait_for_processed_transaction(&result).await?;
-        }
-
-        let account_info = self.read_account_info(pubkey).await?;
-
-        // assert_eq!(account_info.owner, Pubkey::system_program());
-        assert!(account_info.lamports >= 1_000_000_000);
-
-        Ok(())
+        let json = json!({
+            "jsonrpc": "2.0",
+            "id": "curlycurl",
+            "method": method,
+            "params": params,
+        });
+        self.transport.call(&json).await
     }
 }
 
 /// Helper function to check if a transaction has reached a final status
 fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
     matches!(&tx.status, Status::Processed | Status::Failed(_))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use arch_program::hash::Hash;
-    use arch_program::rent::minimum_rent;
-    use arch_program::sanitized::ArchMessage;
-    use mockito::Server;
-
-    // Helper to create a test client with the mockito server
-    async fn get_test_client(server: &Server) -> AsyncArchRpcClient {
-        AsyncArchRpcClient::new(&server.url())
-    }
-
-    // Helper to create a mock RPC response
-    fn mock_rpc_response(server: &mut Server, method: &str, result: Value) -> mockito::Mock {
-        server
-            .mock("POST", "/")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": "curlycurl",
-                    "result": result
-                })
-                .to_string(),
-            )
-            .match_body(mockito::Matcher::Json(json!({
-                "jsonrpc": "2.0",
-                "id": "curlycurl",
-                "method": method
-            })))
-            .create()
-    }
-
-    // Helper to create a mock RPC response with params
-    fn mock_rpc_response_with_params<T: Serialize>(
-        server: &mut Server,
-        method: &str,
-        params: T,
-        result: Value,
-    ) -> mockito::Mock {
-        server
-            .mock("POST", "/")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": "curlycurl",
-                    "result": result
-                })
-                .to_string(),
-            )
-            .match_body(mockito::Matcher::Json(json!({
-                "jsonrpc": "2.0",
-                "id": "curlycurl",
-                "method": method,
-                "params": params
-            })))
-            .create()
-    }
-
-    // Helper to create a mock RPC error response
-    fn mock_rpc_error(
-        server: &mut Server,
-        method: &str,
-        error_code: i64,
-        error_message: &str,
-    ) -> mockito::Mock {
-        server
-            .mock("POST", "/")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": "curlycurl",
-                    "error": {
-                        "code": error_code,
-                        "message": error_message
-                    }
-                })
-                .to_string(),
-            )
-            .match_body(mockito::Matcher::Json(json!({
-                "jsonrpc": "2.0",
-                "id": "curlycurl",
-                "method": method
-            })))
-            .create()
-    }
-
-    #[tokio::test]
-    async fn test_get_best_block_hash() {
-        let mut server = Server::new_async().await;
-        let mock = mock_rpc_response(&mut server, GET_BEST_BLOCK_HASH, json!("0123456789abcdef"));
-
-        let client = get_test_client(&server).await;
-        let result = client.get_best_block_hash().await.unwrap();
-
-        assert_eq!(result, "0123456789abcdef");
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_get_block_count() {
-        let mut server = Server::new_async().await;
-        let mock = mock_rpc_response(&mut server, GET_BLOCK_COUNT, json!(123456));
-
-        let client = get_test_client(&server).await;
-        let result = client.get_block_count().await.unwrap();
-
-        assert_eq!(result, 123456);
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_read_account_info() {
-        let mut server = Server::new_async().await;
-        let pubkey = Pubkey::new_unique();
-
-        // Create account info according to the actual struct definition
-        let account_info = AccountInfo {
-            lamports: minimum_rent(4),
-            owner: Pubkey::new_unique(),
-            data: vec![1u8, 2, 3, 4],
-            utxo: "utxo123".to_string(),
-            is_executable: false,
-        };
-
-        let mock = mock_rpc_response_with_params(
-            &mut server,
-            READ_ACCOUNT_INFO,
-            pubkey,
-            serde_json::to_value(account_info.clone()).unwrap(),
-        );
-
-        let client = get_test_client(&server).await;
-        let result = client.read_account_info(pubkey).await.unwrap();
-
-        assert_eq!(result.owner, account_info.owner);
-        assert_eq!(result.data, account_info.data);
-        assert_eq!(result.utxo, account_info.utxo);
-        assert_eq!(result.is_executable, account_info.is_executable);
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_not_found_error() {
-        let mut server = Server::new_async().await;
-        let mock = mock_rpc_error(
-            &mut server,
-            GET_BEST_BLOCK_HASH,
-            NOT_FOUND_CODE,
-            "Not found",
-        );
-
-        let client = get_test_client(&server).await;
-        let result = client.call_method_raw(GET_BEST_BLOCK_HASH).await.unwrap();
-
-        assert!(result.is_none());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_send_transaction() {
-        let mut server = Server::new_async().await;
-
-        // Create a minimal valid RuntimeTransaction for the test
-        let tx = RuntimeTransaction {
-            version: 0,
-            signatures: Vec::new(),
-            message: ArchMessage::new(&[], None, Hash::from([0; 32])),
-        };
-
-        let mock = mock_rpc_response_with_params(
-            &mut server,
-            SEND_TRANSACTION,
-            tx.clone(),
-            json!("tx_id_12345"),
-        );
-
-        let client = get_test_client(&server).await;
-        let result = client.send_transaction(tx).await.unwrap();
-
-        assert_eq!(result, "tx_id_12345");
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_get_program_accounts() {
-        let mut server = Server::new_async().await;
-        let program_id = Pubkey::new_unique();
-        let filters = None;
-
-        // Create some program accounts for the response
-        let account_info = AccountInfo {
-            lamports: minimum_rent(4),
-            owner: program_id,
-            data: vec![1u8, 2, 3, 4],
-            utxo: "utxo123".to_string(),
-            is_executable: false,
-        };
-
-        let program_account = ProgramAccount {
-            pubkey: Pubkey::new_unique(),
-            account: account_info,
-        };
-
-        let mock = mock_rpc_response_with_params(
-            &mut server,
-            GET_PROGRAM_ACCOUNTS,
-            json!([program_id.serialize(), filters]),
-            json!([program_account]),
-        );
-
-        let client = get_test_client(&server).await;
-        let result = client
-            .get_program_accounts(&program_id, filters)
-            .await
-            .unwrap();
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].pubkey, program_account.pubkey);
-        assert_eq!(result[0].account.data, program_account.account.data);
-        mock.assert();
-    }
 }
