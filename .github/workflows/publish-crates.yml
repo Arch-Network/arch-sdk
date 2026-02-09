@@ -1,0 +1,52 @@
+name: Publish Crates to crates.io
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish all crates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-publish-
+
+      # ── Tier 1: arch_program (no internal deps) ──────────────────────
+      - name: Publish arch_program
+        working-directory: program
+        run: cargo publish --dry-run
+
+      # ── Tier 2: arch_sdk & apl-token (depend on arch_program) ───────
+      - name: Publish arch_sdk
+        working-directory: sdk
+        run: cargo publish --dry-run
+
+      - name: Publish apl-token
+        working-directory: token
+        run: cargo publish --dry-run
+
+      # ── Tier 3: crates that depend on apl-token ─────────────────────
+      - name: Publish apl-associated-token-account
+        working-directory: associated-token-account
+        run: cargo publish --dry-run
+
+      - name: Publish apl-token-metadata
+        working-directory: token-metadata
+        run: cargo publish --dry-run
