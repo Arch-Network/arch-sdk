@@ -9,8 +9,8 @@ keywords = ["arch", "token", "metadata", "program", "sbf"]
 categories = ["cryptography", "embedded", "no-std"]
 
 [dependencies]
-apl-token = { version = "0.6.0", features = ["no-entrypoint"] }
-arch_program = "0.6.0"
+apl-token = { workspace = true }
+arch_program = { workspace = true }
 borsh = { version = "1.4.0", features = ["derive"] }
 num-derive = "0.4.0"
 num-traits = "0.2"
