@@ -1,6 +1,6 @@
 [package]
 name = "apl-token-metadata"
-version = "0.6.1"
+version = "0.6.0"
 edition = "2021"
 license = "MIT"
 description = "On-chain program for Arch Token Metadata"
@@ -9,8 +9,8 @@ keywords = ["arch", "token", "metadata", "program", "sbf"]
 categories = ["cryptography", "embedded", "no-std"]
 
 [dependencies]
-apl-token = { version = "0.6.1", features = ["no-entrypoint"] }
-arch_program = "0.6.1"
+apl-token = { version = "0.6.0", features = ["no-entrypoint"] }
+arch_program = "0.6.0"
 borsh = { version = "1.4.0", features = ["derive"] }
 num-derive = "0.4.0"
 num-traits = "0.2"
