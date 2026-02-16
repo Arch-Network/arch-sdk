@@ -48,6 +48,29 @@ impl Pubkey {
     pub const fn new_from_array(data: [u8; 32]) -> Self {
         Self(data)
     }
+
+    /// Decode a base58 string into a Pubkey at compile time.
+    ///
+    /// This is a `const fn`, meaning the entire base58 decode happens during
+    /// compilation — there is zero runtime cost. The compiler converts the
+    /// human-readable base58 string directly into the 32-byte array that is
+    /// baked into the final binary.
+    ///
+    /// # Panics
+    /// Panics at **compile time** if the string is not valid base58 or does
+    /// not decode to exactly 32 bytes.
+    ///
+    /// # Example
+    /// ```
+    /// use arch_program::pubkey::Pubkey;
+    ///
+    /// const MY_KEY: Pubkey = Pubkey::from_str_const("11111111111111111111111111111111");
+    /// assert_eq!(MY_KEY, Pubkey::new_from_array([0u8; 32]));
+    /// ```
+    pub const fn from_str_const(s: &str) -> Self {
+        let id_array = five8_const::decode_32_const(s);
+        Pubkey::new_from_array(id_array)
+    }
     /// Serializes the public key to a 32-byte array.
     ///
     /// # Returns
@@ -76,9 +99,7 @@ impl Pubkey {
     /// # Returns
     /// The system program's Pubkey
     pub const fn system_program() -> Self {
-        let mut tmp = [0u8; 32];
-        tmp[31] = 1;
-        Self(tmp)
+        Self::from_str_const("11111111111111111111111111111111")
     }
 
     /// Checks if the Pubkey represents the system program.
@@ -86,9 +107,7 @@ impl Pubkey {
     /// # Returns
     /// `true` if the Pubkey is the system program's Pubkey, `false` otherwise
     pub fn is_system_program(&self) -> bool {
-        let mut tmp = [0u8; 32];
-        tmp[31] = 1;
-        self.0 == tmp
+        *self == Self::system_program()
     }
 
     /// Creates a unique Pubkey for tests and benchmarks.
@@ -425,6 +444,75 @@ mod tests {
             let deserialized = Pubkey::from_slice(&serialized);
             assert_eq!(pubkey, deserialized);
         }
+    }
+
+    #[test]
+    fn test_from_str_const_all_zeros() {
+        // In base58, "1" represents a leading zero byte.
+        // 32 bytes of zeros = 32 '1's in base58.
+        const ALL_ZEROS: Pubkey = Pubkey::from_str_const("11111111111111111111111111111111");
+        assert_eq!(ALL_ZEROS, Pubkey::new_from_array([0u8; 32]));
+    }
+
+    #[test]
+    fn test_from_str_const_known_value() {
+        // The system program address should round-trip through base58 correctly.
+        let system = Pubkey::system_program();
+        let base58_str = bs58::encode(system.0).into_string();
+        assert_eq!(base58_str, "11111111111111111111111111111111");
+        // Decode at runtime for comparison
+        let runtime_decoded = Pubkey::from_slice(&bs58::decode(&base58_str).into_vec().unwrap());
+        // Decode via from_str_const (same code path as const evaluation)
+        let const_decoded = Pubkey::from_str_const(&base58_str);
+        assert_eq!(const_decoded, runtime_decoded);
+        assert_eq!(const_decoded, system);
+    }
+
+    #[test]
+    fn test_from_str_const_all_ff() {
+        // All 0xFF bytes
+        const ALL_FF: Pubkey =
+            Pubkey::from_str_const("JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG");
+        assert_eq!(ALL_FF, Pubkey::new_from_array([0xFF; 32]));
+    }
+
+    #[test]
+    fn test_from_str_const_roundtrip() {
+        // Pick an arbitrary 32-byte value, encode to base58, decode back
+        let original = Pubkey::new_from_array([
+            10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190,
+            200, 210, 220, 230, 240, 250, 1, 2, 3, 4, 5, 6, 7,
+        ]);
+        let base58 = bs58::encode(original.0).into_string();
+        let decoded = Pubkey::from_str_const(&base58);
+        assert_eq!(decoded, original);
+    }
+
+    // --- declare_id! tests ---
+
+    mod test_declare_id {
+        use crate::declare_id;
+        // Declare a program ID using the macro — this is the all-zeros key
+        declare_id!("11111111111111111111111111111111");
+    }
+
+    #[test]
+    fn test_declare_id_generates_correct_id() {
+        assert_eq!(test_declare_id::ID, Pubkey::new_from_array([0u8; 32]),);
+    }
+
+    #[test]
+    fn test_declare_id_check_id_works() {
+        let zero_key = Pubkey::new_from_array([0u8; 32]);
+        assert!(test_declare_id::check_id(&zero_key));
+
+        let other_key = Pubkey::new_from_array([1u8; 32]);
+        assert!(!test_declare_id::check_id(&other_key));
+    }
+
+    #[test]
+    fn test_declare_id_id_fn_works() {
+        assert_eq!(test_declare_id::id(), test_declare_id::ID);
     }
 
     #[test]

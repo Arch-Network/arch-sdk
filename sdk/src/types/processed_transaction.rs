@@ -1,6 +1,5 @@
 use std::{array::TryFromSliceError, string::FromUtf8Error};
 
-use anyhow::Result;
 use arch_program::hash::Hash;
 use arch_program::sanitized::{SanitizedInstruction, MAX_INSTRUCTION_COUNT_PER_TRANSACTION};
 use bitcode::{Decode, Encode};

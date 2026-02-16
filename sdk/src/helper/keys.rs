@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Result};
 use arch_program::pubkey::Pubkey;
 
 use bitcoin::{
@@ -32,7 +31,7 @@ pub fn generate_new_keypair(network: bitcoin::Network) -> (UntweakedKeypair, Pub
     (key_pair, pubkey, address)
 }
 
-pub fn with_secret_key_file(file_path: &str) -> Result<(UntweakedKeypair, Pubkey)> {
+pub fn with_secret_key_file(file_path: &str) -> Result<(UntweakedKeypair, Pubkey), std::io::Error> {
     let secp = Secp256k1::new();
 
     let file_content = fs::read_to_string(file_path);
@@ -47,8 +46,7 @@ pub fn with_secret_key_file(file_path: &str) -> Result<(UntweakedKeypair, Pubkey
         }),
         Err(_) => {
             let (key, _) = secp.generate_keypair(&mut OsRng);
-            fs::write(file_path, key.display_secret().to_string())
-                .map_err(|_| anyhow!("Unable to write file"))?;
+            fs::write(file_path, key.display_secret().to_string())?;
             key
         }
     };

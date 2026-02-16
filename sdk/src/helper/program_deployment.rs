@@ -62,12 +62,6 @@ impl From<std::io::Error> for ProgramDeployerError {
     }
 }
 
-impl From<anyhow::Error> for ProgramDeployerError {
-    fn from(err: anyhow::Error) -> Self {
-        ProgramDeployerError::TransactionError(format!("Transaction building error: {}", err))
-    }
-}
-
 pub fn get_state(data: &[u8]) -> Result<&LoaderState, InstructionError> {
     unsafe {
         let data = data

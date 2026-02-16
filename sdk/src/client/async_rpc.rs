@@ -20,6 +20,8 @@ use crate::types::{
     Status,
 };
 
+pub const ACCOUNT_FUNDING_AMOUNT: u64 = 1_000_000;
+
 // RPC method constants
 const READ_ACCOUNT_INFO: &str = "read_account_info";
 const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
@@ -190,7 +192,7 @@ impl AsyncArchRpcClient {
         let account_info = self.read_account_info(pubkey).await?;
 
         // assert_eq!(account_info.owner, Pubkey::system_program());
-        assert!(account_info.lamports >= 1_000_000_000);
+        assert!(account_info.lamports >= ACCOUNT_FUNDING_AMOUNT);
 
         Ok(())
     }

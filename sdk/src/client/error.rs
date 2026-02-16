@@ -41,6 +41,12 @@ pub enum ArchError {
 
     #[error("Program error: {0}")]
     ProgramError(String),
+
+    #[error("XOnlyPublicKey from slice error: {0}")]
+    XOnlyPublicKeyFromSliceError(String),
+
+    #[error("BIP322 verification failed: {0}")]
+    BIP322VerificationFailed(String),
 }
 
 impl From<serde_json::Error> for ArchError {

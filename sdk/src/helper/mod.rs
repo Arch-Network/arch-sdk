@@ -11,7 +11,6 @@ pub use transaction_building::*;
 pub use utxo::*;
 
 use crate::Config;
-use anyhow::{anyhow, Result};
 use bitcoin::{
     self,
     address::Address,
@@ -42,15 +41,14 @@ impl CallerInfo {
     /// Create a [CallerInfo] from the specified file path
     /// If the file does not exist, generate a random secret key
     /// and use that instead.
-    pub fn with_secret_key_file(file_path: &str) -> Result<CallerInfo> {
+    pub fn with_secret_key_file(file_path: &str) -> Result<CallerInfo, std::io::Error> {
         let test_config = Config::localnet();
         let secp = Secp256k1::new();
         let secret_key = match fs::read_to_string(file_path) {
             Ok(key) => SecretKey::from_str(&key).unwrap(),
             Err(_) => {
                 let (key, _) = secp.generate_keypair(&mut OsRng);
-                fs::write(file_path, key.display_secret().to_string())
-                    .map_err(|_| anyhow!("Unable to write file"))?;
+                fs::write(file_path, key.display_secret().to_string())?;
                 key
             }
         };

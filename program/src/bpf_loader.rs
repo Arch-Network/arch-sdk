@@ -1,13 +1,11 @@
 use crate::pubkey::Pubkey;
+crate::declare_id!("BpfLoader1111111111111111111111111111111111");
 
 /// This is native loader
 /// used for invoking native programs, this doesn't have a an account on it's own,
 /// but native programs use this address in their owner's field.
-pub const BPF_LOADER_ID: Pubkey = Pubkey(*b"BpfLoader11111111111111111111111");
-
-pub fn check_id(id: &Pubkey) -> bool {
-    id == &BPF_LOADER_ID
-}
+/// Backwards-compatible alias for the BPF loader program ID.
+pub const BPF_LOADER_ID: Pubkey = ID;
 
 #[repr(u64)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Result};
 use bip322::{create_to_sign, create_to_spend, verify_simple};
 use bitcoin::{
     address::Address,
@@ -10,6 +9,8 @@ use bitcoin::{
 
 use bitcoin::key::UntweakedKeypair;
 use bitcoin::XOnlyPublicKey;
+
+use crate::ArchError;
 
 /* -------------------------------------------------------------------------- */
 /*                      SIGNS A MESSAGE FOLLOWING BIP322                      */
@@ -127,7 +128,7 @@ pub fn verify_message_bip322(
     signature: [u8; 64],
     uses_sighash_all: bool,
     network: bitcoin::Network,
-) -> Result<()> {
+) -> Result<(), ArchError> {
     let mut signature = signature.to_vec();
     if uses_sighash_all {
         signature.push(1);
@@ -136,10 +137,12 @@ pub fn verify_message_bip322(
     witness.push(&signature);
 
     let secp = Secp256k1::new();
-    let xpubk = XOnlyPublicKey::from_slice(&pubkey)?;
+    let xpubk = XOnlyPublicKey::from_slice(&pubkey)
+        .map_err(|e| ArchError::XOnlyPublicKeyFromSliceError(e.to_string()))?;
     let address = Address::p2tr(&secp, xpubk, None, network);
 
-    verify_simple(&address, msg, witness).map_err(|e| anyhow!("BIP-322 verification failed: {}", e))
+    verify_simple(&address, msg, witness)
+        .map_err(|e| ArchError::BIP322VerificationFailed(e.to_string()))
 }
 #[cfg(test)]
 mod bip322_tests {

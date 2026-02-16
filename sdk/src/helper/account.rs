@@ -1,5 +1,3 @@
-use anyhow::{anyhow, Result};
-
 use bitcoin::key::Keypair;
 
 use bitcoin::Network;
@@ -32,7 +30,7 @@ pub fn create_and_fund_account_with_faucet(
     client: &ArchRpcClient,
     keypair: &Keypair,
     bitcoin_network: Network,
-) -> Result<()> {
+) -> std::result::Result<(), crate::ArchError> {
     let pubkey = Pubkey::from_slice(&keypair.x_only_public_key().0.serialize());
 
     if let Ok(_) = client.read_account_info(pubkey) {
@@ -70,7 +68,7 @@ pub fn create_and_fund_account_with_faucet(
     let account_info = read_account_info(NODE1_ADDRESS, pubkey).unwrap();
 
     // assert_eq!(account_info.owner, Pubkey::system_program());
-    assert!(account_info.lamports >= 1_000_000_000);
+    assert!(account_info.lamports >= ACCOUNT_FUNDING_AMOUNT);
 
     Ok(())
 }

@@ -3,7 +3,7 @@ use crate::client::error::{ArchError, Result};
 use crate::client::transport::{HttpClient, RpcTransport, TcpClient};
 use crate::{
     sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, Config, FullBlock,
-    MAX_TX_BATCH_SIZE, NOT_FOUND_CODE,
+    ACCOUNT_FUNDING_AMOUNT, MAX_TX_BATCH_SIZE, NOT_FOUND_CODE,
 };
 use arch_program::hash::Hash;
 use bitcoin::key::Keypair;
@@ -183,7 +183,7 @@ impl ArchRpcClient {
         let account_info = self.read_account_info(pubkey)?;
 
         // assert_eq!(account_info.owner, Pubkey::system_program());
-        assert!(account_info.lamports >= 1_000_000_000);
+        assert!(account_info.lamports >= ACCOUNT_FUNDING_AMOUNT);
 
         Ok(())
     }

@@ -3,9 +3,23 @@
 use crate::pubkey::Pubkey;
 use borsh::{BorshDeserialize, BorshSerialize};
 
-pub const RESHARING_PROGRAM_ID: Pubkey = Pubkey(*b"Resharing11111111111111111111111");
-pub const RESHARING_DATA_ACCOUNT_ID: Pubkey = Pubkey(*b"ResharingData1111111111111111111");
-pub const RESHARING_STAGING_ACCOUNT_ID: Pubkey = Pubkey(*b"ResharingStaing11111111111111111");
+crate::declare_id!("Resharing1111111111111111111111111111111111");
+
+/// Backwards-compatible alias for the resharing program ID.
+pub const RESHARING_PROGRAM_ID: Pubkey = ID;
+
+pub mod data_account {
+    crate::declare_id!("ResharingData111111111111111111111111111111");
+}
+
+pub mod staging_account {
+    crate::declare_id!("ResharingStaging111111111111111111111111111");
+}
+
+/// Backwards-compatible alias for the resharing data account ID.
+pub const RESHARING_DATA_ACCOUNT_ID: Pubkey = data_account::ID;
+/// Backwards-compatible alias for the resharing staging account ID.
+pub const RESHARING_STAGING_ACCOUNT_ID: Pubkey = staging_account::ID;
 
 pub const CHUNK_SIZE: u64 = 8192;
 
@@ -22,8 +36,4 @@ pub struct ResharingInstruction {
 
     /// Chunk data.
     pub chunk: Vec<u8>,
-}
-
-pub fn check_id(id: &Pubkey) -> bool {
-    id == &RESHARING_PROGRAM_ID
 }

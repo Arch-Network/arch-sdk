@@ -1,12 +1,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{instruction::Instruction, pubkey::Pubkey};
+use crate::instruction::Instruction;
 
-pub const COMPUTE_BUDGET_PROGRAM_ID: Pubkey = Pubkey(*b"ComputeBudget1111111111111111111");
+crate::declare_id!("ComputeBudget111111111111111111111111111111");
 
-pub fn check_id(id: &Pubkey) -> bool {
-    id == &COMPUTE_BUDGET_PROGRAM_ID
-}
+/// Backwards-compatible alias for the compute budget program ID.
+pub const COMPUTE_BUDGET_PROGRAM_ID: crate::pubkey::Pubkey = ID;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, BorshSerialize, BorshDeserialize)]
 pub enum ComputeBudgetInstruction {

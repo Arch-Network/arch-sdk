@@ -1,7 +1,4 @@
-use crate::pubkey::Pubkey;
+crate::declare_id!("StakeProgram1111111111111111111111111111111");
 
-pub const STAKE_PROGRAM_ID: Pubkey = Pubkey(*b"StakeProgram11111111111111111111");
-
-pub fn check_id(id: &Pubkey) -> bool {
-    id == &STAKE_PROGRAM_ID
-}
+/// Backwards-compatible alias for the stake program ID.
+pub const STAKE_PROGRAM_ID: crate::pubkey::Pubkey = ID;

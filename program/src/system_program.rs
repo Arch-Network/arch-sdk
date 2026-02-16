@@ -1,7 +1,4 @@
-use crate::pubkey::Pubkey;
+crate::declare_id!("11111111111111111111111111111111");
 
-pub const SYSTEM_PROGRAM_ID: Pubkey = Pubkey::system_program();
-
-pub fn check_id(id: &Pubkey) -> bool {
-    id == &SYSTEM_PROGRAM_ID
-}
+/// Backwards-compatible alias for the system program ID.
+pub const SYSTEM_PROGRAM_ID: crate::pubkey::Pubkey = ID;

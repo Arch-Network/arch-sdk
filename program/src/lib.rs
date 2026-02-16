@@ -80,6 +80,49 @@ pub mod program_stubs;
 pub mod program_utils;
 /// Public key definitions and operations
 pub mod pubkey;
+
+/// Convenience macro to declare a static program ID and helper functions.
+///
+/// Input: a single literal base58 string representation of a program's ID.
+///
+/// This generates:
+/// - A `const ID: Pubkey` — the program ID, decoded at compile time.
+/// - A `fn check_id(id: &Pubkey) -> bool` — returns `true` if the given pubkey matches.
+/// - A `const fn id() -> Pubkey` — returns the program ID.
+///
+/// # Example
+///
+/// ```ignore
+/// use arch_program::declare_id;
+///
+/// declare_id!("MyProgram111111111111111111111111111111111");
+///
+/// assert_eq!(id(), ID);
+/// assert!(check_id(&id()));
+/// ```
+#[macro_export]
+macro_rules! declare_id {
+    ($address:expr) => {
+        /// The const program ID.
+        pub const ID: $crate::pubkey::Pubkey = $crate::pubkey::Pubkey::from_str_const($address);
+
+        /// Returns `true` if given pubkey is the program ID.
+        pub fn check_id(id: &$crate::pubkey::Pubkey) -> bool {
+            id == &ID
+        }
+
+        /// Returns the program ID.
+        pub const fn id() -> $crate::pubkey::Pubkey {
+            ID
+        }
+
+        #[cfg(test)]
+        #[test]
+        fn test_id() {
+            assert!(check_id(&id()));
+        }
+    };
+}
 pub mod rent;
 /// Resharing defines.
 pub mod resharing;
@@ -129,9 +172,6 @@ pub mod builtin {
     use super::*;
     use crate::pubkey::Pubkey;
 
-    pub const BUILTIN_PROGRAMS_ID: &[Pubkey] = &[
-        native_loader::NATIVE_LOADER_ID,
-        system_program::SYSTEM_PROGRAM_ID,
-        bpf_loader::BPF_LOADER_ID,
-    ];
+    pub const BUILTIN_PROGRAMS_ID: &[Pubkey] =
+        &[native_loader::ID, system_program::ID, bpf_loader::ID];
 }
