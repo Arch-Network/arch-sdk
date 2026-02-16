@@ -12,3 +12,9 @@ resolver = "2"
 arch_program = { path = "program", version = "0.6.0" }
 apl-token = { path = "token", version = "0.6.0", features = ["no-entrypoint"] }
 titan-types-core = "1.3.3"
+
+# Redirect crates.io lookups to local paths so cargo check --workspace
+# works before new versions are published to crates.io.
+[patch.crates-io]
+arch_program = { path = "program" }
+apl-token = { path = "token" }
