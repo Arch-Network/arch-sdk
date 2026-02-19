@@ -17,6 +17,8 @@ use tools::{create_pda_account, create_pda_account_with_anchor};
 #[cfg(not(feature = "no-entrypoint"))]
 use arch_program::entrypoint;
 
+arch_program::declare_id!("ATok9pxLsNzM5zJJ3UQpXBrMriHpZiY5Yio3GKYU4we3");
+
 #[cfg(not(feature = "no-entrypoint"))]
 entrypoint!(process_instruction);
 
@@ -94,12 +96,6 @@ pub fn process_instruction(
         ],
     )
 }
-
-pub fn id() -> Pubkey {
-    Pubkey::from_slice(b"AssociatedTokenAccount1111111111")
-}
-
-pub const ID: Pubkey = Pubkey::new_from_array(*b"AssociatedTokenAccount1111111111");
 
 pub fn get_associated_token_address_and_bump_seed(
     wallet_address: &Pubkey,

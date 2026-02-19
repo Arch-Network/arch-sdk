@@ -1,6 +1,6 @@
 [package]
 name = "apl-associated-token-account"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 description = "Associated Token Account program for Arch Network providing deterministic token account management and instructions."
 license = "MIT"
@@ -9,7 +9,7 @@ license = "MIT"
 
 [dependencies]
 arch_program = { workspace = true }
-apl-token = { version = "0.6.1", features = ["no-entrypoint"] }
+apl-token = { version = "0.6.2", features = ["no-entrypoint"] }
 borsh = { version = "1.5.1", features = ["derive"] }
 bitcoin = { version = "0.31.0", features = ["serde"] }
 bitcoin-io = { version = "=0.1.2" }

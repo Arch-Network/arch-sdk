@@ -19,6 +19,8 @@ mod entrypoint;
 pub use arch_program;
 use arch_program::{entrypoint::ProgramResult, program_error::ProgramError, pubkey::Pubkey};
 
+arch_program::declare_id!("TokenT4em53UrV4gSvZ3nCS2mZeHaqTLapwt6iZt6Mk");
+
 /// Convert the UI representation of a token amount (using the decimals field
 /// defined in its mint) to the raw amount
 pub fn ui_amount_to_amount(ui_amount: f64, decimals: u8) -> u64 {
@@ -84,16 +86,8 @@ pub fn try_ui_amount_into_amount(ui_amount: String, decimals: u8) -> Result<u64,
 }
 
 /// The program ID for the APL-token program
-pub fn id() -> Pubkey {
-    Pubkey::from_slice(b"AplToken111111111111111111111111")
-}
-
-/// The program ID for the APL-token program
-pub const ID: Pubkey = Pubkey::new_from_array(*b"AplToken111111111111111111111111");
-
-/// Checks that the supplied program ID is the correct one for APL-token
 pub fn check_program_account(apl_token_program_id: &Pubkey) -> ProgramResult {
-    if apl_token_program_id != &id() {
+    if !check_id(apl_token_program_id) {
         return Err(ProgramError::IncorrectProgramId);
     }
     Ok(())
