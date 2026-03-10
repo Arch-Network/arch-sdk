@@ -222,7 +222,7 @@ impl ProcessedTransaction {
     }
 
     pub fn to_vec(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
-        let mut serialized = vec![];
+        let mut serialized = Vec::with_capacity(1024);
 
         serialized.extend(self.rollback_status.to_fixed_array()?);
 
@@ -871,7 +871,7 @@ mod tests {
         cursor += 8 + rt_len;
 
         // bitcoin_txid flag
-        cursor += 1 + 0 * 32; // None => 0
+        cursor += 1;
 
         // logs len and each entry
         let logs_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
@@ -1641,7 +1641,7 @@ mod tests {
         // Ensure the buffer has enough bytes for the larger data by appending padding
         let diff = (new_len - old_len) as usize;
         if diff > 0 {
-            bytes.extend(std::iter::repeat(0u8).take(diff));
+            bytes.extend(std::iter::repeat_n(0u8, diff));
         }
 
         let res = ProcessedTransaction::from_vec(&bytes);

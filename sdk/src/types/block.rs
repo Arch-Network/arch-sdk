@@ -45,7 +45,6 @@ impl From<TryFromSliceError> for BlockParseError {
     Eq,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
 pub struct Block {
     pub transactions: Vec<Hash>,
     pub previous_block_hash: Hash,
@@ -71,7 +70,8 @@ impl Block {
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
-        let mut serialized = Vec::new();
+        let capacity = 32 + 16 + 8 + 8 + 8 + (self.transactions.len() * 32);
+        let mut serialized = Vec::with_capacity(capacity);
 
         // Serialize previous_block_hash
         serialized.extend_from_slice(&self.previous_block_hash.to_array());

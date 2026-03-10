@@ -41,7 +41,6 @@ pub const PUBKEY_BYTES: usize = 32;
     Decode,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
 pub struct Pubkey(pub [u8; 32]);
 
 impl Pubkey {
@@ -547,7 +546,6 @@ mod tests {
 
         // Test basic functionality
         let (address, bump) = Pubkey::find_program_address(&[seed1], &program_id);
-        assert!(bump <= std::u8::MAX);
 
         // Verify that the found address is valid
         let mut seeds_with_bump = vec![seed1];
@@ -568,7 +566,6 @@ mod tests {
         assert!(result.is_some());
 
         let (address, bump) = result.unwrap();
-        assert!(bump <= std::u8::MAX);
 
         // Verify that the found address is valid
         let mut seeds_with_bump = vec![seed1];

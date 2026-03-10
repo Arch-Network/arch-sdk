@@ -8,11 +8,8 @@ use bitcoin::{
 };
 use rand_core::OsRng;
 
-use std::{fs, str::FromStr};
+use std::{fs, io, str::FromStr};
 
-/* -------------------------------------------------------------------------- */
-/*                           GENERATES A NEW KEYPAIR                          */
-/* -------------------------------------------------------------------------- */
 /// Generates an untweaked keypair, and provides it's pubkey and BTC address
 /// corresponding to the currently used BTC Network
 pub fn generate_new_keypair(network: bitcoin::Network) -> (UntweakedKeypair, Pubkey, Address) {
@@ -37,13 +34,33 @@ pub fn with_secret_key_file(file_path: &str) -> Result<(UntweakedKeypair, Pubkey
     let file_content = fs::read_to_string(file_path);
 
     let secret_key = match file_content {
-        Ok(key) => SecretKey::from_str(&key).unwrap_or_else(|_| {
-            let secret_bytes: Vec<u8> = serde_json::from_str(&key).unwrap_or_else(|_| {
-                panic!("File content is neither a valid secret key string nor a serialized vector of bytes");
-            });
-
-            SecretKey::from_slice(&secret_bytes[0..32]).expect("Failed to parse secret key from bytes")
-        }),
+        Ok(key) => {
+            if let Ok(sk) = SecretKey::from_str(&key) {
+                sk
+            } else {
+                let secret_bytes: Vec<u8> = serde_json::from_str(&key).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "File content is neither a valid secret key string nor a serialized vector of bytes",
+                    )
+                })?;
+                if secret_bytes.len() < 32 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "Secret key byte vector too short: expected at least 32 bytes, got {}",
+                            secret_bytes.len()
+                        ),
+                    ));
+                }
+                SecretKey::from_slice(&secret_bytes[0..32]).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Failed to parse secret key from bytes",
+                    )
+                })?
+            }
+        }
         Err(_) => {
             let (key, _) = secp.generate_keypair(&mut OsRng);
             fs::write(file_path, key.display_secret().to_string())?;

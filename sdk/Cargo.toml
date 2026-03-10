@@ -1,12 +1,12 @@
 [package]
 name = "arch_sdk"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 description = "A Rust SDK for building applications on the Arch Network blockchain platform. Provides tools and interfaces for developing, testing, and deploying programs with native Bitcoin integration."
 license = "MIT"
 
 [dependencies]
-arch_program = "0.6.2"
+arch_program = "0.6.3"
 
 bitcode = "0.6.4"
 borsh = { version = "1.5.1" }
@@ -32,7 +32,7 @@ thiserror = { version = "1.0.57" }
 tracing = "0.1.40"
 tokio-tungstenite = "0.26.1"
 tokio = { version = "1.38.0", features = ["full", "rt-multi-thread"] }
-futures = { version = "0.3", default-features = false }
+futures = { version = "0.3", default-features = false, features = ["executor"] }
 rand = "0.8.5"
 
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"], optional = true }

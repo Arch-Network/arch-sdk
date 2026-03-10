@@ -1,10 +1,10 @@
 use crate::arch_program::pubkey::Pubkey;
 use crate::client::error::{ArchError, Result};
-use crate::client::transport::http::AsyncHttpClient;
-use crate::client::transport::{AsyncRpcTransport, TcpClient};
+use crate::client::transport::http::HttpClient;
+use crate::client::transport::{RpcTransport, TcpClient};
 use crate::{
     sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, Config, FullBlock,
-    MAX_TX_BATCH_SIZE, NOT_FOUND_CODE,
+    MAX_TX_BATCH_SIZE,
 };
 use arch_program::hash::Hash;
 use bitcoin::key::Keypair;
@@ -12,7 +12,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_str, json, Value};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // Import the appropriate result types
 use crate::types::{
@@ -23,33 +23,36 @@ use crate::types::{
 pub const ACCOUNT_FUNDING_AMOUNT: u64 = 1_000_000;
 
 // RPC method constants
-const READ_ACCOUNT_INFO: &str = "read_account_info";
-const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
-const SEND_TRANSACTION: &str = "send_transaction";
-const SEND_TRANSACTIONS: &str = "send_transactions";
-const GET_BLOCK: &str = "get_block";
-const GET_FULL_BLOCK_WITH_TXIDS: &str = "GET_FULL_BLOCK_WITH_TXIDS";
-const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
-const GET_BLOCK_COUNT: &str = "get_block_count";
-const GET_BLOCK_HASH: &str = "get_block_hash";
-const GET_BEST_BLOCK_HASH: &str = "get_best_block_hash";
-const GET_BEST_FINALIZED_BLOCK_HASH: &str = "get_best_finalized_block_hash";
-const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
-const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
-const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
-const CHECK_PRE_ANCHOR_CONFLICT: &str = "check_pre_anchor_conflict";
+pub const READ_ACCOUNT_INFO: &str = "read_account_info";
+pub const GET_MULTIPLE_ACCOUNTS: &str = "get_multiple_accounts";
+pub const SEND_TRANSACTION: &str = "send_transaction";
+pub const SEND_TRANSACTIONS: &str = "send_transactions";
+pub const GET_BLOCK: &str = "get_block";
+pub const GET_FULL_BLOCK_WITH_TXIDS: &str = "get_full_block_with_txids";
+pub const GET_BLOCK_BY_HEIGHT: &str = "get_block_by_height";
+pub const GET_BLOCK_COUNT: &str = "get_block_count";
+pub const GET_BLOCK_HASH: &str = "get_block_hash";
+pub const GET_BEST_BLOCK_HASH: &str = "get_best_block_hash";
+pub const GET_BEST_FINALIZED_BLOCK_HASH: &str = "get_best_finalized_block_hash";
+pub const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
+pub const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
+pub const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
+pub const CHECK_PRE_ANCHOR_CONFLICT: &str = "check_pre_anchor_conflict";
+
+/// Error code returned by the RPC server for "not found" responses
+const RPC_NOT_FOUND_CODE: i64 = 404;
 
 /// ArchRpcClient provides a simple interface for making RPC calls to the Arch blockchain
 #[derive(Clone)]
-pub struct AsyncArchRpcClient {
+pub struct ArchRpcClient {
     pub config: Config,
-    transport: Arc<dyn AsyncRpcTransport>,
+    transport: Arc<dyn RpcTransport>,
 }
 
-impl AsyncArchRpcClient {
+impl ArchRpcClient {
     /// Create a new ArchRpcClient with the specified URL
     pub fn new(config: &Config) -> Self {
-        let http = AsyncHttpClient::new(config.arch_node_url.clone());
+        let http = HttpClient::new(config.arch_node_url.clone());
         Self {
             config: config.clone(),
             transport: Arc::new(http),
@@ -181,7 +184,7 @@ impl AsyncArchRpcClient {
                 keypair,
                 &message_hash,
                 self.config.network,
-            ));
+            )?);
 
             runtime_tx.signatures.push(signature);
 
@@ -223,13 +226,15 @@ impl AsyncArchRpcClient {
         }
     }
 
-    /// Waits for a transaction to be processed, polling until it reaches "Processed" or "Failed" status
-    /// Will timeout after 60 seconds
+    /// Waits for a transaction to be processed, polling until it reaches "Processed" or "Failed" status.
+    /// Will timeout after 60 seconds of wall-clock time.
     pub async fn wait_for_processed_transaction(
         &self,
         tx_id: &Hash,
     ) -> Result<ProcessedTransaction> {
-        let mut wait_time = 1;
+        let timeout = Duration::from_secs(60);
+        let start = Instant::now();
+        let poll_interval = Duration::from_secs(1);
 
         // First try to get the transaction, retry if null
         let mut tx = match self.get_processed_transaction(tx_id).await {
@@ -237,19 +242,16 @@ impl AsyncArchRpcClient {
             Ok(None) => {
                 // Transaction not found, start polling
                 loop {
-                    std::thread::sleep(Duration::from_secs(wait_time));
+                    tokio::time::sleep(poll_interval).await;
+                    if start.elapsed() >= timeout {
+                        return Err(ArchError::TimeoutError(format!(
+                            "Failed to retrieve processed transaction {} after 60 seconds",
+                            tx_id
+                        )));
+                    }
                     match self.get_processed_transaction(tx_id).await? {
                         Some(tx) => break tx,
-                        None => {
-                            wait_time += 1;
-                            if wait_time >= 60 {
-                                return Err(ArchError::TimeoutError(
-                                    "Failed to retrieve processed transaction after 60 seconds"
-                                        .to_string(),
-                                ));
-                            }
-                            continue;
-                        }
+                        None => continue,
                     }
                 }
             }
@@ -258,26 +260,23 @@ impl AsyncArchRpcClient {
 
         // Now wait for the transaction to finish processing
         while !is_transaction_finalized(&tx) {
-            std::thread::sleep(Duration::from_secs(wait_time));
+            tokio::time::sleep(poll_interval).await;
+            if start.elapsed() >= timeout {
+                return Err(ArchError::TimeoutError(format!(
+                    "Transaction {} did not reach final status after 60 seconds",
+                    tx_id
+                )));
+            }
             match self.get_processed_transaction(tx_id).await? {
                 Some(updated_tx) => {
                     tx = updated_tx;
-                    if is_transaction_finalized(&tx) {
-                        break;
-                    }
                 }
                 None => {
-                    return Err(ArchError::TransactionError(
-                        "Transaction disappeared after being found".to_string(),
-                    ));
+                    return Err(ArchError::TransactionError(format!(
+                        "Transaction {} disappeared after being found",
+                        tx_id
+                    )));
                 }
-            }
-
-            wait_time += 1;
-            if wait_time >= 60 {
-                return Err(ArchError::TimeoutError(
-                    "Transaction did not reach final status after 60 seconds".to_string(),
-                ));
             }
         }
 
@@ -310,27 +309,26 @@ impl AsyncArchRpcClient {
 
     /// Get the best block hash
     pub async fn get_best_block_hash(&self) -> Result<Hash> {
-        match self.call_method_raw(GET_BEST_BLOCK_HASH).await? {
-            Some(value) => {
-                let hash_str = value.as_str().ok_or_else(|| {
-                    ArchError::ParseError("Failed to get best block hash as string".to_string())
-                })?;
-                Ok(Hash::from_str(hash_str)?)
-            }
-            None => Err(ArchError::NotFound("Best block hash not found".to_string())),
-        }
+        self.fetch_hash(GET_BEST_BLOCK_HASH, "best block hash")
+            .await
     }
 
-    /// Get the best block hash
+    /// Get the best finalized block hash
     pub async fn get_best_finalized_block_hash(&self) -> Result<Hash> {
-        match self.call_method_raw(GET_BEST_FINALIZED_BLOCK_HASH).await? {
+        self.fetch_hash(GET_BEST_FINALIZED_BLOCK_HASH, "best finalized block hash")
+            .await
+    }
+
+    /// Shared helper: call a no-params RPC method and parse the result as a Hash
+    async fn fetch_hash(&self, method: &str, description: &str) -> Result<Hash> {
+        match self.call_method_raw(method).await? {
             Some(value) => {
                 let hash_str = value.as_str().ok_or_else(|| {
-                    ArchError::ParseError("Failed to get best block hash as string".to_string())
+                    ArchError::ParseError(format!("Failed to get {}", description))
                 })?;
                 Ok(Hash::from_str(hash_str)?)
             }
-            None => Err(ArchError::NotFound("Best block hash not found".to_string())),
+            None => Err(ArchError::NotFound(format!("{} not found", description))),
         }
     }
 
@@ -366,44 +364,33 @@ impl AsyncArchRpcClient {
 
     /// Get full block by hash with complete transaction details
     pub async fn get_full_block_by_hash(&self, block_hash: &str) -> Result<Option<FullBlock>> {
-        // Create parameters array with block_hash and full filter
-        let params = vec![
-            serde_json::to_value(block_hash)?,
-            serde_json::to_value(BlockTransactionFilter::Full)?,
-        ];
-
-        // Process the response - first get the raw value
-        match self.process_result(self.post_data(GET_BLOCK, params).await?)? {
-            Some(value) => {
-                // Deserialize into a FullBlock
-                let result = serde_json::from_value(value).map_err(|e| {
-                    ArchError::ParseError(format!("Failed to deserialize FullBlock: {}", e))
-                })?;
-                Ok(Some(result))
-            }
-            None => Ok(None),
-        }
+        self.fetch_full_block(GET_BLOCK, block_hash).await
     }
 
     /// Get block by height with signatures only
     pub async fn get_block_by_height(&self, block_height: u64) -> Result<Option<Block>> {
-        // For signatures only, we can just pass the block hash directly
         self.call_method_with_params(GET_BLOCK_BY_HEIGHT, block_height)
             .await
     }
 
-    /// Get full block by hash with complete transaction details
+    /// Get full block by height with complete transaction details
     pub async fn get_full_block_by_height(&self, block_height: u64) -> Result<Option<FullBlock>> {
-        // Create parameters array with block_hash and full filter
+        self.fetch_full_block(GET_BLOCK_BY_HEIGHT, block_height)
+            .await
+    }
+
+    /// Shared helper: fetch a full block with a given key (hash or height)
+    async fn fetch_full_block<T: Serialize>(
+        &self,
+        method: &str,
+        key: T,
+    ) -> Result<Option<FullBlock>> {
         let params = vec![
-            serde_json::to_value(block_height)?,
+            serde_json::to_value(key)?,
             serde_json::to_value(BlockTransactionFilter::Full)?,
         ];
-
-        // Process the response - first get the raw value
-        match self.process_result(self.post_data(GET_BLOCK_BY_HEIGHT, params).await?)? {
+        match self.process_result(self.post_data(method, params).await?)? {
             Some(value) => {
-                // Deserialize into a FullBlock
                 let result = serde_json::from_value(value).map_err(|e| {
                     ArchError::ParseError(format!("Failed to deserialize FullBlock: {}", e))
                 })?;
@@ -536,7 +523,7 @@ impl AsyncArchRpcClient {
                 if let (Some(Value::Number(code)), Some(Value::String(message))) =
                     (err_obj.get("code"), err_obj.get("message"))
                 {
-                    if code.as_i64() == Some(NOT_FOUND_CODE) {
+                    if code.as_i64() == Some(RPC_NOT_FOUND_CODE) {
                         return Ok(None);
                     }
                     return Err(ArchError::RpcRequestFailed(format!(
@@ -576,6 +563,6 @@ impl AsyncArchRpcClient {
 }
 
 /// Helper function to check if a transaction has reached a final status
-fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
+pub(crate) fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
     matches!(&tx.status, Status::Processed | Status::Failed(_))
 }

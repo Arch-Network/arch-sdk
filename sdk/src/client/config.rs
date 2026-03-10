@@ -54,5 +54,4 @@ impl Config {
             titan_url: "".to_string(),
         }
     }
-    // TODO: Add devnet, testnet and mainnet configs
 }

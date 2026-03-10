@@ -11,6 +11,7 @@ use bitcoin::key::UntweakedKeypair;
 use bitcoin::XOnlyPublicKey;
 
 use crate::ArchError;
+use crate::BIP322SigningErrorKind;
 
 /* -------------------------------------------------------------------------- */
 /*                      SIGNS A MESSAGE FOLLOWING BIP322                      */
@@ -21,15 +22,18 @@ pub fn sign_message_bip322(
     keypair: &UntweakedKeypair,
     msg: &[u8],
     network: bitcoin::Network,
-) -> [u8; 64] {
+) -> Result<[u8; 64], ArchError> {
     let secp = Secp256k1::new();
     let xpubk = XOnlyPublicKey::from_keypair(keypair).0;
     let private_key = PrivateKey::new(SecretKey::from_keypair(keypair), network);
 
     let address = Address::p2tr(&secp, xpubk, None, network);
 
-    let to_spend = create_to_spend(&address, msg).unwrap();
-    let mut to_sign = create_to_sign(&to_spend, None).unwrap();
+    let to_spend = create_to_spend(&address, msg).map_err(|_| {
+        ArchError::BIP322SigningError(BIP322SigningErrorKind::ToSpendCreationFailed)
+    })?;
+    let mut to_sign = create_to_sign(&to_spend, None)
+        .map_err(|_| ArchError::BIP322SigningError(BIP322SigningErrorKind::ToSignCreationFailed))?;
 
     let witness = match address.witness_program() {
         Some(witness_program) => {
@@ -39,25 +43,53 @@ pub fn sign_message_bip322(
             match version {
                 1 => {
                     if program_len != 32 {
-                        panic!("not key spend path");
+                        return Err(ArchError::BIP322SigningError(
+                            BIP322SigningErrorKind::NotKeySpendPath,
+                        ));
                     }
-                    create_message_signature_taproot(&to_spend, &to_sign, private_key)
+                    create_message_signature_taproot(&to_spend, &to_sign, private_key)?
                 }
                 _ => {
-                    panic!("unsuported address");
+                    return Err(ArchError::BIP322SigningError(
+                        BIP322SigningErrorKind::UnsupportedAddress,
+                    ));
                 }
             }
         }
         None => {
-            panic!("unsuported address");
+            return Err(ArchError::BIP322SigningError(
+                BIP322SigningErrorKind::UnsupportedAddress,
+            ));
         }
     };
 
     to_sign.inputs[0].final_script_witness = Some(witness);
 
-    let signature = to_sign.extract_tx().unwrap().input[0].witness.clone();
+    let tx = to_sign.extract_tx().map_err(|_| {
+        ArchError::BIP322SigningError(BIP322SigningErrorKind::TransactionExtractFailed)
+    })?;
 
-    signature.to_vec()[0][..64].try_into().unwrap()
+    let witness = tx
+        .input
+        .first()
+        .ok_or(ArchError::BIP322SigningError(
+            BIP322SigningErrorKind::SignatureExtractFailed,
+        ))?
+        .witness
+        .clone();
+
+    let witness_bytes = witness.to_vec();
+    let sig_bytes = witness_bytes.first().ok_or(ArchError::BIP322SigningError(
+        BIP322SigningErrorKind::SignatureExtractFailed,
+    ))?;
+
+    sig_bytes
+        .get(..64)
+        .ok_or(ArchError::BIP322SigningError(
+            BIP322SigningErrorKind::SignatureExtractFailed,
+        ))?
+        .try_into()
+        .map_err(|_| ArchError::BIP322SigningError(BIP322SigningErrorKind::SignatureExtractFailed))
 }
 
 /* -------------------------------------------------------------------------- */
@@ -68,7 +100,7 @@ fn create_message_signature_taproot(
     to_spend_tx: &Transaction,
     to_sign: &Psbt,
     private_key: PrivateKey,
-) -> Witness {
+) -> Result<Witness, ArchError> {
     let mut to_sign = to_sign.clone();
 
     let secp = Secp256k1::new();
@@ -90,21 +122,26 @@ fn create_message_signature_taproot(
             }]),
             sighash_type,
         )
-        .expect("signature hash should compute");
+        .map_err(|_| {
+            ArchError::BIP322SigningError(BIP322SigningErrorKind::SighashComputationFailed)
+        })?;
 
     let key_pair = key_pair
         .tap_tweak(&secp, to_sign.inputs[0].tap_merkle_root)
         .to_inner();
 
     let sig = secp.sign_schnorr(
-        &bitcoin::secp256k1::Message::from_digest_slice(sighash.as_ref())
-            .expect("should be cryptographically secure hash"),
+        &bitcoin::secp256k1::Message::from_digest_slice(sighash.as_ref()).map_err(|_| {
+            ArchError::BIP322SigningError(BIP322SigningErrorKind::SighashComputationFailed)
+        })?,
         &key_pair,
     );
 
     let witness = sighash_cache
         .witness_mut(0)
-        .expect("getting mutable witness reference should work");
+        .ok_or(ArchError::BIP322SigningError(
+            BIP322SigningErrorKind::SighashComputationFailed,
+        ))?;
 
     witness.push(
         bitcoin::taproot::Signature {
@@ -114,7 +151,7 @@ fn create_message_signature_taproot(
         .to_vec(),
     );
 
-    witness.to_owned()
+    Ok(witness.to_owned())
 }
 
 /* -------------------------------------------------------------------------- */
@@ -158,12 +195,14 @@ mod bip322_tests {
             &first_account_keypair,
             b"helloworld",
             bitcoin::Network::Testnet,
-        );
+        )
+        .expect("signing should succeed");
         let signature2 = sign_message_bip322(
             &first_account_keypair,
             b"helloworld",
             bitcoin::Network::Testnet,
-        );
+        )
+        .expect("signing should succeed");
 
         println!("signature1 {:?}", signature1);
         println!("signature2 {:?}", signature2);

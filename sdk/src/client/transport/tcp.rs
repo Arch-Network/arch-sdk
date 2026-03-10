@@ -1,13 +1,14 @@
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde_json::Value;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::SocketAddr;
 use std::str::FromStr;
-use std::sync::Mutex;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 
 use crate::client::error::Result;
-use crate::client::transport::{AsyncRpcTransport, RpcTransport};
+use crate::client::transport::RpcTransport;
 
 pub struct TcpClient {
     stream: Mutex<TcpStream>,
@@ -16,43 +17,48 @@ pub struct TcpClient {
 impl TcpClient {
     pub fn new(addr: String) -> Result<Self> {
         let addr = SocketAddr::from_str(&addr).map_err(TcpClientError::InvalidAddress)?;
-        let stream = TcpStream::connect(addr).map_err(TcpClientError::ConnectFailed)?;
+        let std_stream =
+            std::net::TcpStream::connect(addr).map_err(TcpClientError::ConnectFailed)?;
+        std_stream
+            .set_nonblocking(true)
+            .map_err(TcpClientError::ConnectFailed)?;
+        let stream = TcpStream::from_std(std_stream).map_err(TcpClientError::ConnectFailed)?;
         Ok(Self {
             stream: Mutex::new(stream),
         })
     }
 
-    /// Writes the message to the socket.
-    fn write<T: BorshSerialize>(stream: &mut TcpStream, val: &T) -> Result<()> {
+    async fn write_all(stream: &mut TcpStream, val: &str) -> Result<()> {
         let mut serialized = Vec::new();
         BorshSerialize::serialize(val, &mut serialized).map_err(TcpClientError::BorshSerialize)?;
 
-        // Write the payload length prefix.
         let len = serialized.len() as u64;
         let prefix = len.to_be_bytes();
         stream
             .write_all(&prefix)
+            .await
             .map_err(TcpClientError::SocketWrite)?;
-
-        // Write the payload.
         stream
             .write_all(&serialized)
+            .await
             .map_err(TcpClientError::SocketWrite)?;
 
         Ok(())
     }
 
     /// Reads the next message from the socket.
-    fn read<T: BorshDeserialize>(stream: &mut TcpStream) -> Result<T> {
+    async fn read_response<T: BorshDeserialize>(stream: &mut TcpStream) -> Result<T> {
         let mut prefix = [0_u8; 8];
         stream
             .read_exact(&mut prefix)
+            .await
             .map_err(TcpClientError::SocketRead)?;
         let payload_len = u64::from_be_bytes(prefix);
 
         let mut payload = vec![0_u8; payload_len as usize];
         stream
             .read_exact(&mut payload)
+            .await
             .map_err(TcpClientError::SocketRead)?;
 
         let mut cursor = &payload[..];
@@ -62,27 +68,12 @@ impl TcpClient {
     }
 }
 
-impl RpcTransport for TcpClient {
-    fn call(&self, json: &Value) -> Result<String> {
-        let mut stream = self
-            .stream
-            .lock()
-            .map_err(|err| TcpClientError::PoisonedLock(err.to_string()))?;
-        Self::write(&mut stream, &json.to_string())?;
-        let ret: String = Self::read(&mut stream)?;
-        Ok(ret)
-    }
-}
-
 #[async_trait]
-impl AsyncRpcTransport for TcpClient {
+impl RpcTransport for TcpClient {
     async fn call(&self, json: &Value) -> Result<String> {
-        let mut stream = self
-            .stream
-            .lock()
-            .map_err(|err| TcpClientError::PoisonedLock(err.to_string()))?;
-        Self::write(&mut stream, &json.to_string())?;
-        let ret: String = Self::read(&mut stream)?;
+        let mut stream = self.stream.lock().await;
+        Self::write_all(&mut stream, &json.to_string()).await?;
+        let ret = Self::read_response(&mut stream).await?;
         Ok(ret)
     }
 }
@@ -106,7 +97,4 @@ pub enum TcpClientError {
 
     #[error("Failed to deserialize: {0}")]
     BorshDeserialize(std::io::Error),
-
-    #[error("Failed to lock: {0}")]
-    PoisonedLock(String),
 }

@@ -6,7 +6,6 @@ use libfuzzer_sys::arbitrary;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
 pub struct TransactionToSign {
     pub tx_bytes: Vec<u8>,
     pub inputs_to_sign: Vec<InputToSign>,

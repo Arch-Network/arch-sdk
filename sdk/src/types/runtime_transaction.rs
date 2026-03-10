@@ -60,7 +60,6 @@ pub enum RuntimeTransactionError {
     Hash,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
 pub struct RuntimeTransaction {
     pub version: u32,
     pub signatures: Vec<Signature>,
@@ -115,7 +114,8 @@ impl RuntimeTransaction {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        let mut serilized = vec![];
+        let capacity = 4 + 1 + (self.signatures.len() * 64) + 256;
+        let mut serilized = Vec::with_capacity(capacity);
 
         serilized.extend(self.version.to_le_bytes());
         serilized.push(self.signatures.len() as u8);

@@ -105,7 +105,6 @@ impl SanitizedMessage {
     Decode,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
 pub struct ArchMessage {
     /// Header containing metadata about the message
     pub header: MessageHeader,
@@ -427,7 +426,6 @@ fn compile_instructions(ixs: &[Instruction], keys: &[Pubkey]) -> Vec<SanitizedIn
     Decode,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
 pub struct SanitizedInstruction {
     /// The public key of the program that will process this instruction
     pub program_id_index: u8,
@@ -455,7 +453,6 @@ pub struct SanitizedInstruction {
     Decode,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
 pub struct MessageHeader {
     /// The number of signatures required for this message to be considered
     /// valid

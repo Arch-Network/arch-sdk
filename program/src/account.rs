@@ -250,13 +250,13 @@ impl<'a> AccountInfo<'a> {
         Ok(**self.try_borrow_lamports()?)
     }
 
-    pub fn try_borrow_lamports(&self) -> Result<Ref<&mut u64>, ProgramError> {
+    pub fn try_borrow_lamports(&self) -> Result<Ref<'_, &mut u64>, ProgramError> {
         self.lamports
             .try_borrow()
             .map_err(|_| ProgramError::AccountBorrowFailed)
     }
 
-    pub fn try_borrow_mut_lamports(&self) -> Result<RefMut<&'a mut u64>, ProgramError> {
+    pub fn try_borrow_mut_lamports(&self) -> Result<RefMut<'_, &'a mut u64>, ProgramError> {
         self.lamports
             .try_borrow_mut()
             .map_err(|_| ProgramError::AccountBorrowFailed)
@@ -266,7 +266,7 @@ impl<'a> AccountInfo<'a> {
     /// # Returns
     /// * `Ok(Ref<&mut [u8]>)` - A reference to the account's data
     /// * `Err(ProgramError)` - If the data is already mutably borrowed
-    pub fn try_borrow_data(&self) -> Result<Ref<&mut [u8]>, ProgramError> {
+    pub fn try_borrow_data(&self) -> Result<Ref<'_, &mut [u8]>, ProgramError> {
         self.data
             .try_borrow()
             .map_err(|_| ProgramError::AccountBorrowFailed)
@@ -277,7 +277,7 @@ impl<'a> AccountInfo<'a> {
     /// # Returns
     /// * `Ok(RefMut<&mut [u8]>)` - A mutable reference to the account's data
     /// * `Err(ProgramError)` - If the data is already borrowed
-    pub fn try_borrow_mut_data(&self) -> Result<RefMut<&'a mut [u8]>, ProgramError> {
+    pub fn try_borrow_mut_data(&self) -> Result<RefMut<'_, &'a mut [u8]>, ProgramError> {
         self.data
             .try_borrow_mut()
             .map_err(|_| ProgramError::AccountBorrowFailed)

@@ -22,7 +22,7 @@ pub fn build_and_sign_transaction(
                     .ok_or(ArchError::RequiredSignerNotFound(*key))?,
                 &digest_slice,
                 bitcoin_network,
-            );
+            )?;
             Ok(Signature(signature_array))
         })
         .collect::<Result<Vec<Signature>, ArchError>>()?;

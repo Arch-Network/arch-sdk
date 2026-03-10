@@ -1,8 +1,35 @@
+use std::fmt;
+
 use arch_program::pubkey::Pubkey;
 use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 
 use crate::client::transport::tcp::TcpClientError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BIP322SigningErrorKind {
+    UnsupportedAddress,
+    NotKeySpendPath,
+    ToSpendCreationFailed,
+    ToSignCreationFailed,
+    TransactionExtractFailed,
+    SignatureExtractFailed,
+    SighashComputationFailed,
+}
+
+impl fmt::Display for BIP322SigningErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedAddress => write!(f, "unsupported address type"),
+            Self::NotKeySpendPath => write!(f, "not a key spend path"),
+            Self::ToSpendCreationFailed => write!(f, "failed to create to_spend transaction"),
+            Self::ToSignCreationFailed => write!(f, "failed to create to_sign transaction"),
+            Self::TransactionExtractFailed => write!(f, "failed to extract transaction from PSBT"),
+            Self::SignatureExtractFailed => write!(f, "failed to extract signature bytes"),
+            Self::SighashComputationFailed => write!(f, "failed to compute sighash"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, thiserror::Error)]
 pub enum ArchError {
@@ -47,6 +74,12 @@ pub enum ArchError {
 
     #[error("BIP322 verification failed: {0}")]
     BIP322VerificationFailed(String),
+
+    #[error("BIP322 signing error: {0}")]
+    BIP322SigningError(BIP322SigningErrorKind),
+
+    #[error("Bitcoin RPC error: {0}")]
+    BitcoinRpcError(String),
 }
 
 impl From<serde_json::Error> for ArchError {

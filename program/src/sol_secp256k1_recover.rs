@@ -93,8 +93,8 @@ impl From<Secp256k1RecoverError> for u64 {
 /// # Arguments
 ///
 /// * `hash` - The 32-byte message hash that was signed
-/// * `recovery_id` - The recovery ID (0, 1, 2, or 3) that identifies which of the possible
-///                  public keys was used to create the signature
+/// * `recovery_id` - The recovery ID (0, 1, 2, or 3) that identifies which of
+///   the possible public keys was used to create the signature
 /// * `signature` - The 64-byte signature (r and s components without recovery ID)
 ///
 /// # Returns

@@ -11,7 +11,7 @@ use crate::system_program::SYSTEM_PROGRAM_ID;
 pub enum SystemError {
     #[error("an account with the same address already exists")]
     AccountAlreadyInUse,
-    #[error("account does not have enough SOL to perform the operation")]
+    #[error("account does not have enough ARCH to perform the operation")]
     ResultWithNegativeLamports,
     #[error("cannot assign account to this program id")]
     InvalidProgramId,

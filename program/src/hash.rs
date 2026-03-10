@@ -138,6 +138,10 @@ impl Hash {
         self.0
     }
 
+    pub fn copy_bytes(&self, out: &mut [u8; 32]) {
+        out.copy_from_slice(&self.0)
+    }
+
     pub fn to_string_short(&self) -> String {
         hex::encode(&self.0[..4])
     }

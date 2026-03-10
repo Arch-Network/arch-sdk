@@ -13,7 +13,6 @@ use crate::{program_error::ProgramError, pubkey::Pubkey};
 /// and the public key of the signer that should sign this input.
 #[derive(Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-
 pub struct InputToSign {
     pub index: u32,
     pub signer: Pubkey,
