@@ -25,7 +25,6 @@ reqwest = { version = "0.12", default-features = false, features = [
   "blocking",
 ] }
 indicatif = "0.17.8"
-snafu = "0.8.5"
 base64 = "0.22.1"
 bip322 = "0.0.9"
 thiserror = { version = "1.0.57" }
