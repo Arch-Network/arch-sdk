@@ -10,11 +10,10 @@ use {
     },
     arch_program::{
         account::{next_account_info, AccountInfo},
-        bitcoin::{self as arch_bitcoin, hashes::Hash},
         entrypoint::ProgramResult,
         input_to_sign::InputToSign,
         msg,
-        program::{get_transaction_to_sign, set_input_to_sign, set_return_data},
+        program::{set_input_to_sign, set_return_data},
         program_error::ProgramError,
         program_memory::sol_memcmp,
         program_option::COption,
@@ -843,50 +842,6 @@ impl Processor {
         Ok(())
     }
 
-    /// Processes a [`SignInput`](enum.TokenInstruction.html) instruction.
-    ///
-    /// Signs a Bitcoin transaction input for an account owned by this program.
-    pub fn process_sign_input(
-        program_id: &Pubkey,
-        accounts: &[AccountInfo],
-        index: u32,
-    ) -> ProgramResult {
-        let account_info_iter = &mut accounts.iter();
-        let account_info = next_account_info(account_info_iter)?;
-
-        if !account_info.is_signer {
-            msg!("SignInput: account must be a signer");
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        Self::check_account_owner(program_id, account_info)?;
-
-        let buf = get_transaction_to_sign();
-        let arr: [u8; 4] = buf
-            .get(..4)
-            .and_then(|s| s.try_into().ok())
-            .ok_or(ProgramError::InvalidInstructionData)?;
-        let tx_len = u32::from_le_bytes(arr) as usize;
-        let tx_data = buf
-            .get(4..4 + tx_len)
-            .ok_or(ProgramError::InvalidInstructionData)?;
-        let tx: arch_bitcoin::Transaction = arch_bitcoin::consensus::deserialize(tx_data)
-            .map_err(|_| ProgramError::InvalidInstructionData)?;
-
-        let txid = tx.compute_txid();
-        let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
-        txid_bytes.reverse();
-
-        let input_to_sign = InputToSign {
-            index,
-            signer: *account_info.key,
-        };
-
-        set_input_to_sign(accounts, txid_bytes, &[input_to_sign])?;
-
-        Ok(())
-    }
-
     /// Processes an [`Instruction`](enum.Instruction.html).
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = TokenInstruction::unpack(input)?;
@@ -1005,10 +960,6 @@ impl Processor {
             } => {
                 msg!("Instruction: Anchor");
                 Self::process_anchor(program_id, accounts, txid, input_to_sign)
-            }
-            TokenInstruction::SignInput { index } => {
-                msg!("Instruction: SignInput");
-                Self::process_sign_input(program_id, accounts, index)
             }
         }
     }

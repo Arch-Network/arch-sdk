@@ -465,20 +465,6 @@ pub enum TokenInstruction<'a> {
         /// The input to sign
         input_to_sign: InputToSign,
     },
-    /// Sign a Bitcoin transaction input for an account owned by this program.
-    ///
-    /// Requires that `set_transaction_to_sign` has already been called in the
-    /// same Arch transaction. Reads the pending Bitcoin transaction, computes
-    /// its txid, and registers the specified input for signing while updating
-    /// the account's UTXO.
-    ///
-    /// Accounts expected by this instruction:
-    ///
-    ///   0. `[signer, writable]` The account whose UTXO input should be signed
-    SignInput {
-        /// Index of the input in the Bitcoin transaction to sign
-        index: u32,
-    },
 }
 impl<'a> TokenInstruction<'a> {
     /// Unpacks a byte buffer into a
@@ -585,14 +571,6 @@ impl<'a> TokenInstruction<'a> {
                     txid,
                     input_to_sign,
                 }
-            }
-            25 => {
-                let index = rest
-                    .get(..4)
-                    .and_then(|slice| slice.try_into().ok())
-                    .map(u32::from_le_bytes)
-                    .ok_or(InvalidInstruction)?;
-                Self::SignInput { index }
             }
             _ => return Err(TokenError::InvalidInstruction.into()),
         })
@@ -708,10 +686,6 @@ impl<'a> TokenInstruction<'a> {
                 buf.push(24);
                 buf.extend_from_slice(txid);
                 buf.extend_from_slice(&input_to_sign.serialise());
-            }
-            &Self::SignInput { index } => {
-                buf.push(25);
-                buf.extend_from_slice(&index.to_le_bytes());
             }
         };
         buf
@@ -1454,25 +1428,6 @@ pub fn anchor(
             input_to_sign,
         }
         .pack(),
-    })
-}
-
-/// Creates a `SignInput` instruction for a token-program-owned account.
-///
-/// This signs a Bitcoin transaction input for an account owned by the token
-/// program. Must be called after `set_transaction_to_sign` in the same Arch
-/// transaction.
-pub fn sign_input(
-    token_program_id: &Pubkey,
-    account_pubkey: &Pubkey,
-    index: u32,
-) -> Result<Instruction, ProgramError> {
-    check_program_account(token_program_id)?;
-
-    Ok(Instruction {
-        program_id: *token_program_id,
-        accounts: vec![AccountMeta::new(*account_pubkey, true)],
-        data: TokenInstruction::SignInput { index }.pack(),
     })
 }
 

@@ -49,18 +49,6 @@ pub enum MetadataInstruction {
     },
     /// Make metadata immutable (revoke update authority)
     MakeImmutable,
-    /// Sign a Bitcoin transaction input for an account owned by this program.
-    ///
-    /// Requires that `set_transaction_to_sign` has already been called in the
-    /// same Arch transaction.
-    ///
-    /// Accounts expected by this instruction:
-    ///
-    ///   0. `[signer, writable]` The account whose UTXO input should be signed
-    SignInput {
-        /// Index of the input in the Bitcoin transaction to sign
-        index: u32,
-    },
 }
 
 impl MetadataInstruction {
