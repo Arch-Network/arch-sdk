@@ -271,7 +271,6 @@ fn unpack_coption_key(src: &[u8; 36]) -> Result<COption<Pubkey>, ProgramError> {
         _ => Err(ProgramError::InvalidAccountData),
     }
 }
-#[allow(dead_code)]
 fn pack_coption_u64(src: &COption<u64>, dst: &mut [u8; 12]) {
     let (tag, body) = mut_array_refs![dst, 4, 8];
     match src {
@@ -284,7 +283,6 @@ fn pack_coption_u64(src: &COption<u64>, dst: &mut [u8; 12]) {
         }
     }
 }
-#[allow(dead_code)]
 fn unpack_coption_u64(src: &[u8; 12]) -> Result<COption<u64>, ProgramError> {
     let (tag, body) = array_refs![src, 4, 8];
     match *tag {
