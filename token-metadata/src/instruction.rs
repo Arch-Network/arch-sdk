@@ -49,6 +49,22 @@ pub enum MetadataInstruction {
     },
     /// Make metadata immutable (revoke update authority)
     MakeImmutable,
+    /// Sign a Bitcoin transaction input for an account owned by this program.
+    ///
+    /// Works for metadata accounts. Reads the pending Bitcoin transaction via
+    /// `get_transaction_to_sign`, computes its txid, validates the
+    /// update_authority, and registers the specified input for signing.
+    ///
+    /// Accounts expected by this instruction:
+    ///
+    ///   0. `[writable]` The metadata account
+    ///   1. `[signer]` The update authority
+    Anchor {
+        /// Index of the input in the Bitcoin transaction to sign
+        input_index: u32,
+        /// The public key of the signer for this input
+        input_signer: Pubkey,
+    },
 }
 
 impl MetadataInstruction {

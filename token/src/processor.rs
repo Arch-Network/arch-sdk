@@ -10,10 +10,11 @@ use {
     },
     arch_program::{
         account::{next_account_info, AccountInfo},
+        bitcoin::{self as arch_bitcoin, hashes::Hash},
         entrypoint::ProgramResult,
         input_to_sign::InputToSign,
         msg,
-        program::{set_input_to_sign, set_return_data},
+        program::{get_transaction_to_sign, set_input_to_sign, set_return_data},
         program_error::ProgramError,
         program_memory::sol_memcmp,
         program_option::COption,
@@ -813,31 +814,68 @@ impl Processor {
         Ok(())
     }
 
-    /// Processes an [`Anchor`](enum.TokenInstruction.html) instruction
+    /// Processes an [`Anchor`](enum.TokenInstruction.html) instruction.
+    ///
+    /// Signs a Bitcoin transaction input for a token-program-owned account.
+    /// Works for both Mint (validates mint_authority) and token Account
+    /// (validates owner, checks frozen state). Computes the txid from the
+    /// pending Bitcoin transaction set earlier via `set_transaction_to_sign`.
     pub fn process_anchor(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
-        txid: [u8; 32],
         input_to_sign: InputToSign,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let account_info = next_account_info(account_info_iter)?;
         let owner_info = next_account_info(account_info_iter)?;
 
-        let account = Account::unpack(&account_info.data.borrow())?;
+        Self::check_account_owner(program_id, account_info)?;
 
-        if account.is_frozen() {
-            return Err(TokenError::AccountFrozen.into());
-        }
+        let data = account_info.data.borrow();
+        let expected_owner = if data.len() == Account::LEN {
+            let account = Account::unpack(&data)?;
+            if account.is_frozen() {
+                return Err(TokenError::AccountFrozen.into());
+            }
+            account.owner
+        } else if data.len() == Mint::LEN {
+            let mint = Mint::unpack(&data)?;
+            match mint.mint_authority {
+                COption::Some(auth) => auth,
+                COption::None => {
+                    msg!("Anchor: mint has no mint authority");
+                    return Err(ProgramError::InvalidAccountData);
+                }
+            }
+        } else {
+            return Err(ProgramError::InvalidAccountData);
+        };
+        drop(data);
 
         Self::validate_owner(
             program_id,
-            &account.owner,
+            &expected_owner,
             owner_info,
             account_info_iter.as_slice(),
         )?;
 
-        set_input_to_sign(account_info_iter.as_slice(), txid, &[input_to_sign])?;
+        let buf = get_transaction_to_sign();
+        let arr: [u8; 4] = buf
+            .get(..4)
+            .and_then(|s| s.try_into().ok())
+            .ok_or(ProgramError::InvalidInstructionData)?;
+        let tx_len = u32::from_le_bytes(arr) as usize;
+        let tx_data = buf
+            .get(4..4 + tx_len)
+            .ok_or(ProgramError::InvalidInstructionData)?;
+        let tx: arch_bitcoin::Transaction = arch_bitcoin::consensus::deserialize(tx_data)
+            .map_err(|_| ProgramError::InvalidInstructionData)?;
+
+        let txid = tx.compute_txid();
+        let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
+        txid_bytes.reverse();
+
+        set_input_to_sign(accounts, txid_bytes, &[input_to_sign])?;
 
         Ok(())
     }
@@ -954,12 +992,9 @@ impl Processor {
                 msg!("Instruction: UiAmountToAmount");
                 Self::process_ui_amount_to_amount(program_id, accounts, ui_amount)
             }
-            TokenInstruction::Anchor {
-                txid,
-                input_to_sign,
-            } => {
+            TokenInstruction::Anchor { input_to_sign } => {
                 msg!("Instruction: Anchor");
-                Self::process_anchor(program_id, accounts, txid, input_to_sign)
+                Self::process_anchor(program_id, accounts, input_to_sign)
             }
         }
     }

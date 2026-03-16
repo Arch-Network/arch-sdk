@@ -453,15 +453,18 @@ pub enum TokenInstruction<'a> {
     // Any new variants also need to be added to program-2022 `TokenInstruction`, so that the
     // latter remains a superset of this instruction set. New variants also need to be added to
     // token/js/src/instructions/types.ts to maintain @solana/spl-token compatibility
-    /// Anchor an account to a Bitcoin transaction
+    /// Sign a Bitcoin transaction input for a token-program-owned account.
+    ///
+    /// Works for both Mint and token Account. Reads the pending Bitcoin
+    /// transaction via `get_transaction_to_sign`, computes its txid, validates
+    /// the owner/authority, and registers the specified input for signing while
+    /// updating the account's UTXO.
     ///
     /// Accounts expected by this instruction:
     ///
-    ///   0. `[writable]` The account to anchor
-    ///   1. `[signer]` The owner of the account
+    ///   0. `[writable]` The account (Mint or token Account)
+    ///   1. `[signer]` The authority (owner for token Account, mint_authority for Mint)
     Anchor {
-        /// The transaction ID
-        txid: [u8; 32],
         /// The input to sign
         input_to_sign: InputToSign,
     },
@@ -565,12 +568,8 @@ impl<'a> TokenInstruction<'a> {
                 Self::UiAmountToAmount { ui_amount }
             }
             24 => {
-                let (txid, input_to_sign) = Self::unpack_txid(rest)?;
-                let input_to_sign = InputToSign::from_slice(input_to_sign)?;
-                Self::Anchor {
-                    txid,
-                    input_to_sign,
-                }
+                let input_to_sign = InputToSign::from_slice(rest)?;
+                Self::Anchor { input_to_sign }
             }
             _ => return Err(TokenError::InvalidInstruction.into()),
         })
@@ -679,12 +678,8 @@ impl<'a> TokenInstruction<'a> {
                 buf.push(23);
                 buf.extend_from_slice(ui_amount.as_bytes());
             }
-            Self::Anchor {
-                txid,
-                input_to_sign,
-            } => {
+            Self::Anchor { input_to_sign } => {
                 buf.push(24);
-                buf.extend_from_slice(txid);
                 buf.extend_from_slice(&input_to_sign.serialise());
             }
         };
@@ -696,16 +691,6 @@ impl<'a> TokenInstruction<'a> {
             let (key, rest) = input.split_at(32);
             let pk = Pubkey::from_slice(key);
             Ok((pk, rest))
-        } else {
-            Err(TokenError::InvalidInstruction.into())
-        }
-    }
-
-    fn unpack_txid(input: &[u8]) -> Result<([u8; 32], &[u8]), ProgramError> {
-        if input.len() >= 32 {
-            let (key, rest) = input.split_at(32);
-            let txid = key.try_into().map_err(|_| TokenError::InvalidInstruction)?;
-            Ok((txid, rest))
         } else {
             Err(TokenError::InvalidInstruction.into())
         }
@@ -1407,12 +1392,15 @@ pub fn ui_amount_to_amount(
     })
 }
 
-/// Creates an `Anchor` instruction
+/// Creates an `Anchor` instruction.
+///
+/// Signs a Bitcoin transaction input for a token-program-owned account (Mint
+/// or token Account). Must be called after `set_transaction_to_sign` in the
+/// same Arch transaction.
 pub fn anchor(
     token_program_id: &Pubkey,
     account_pubkey: &Pubkey,
     owner_pubkey: &Pubkey,
-    txid: [u8; 32],
     input_to_sign: InputToSign,
 ) -> Result<Instruction, ProgramError> {
     check_program_account(token_program_id)?;
@@ -1423,11 +1411,7 @@ pub fn anchor(
             AccountMeta::new(*account_pubkey, false),
             AccountMeta::new_readonly(*owner_pubkey, true),
         ],
-        data: TokenInstruction::Anchor {
-            txid,
-            input_to_sign,
-        }
-        .pack(),
+        data: TokenInstruction::Anchor { input_to_sign }.pack(),
     })
 }
 
@@ -1675,7 +1659,6 @@ mod test {
         assert_eq!(unpacked, check);
 
         let check = TokenInstruction::Anchor {
-            txid: [1u8; 32],
             input_to_sign: InputToSign {
                 index: 0,
                 signer: Pubkey::from_slice(&[2u8; 32]),
@@ -1683,8 +1666,6 @@ mod test {
         };
         let packed = check.pack();
         let mut expect = vec![24u8];
-        expect.extend_from_slice(&[1u8; 32]);
-        // expect.extend_from_slice(&[0]);
         expect.extend_from_slice(&[0, 0, 0, 0]);
         expect.extend_from_slice(&[2u8; 32]);
         assert_eq!(packed, expect);

@@ -37,6 +37,14 @@ impl BitcoinHelper {
     }
 
     pub async fn send_utxo(&self, pubkey: Pubkey) -> Result<(String, u32), String> {
+        self.send_utxo_with_amount(pubkey, 3000).await
+    }
+
+    pub async fn send_utxo_with_amount(
+        &self,
+        pubkey: Pubkey,
+        amount_sats: u64,
+    ) -> Result<(String, u32), String> {
         let address = self
             .get_account_address(pubkey)
             .await
@@ -56,7 +64,7 @@ impl BitcoinHelper {
             let txid = rpc
                 .send_to_address(
                     &addr_clone,
-                    Amount::from_sat(3000),
+                    Amount::from_sat(amount_sats),
                     None,
                     None,
                     None,
@@ -86,6 +94,20 @@ impl BitcoinHelper {
 
         Ok((txid.to_string(), vout))
     }
+
+    pub async fn get_account_address_string(&self, pubkey: Pubkey) -> Result<String, String> {
+        self.get_account_address(pubkey)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    // pub fn rpc_client(&self) -> &Arc<Client> {
+    //     &self.rpc_client
+    // }
+
+    // pub fn network(&self) -> Network {
+    //     self.network
+    // }
 
     pub async fn wait_until_titan_indexes_transaction(
         &self,

@@ -30,6 +30,26 @@ impl BlockingBitcoinHelper {
         block_on(self.inner.send_utxo(pubkey))
     }
 
+    pub fn send_utxo_with_amount(
+        &self,
+        pubkey: Pubkey,
+        amount_sats: u64,
+    ) -> Result<(String, u32), String> {
+        block_on(self.inner.send_utxo_with_amount(pubkey, amount_sats))
+    }
+
+    pub fn get_account_address_string(&self, pubkey: Pubkey) -> Result<String, String> {
+        block_on(self.inner.get_account_address_string(pubkey))
+    }
+
+    // pub fn rpc_client(&self) -> &std::sync::Arc<bitcoincore_rpc::Client> {
+    //     self.inner.rpc_client()
+    // }
+
+    // pub fn network(&self) -> bitcoin::Network {
+    //     self.inner.network()
+    // }
+
     pub fn wait_until_titan_indexes_transaction(&self, txid: &bitcoin::Txid) -> Result<(), String> {
         block_on(self.inner.wait_until_titan_indexes_transaction(txid))
     }

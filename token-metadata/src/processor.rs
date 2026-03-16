@@ -14,9 +14,11 @@ use {
     apl_token::{self, state::Mint},
     arch_program::{
         account::{next_account_info, AccountInfo},
+        bitcoin::{self as arch_bitcoin, hashes::Hash},
         entrypoint::ProgramResult,
+        input_to_sign::InputToSign,
         msg,
-        program::invoke_signed,
+        program::{get_transaction_to_sign, invoke_signed, set_input_to_sign},
         program_error::ProgramError,
         program_option::COption,
         program_pack::{IsInitialized, Pack},
@@ -72,6 +74,13 @@ impl Processor {
             }
 
             MetadataInstruction::MakeImmutable => Self::process_make_immutable(accounts),
+            MetadataInstruction::Anchor {
+                input_index,
+                input_signer,
+            } => {
+                msg!("Instruction: Anchor");
+                Self::process_anchor(program_id, accounts, input_index, input_signer)
+            }
         }
     }
 
@@ -535,6 +544,71 @@ impl Processor {
 
         metadata.update_authority = Some(new_authority);
         metadata.pack_into_slice(&mut metadata_info.data.borrow_mut());
+        Ok(())
+    }
+
+    /// Signs a Bitcoin transaction input for a metadata-program-owned account.
+    /// Validates the update_authority from the metadata account.
+    fn process_anchor(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        input_index: u32,
+        input_signer: Pubkey,
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let account_info = next_account_info(account_info_iter)?;
+        let authority_info = next_account_info(account_info_iter)?;
+
+        if !cmp_pubkeys(program_id, account_info.owner) {
+            msg!("Anchor: account not owned by this program");
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        let metadata = TokenMetadata::unpack(&account_info.data.borrow())
+            .map_err(|_| ProgramError::InvalidAccountData)?;
+
+        if !metadata.is_initialized() {
+            msg!("Anchor: metadata not initialized");
+            return Err(ProgramError::UninitializedAccount);
+        }
+
+        let expected_authority = metadata
+            .update_authority
+            .ok_or(MetadataError::InvalidAuthority)?;
+
+        if !cmp_pubkeys(&expected_authority, authority_info.key) {
+            msg!("Anchor: authority does not match");
+            return Err(MetadataError::InvalidAuthority.into());
+        }
+
+        if !authority_info.is_signer {
+            msg!("Anchor: authority must be a signer");
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        let buf = get_transaction_to_sign();
+        let arr: [u8; 4] = buf
+            .get(..4)
+            .and_then(|s| s.try_into().ok())
+            .ok_or(ProgramError::InvalidInstructionData)?;
+        let tx_len = u32::from_le_bytes(arr) as usize;
+        let tx_data = buf
+            .get(4..4 + tx_len)
+            .ok_or(ProgramError::InvalidInstructionData)?;
+        let tx: arch_bitcoin::Transaction = arch_bitcoin::consensus::deserialize(tx_data)
+            .map_err(|_| ProgramError::InvalidInstructionData)?;
+
+        let txid = tx.compute_txid();
+        let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
+        txid_bytes.reverse();
+
+        let input_to_sign = InputToSign {
+            index: input_index,
+            signer: input_signer,
+        };
+
+        set_input_to_sign(accounts, txid_bytes, &[input_to_sign])?;
+
         Ok(())
     }
 
