@@ -1,16 +1,9 @@
 name: Publish Crates to crates.io
 
 on:
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Dry run (validate only, do not publish)"
-        required: true
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
+  push:
+    branches:
+      - main
 
 env:
   CARGO_TERM_COLOR: always
