@@ -221,10 +221,16 @@ impl ProcessedTransaction {
         self.runtime_transaction.txid()
     }
 
-    pub fn to_vec(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
+    fn to_vec_internal(
+        &self,
+        for_block_signature: bool,
+    ) -> Result<Vec<u8>, ParseProcessedTransactionError> {
         let mut serialized = Vec::with_capacity(1024);
 
-        serialized.extend(self.rollback_status.to_fixed_array()?);
+        // Rollback status not included for block signature.
+        if !for_block_signature {
+            serialized.extend(self.rollback_status.to_fixed_array()?);
+        }
 
         let serialized_runtime_transaction = self.runtime_transaction.serialize();
         if serialized_runtime_transaction.len() > RUNTIME_TX_SIZE_LIMIT {
@@ -247,18 +253,21 @@ impl ProcessedTransaction {
             None => vec![0],
         });
 
-        if self.logs.len() > MAX_LOG_MESSAGES_COUNT {
-            return Err(ParseProcessedTransactionError::TooManyLogMessages);
-        }
-        if self.logs.iter().map(|s| s.len()).sum::<usize>() > MAX_LOG_MESSAGES_LEN {
-            return Err(ParseProcessedTransactionError::TooManyLogMessages);
-        }
+        // Tx logs not include for block signature.
+        if !for_block_signature {
+            if self.logs.len() > MAX_LOG_MESSAGES_COUNT {
+                return Err(ParseProcessedTransactionError::TooManyLogMessages);
+            }
+            if self.logs.iter().map(|s| s.len()).sum::<usize>() > MAX_LOG_MESSAGES_LEN {
+                return Err(ParseProcessedTransactionError::TooManyLogMessages);
+            }
 
-        serialized.extend((self.logs.len() as u64).to_le_bytes());
-        for log in &self.logs {
-            let log_len = std::cmp::min(log.len(), LOG_MESSAGES_BYTES_LIMIT);
-            serialized.extend((log_len as u64).to_le_bytes());
-            serialized.extend(log.as_bytes()[..log_len].to_vec());
+            serialized.extend((self.logs.len() as u64).to_le_bytes());
+            for log in &self.logs {
+                let log_len = std::cmp::min(log.len(), LOG_MESSAGES_BYTES_LIMIT);
+                serialized.extend((log_len as u64).to_le_bytes());
+                serialized.extend(log.as_bytes()[..log_len].to_vec());
+            }
         }
 
         serialized.extend(match &self.status {
@@ -303,6 +312,14 @@ impl ProcessedTransaction {
             }
         }
         Ok(serialized)
+    }
+
+    pub fn to_vec(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
+        self.to_vec_internal(false)
+    }
+
+    pub fn to_vec_for_block_signature(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
+        self.to_vec_internal(true)
     }
 
     pub fn from_vec(data: &[u8]) -> Result<Self, ParseProcessedTransactionError> {

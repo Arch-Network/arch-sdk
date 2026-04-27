@@ -1,7 +1,18 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
-//! Arch Network Token Metadata Standard
+//! On-chain token metadata program for the Arch runtime.
+//!
+//! This crate provides:
+//! - deterministic PDA helpers for metadata and attribute accounts
+//! - instruction and processor logic for create/update/finalize flows
+//! - state definitions for metadata payloads stored on chain
+//!
+//! Package details:
+//! - Cargo package: `apl-token-metadata`
+//! - Library crate: `apl_token_metadata`
+//! - Program ID and PDA helpers live in this file
+//! - Instruction, state, and processor logic live in sibling modules
 
 pub mod error;
 pub mod instruction;

@@ -254,7 +254,7 @@ impl Pubkey {
     ) -> Result<Pubkey, ProgramError> {
         if seeds.len() > MAX_SEEDS {
             println!("seeds.len() {} > MAX_SEEDS {}", seeds.len(), MAX_SEEDS);
-            return Err(ProgramError::MaxSeedLengthExceeded);
+            return Err(ProgramError::MaxSeedsExceeded);
         }
         for seed in seeds.iter() {
             if seed.len() > MAX_SEED_LEN {
@@ -531,7 +531,7 @@ mod tests {
         // Test exceeding MAX_SEEDS
         let too_many_seeds = vec![&[0u8; 1][..]; MAX_SEEDS + 1];
         let result = Pubkey::create_program_address(&too_many_seeds[..], &program_id);
-        assert_eq!(result.unwrap_err(), ProgramError::MaxSeedLengthExceeded);
+        assert_eq!(result.unwrap_err(), ProgramError::MaxSeedsExceeded);
 
         // Test exceeding MAX_SEED_LEN
         let long_seed = &[0u8; MAX_SEED_LEN + 1];

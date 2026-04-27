@@ -1,6 +1,6 @@
 [package]
 name = "apl-token"
-version = "0.6.3"
+version = { workspace = true }
 edition = "2021"
 description = "APL Token Program"
 license = "MIT"
@@ -9,19 +9,19 @@ license = "MIT"
 
 [dependencies]
 arch_program = { workspace = true }
-borsh = { version = "1.5.1", features = ["derive"] }
-bitcoin = { version = "0.31.0", features = ["serde"] }
-bitcoin-io = { version = "=0.1.2" }
+borsh = { workspace = true }
+bitcoin = { workspace = true }
+bitcoin-io = { workspace = true }
 
-arrayref = "0.3.9"
-bytemuck = "1.20.0"
-num-derive = "0.4"
-num-traits = "0.2"
-num_enum = "0.7.3"
-thiserror = "2.0"
+arrayref = { workspace = true }
+bytemuck = { workspace = true }
+num-derive = { workspace = true }
+num-traits = { workspace = true }
+num_enum = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
-proptest = "1.0.0"
+proptest = { workspace = true }
 
 [lib]
 crate-type = ["cdylib", "lib"]
