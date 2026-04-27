@@ -4,23 +4,9 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Validate packaging only; do not publish to crates.io"
-        type: choice
-        options:
-          - "true"
-          - "false"
-        default: "true"
 
 env:
   CARGO_TERM_COLOR: always
-  # Effective dry-run flag.
-  # - On workflow_dispatch: use the user-selected input.
-  # - On push to main: default to a real publish (dry_run=false), matching the
-  #   workflow's purpose of publishing crates when changes land on main.
-  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
 
 jobs:
   publish:
@@ -44,69 +30,32 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-publish-
 
-      # ── Dry-run: validate all crates can compile and package ────────
-      - name: Build all workspace crates
-        if: env.DRY_RUN == 'true'
-        run: cargo check --workspace
-
-      - name: Validate arch_program packaging
-        if: env.DRY_RUN == 'true'
-        working-directory: program
-        run: cargo package --list
-
-      - name: Validate arch_sdk packaging
-        if: env.DRY_RUN == 'true'
-        working-directory: sdk
-        run: cargo package --list
-
-      - name: Validate apl-token packaging
-        if: env.DRY_RUN == 'true'
-        working-directory: token
-        run: cargo package --list
-
-      - name: Validate apl-associated-token-account packaging
-        if: env.DRY_RUN == 'true'
-        working-directory: associated-token-account
-        run: cargo package --list
-
-      - name: Validate apl-token-metadata packaging
-        if: env.DRY_RUN == 'true'
-        working-directory: token-metadata
-        run: cargo package --list
-
-      # ── Real publish: crates in dependency order with index waits ───
+      # ── Publish crates in dependency order with index waits ─────────
       # Tier 1: arch_program (no internal deps)
       - name: Publish arch_program
-        if: env.DRY_RUN == 'false'
         working-directory: program
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for crates.io to index arch_program
-        if: env.DRY_RUN == 'false'
         run: sleep 30
 
       # Tier 2: arch_sdk & apl-token (depend on arch_program)
       - name: Publish arch_sdk
-        if: env.DRY_RUN == 'false'
         working-directory: sdk
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish apl-token
-        if: env.DRY_RUN == 'false'
         working-directory: token
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for crates.io to index tier-2 crates
-        if: env.DRY_RUN == 'false'
         run: sleep 30
 
       # Tier 3: crates that depend on apl-token
       - name: Publish apl-associated-token-account
-        if: env.DRY_RUN == 'false'
         working-directory: associated-token-account
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish apl-token-metadata
-        if: env.DRY_RUN == 'false'
         working-directory: token-metadata
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
