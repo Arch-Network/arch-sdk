@@ -37,6 +37,11 @@ define_syscall!(fn sol_secp256k1_recover( hash_addr: *const u8, recovery_id_val:
 define_syscall!(fn sol_keccak256(data: *const u8, length: u64, result: *mut u8) -> u64);
 define_syscall!(fn sol_sha256(data: *const u8, length: u64, result: *mut u8) -> u64);
 
+// curve25519 group operations (curve_id: edwards25519 = 0, ristretto255 = 1)
+define_syscall!(fn sol_curve_validate_point(curve_id: u64, point_addr: *const u8, result_addr: *mut u8) -> u64);
+define_syscall!(fn sol_curve_group_op(curve_id: u64, group_op: u64, left_input_addr: *const u8, right_input_addr: *const u8, result_addr: *mut u8) -> u64);
+define_syscall!(fn sol_curve_multiscalar_mul(curve_id: u64, scalars_addr: *const u8, points_addr: *const u8, points_len: u64, result_addr: *mut u8) -> u64);
+
 // logs
 define_syscall!(fn sol_log_(message: *const u8, len: u64));
 define_syscall!(fn sol_log_64_(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64));

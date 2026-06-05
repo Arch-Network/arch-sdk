@@ -44,6 +44,8 @@ pub mod clock;
 pub mod compiled_keys;
 /// Compute budget instruction definitions and processing
 pub mod compute_budget;
+/// Syscall-backed curve25519 (edwards25519 / ristretto255) group operations
+pub mod curve25519;
 /// Utilities for debugging account data
 pub mod debug_account_data;
 /// Error handling for decoding operations

@@ -26,6 +26,8 @@ use arch_program::compiled_keys;
 #[allow(unused_imports)]
 use arch_program::compute_budget;
 #[allow(unused_imports)]
+use arch_program::curve25519;
+#[allow(unused_imports)]
 use arch_program::debug_account_data;
 #[allow(unused_imports)]
 use arch_program::decode_error;
