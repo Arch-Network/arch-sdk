@@ -127,6 +127,18 @@ impl RuntimeTransaction {
         serilized
     }
 
+    pub fn serialize_with_size_limit(&self) -> Result<Vec<u8>, RuntimeTransactionError> {
+        let serialized = self.serialize();
+        if serialized.len() > RUNTIME_TX_SIZE_LIMIT {
+            Err(RuntimeTransactionError::RuntimeTransactionSizeExceedsLimit(
+                serialized.len(),
+                RUNTIME_TX_SIZE_LIMIT,
+            ))
+        } else {
+            Ok(serialized)
+        }
+    }
+
     pub fn from_slice(data: &[u8]) -> Result<Self, RuntimeTransactionError> {
         let mut cursor: usize = 0;
 

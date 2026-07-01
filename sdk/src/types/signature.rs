@@ -81,30 +81,29 @@ impl<'de> Deserialize<'de> for Signature {
     }
 }
 
-use proptest::prelude::*;
-
-proptest! {
-    #[test]
-    fn fuzz_serialize_deserialize_signature(bytes in prop::collection::vec(any::<u8>(), 64..=64)) {
-        let mut signature_bytes = [0u8; 64];
-        signature_bytes.copy_from_slice(&bytes);
-        let signature = Signature::from(signature_bytes);
-
-        // Test internal serialize method
-        let serialized = signature.to_array();
-        let deserialized = Signature::from(serialized);
-        assert_eq!(signature, deserialized);
-
-        // Test serde JSON serialization/deserialization
-        let json = serde_json::to_string(&signature).unwrap();
-        let from_json: Signature = serde_json::from_str(&json).unwrap();
-        assert_eq!(signature, from_json);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn fuzz_serialize_deserialize_signature(bytes in prop::collection::vec(any::<u8>(), 64..=64)) {
+            let mut signature_bytes = [0u8; 64];
+            signature_bytes.copy_from_slice(&bytes);
+            let signature = Signature::from(signature_bytes);
+
+            // Test internal serialize method
+            let serialized = signature.to_array();
+            let deserialized = Signature::from(serialized);
+            assert_eq!(signature, deserialized);
+
+            // Test serde JSON serialization/deserialization
+            let json = serde_json::to_string(&signature).unwrap();
+            let from_json: Signature = serde_json::from_str(&json).unwrap();
+            assert_eq!(signature, from_json);
+        }
+    }
 
     #[test]
     fn test_serde_serialize_deserialize() {
