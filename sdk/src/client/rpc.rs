@@ -10,11 +10,12 @@ use serde_json::Value;
 #[cfg(test)]
 use crate::client::async_rpc::{
     GET_BEST_BLOCK_HASH, GET_BLOCK, GET_BLOCK_BY_HEIGHT, GET_BLOCK_COUNT, GET_BLOCK_HASH,
-    GET_MULTIPLE_ACCOUNTS, GET_PROCESSED_TRANSACTION, GET_PROGRAM_ACCOUNTS, READ_ACCOUNT_INFO,
-    SEND_TRANSACTION, SEND_TRANSACTIONS,
+    GET_MULTIPLE_ACCOUNTS, GET_PROCESSED_TRANSACTION, GET_PROGRAM_ACCOUNTS, GET_TRANSACTION_STATUS,
+    READ_ACCOUNT_INFO, SEND_TRANSACTION, SEND_TRANSACTIONS,
 };
 use crate::types::{
     AccountFilter, AccountInfo, Block, ProcessedTransaction, ProgramAccount, RuntimeTransaction,
+    Status,
 };
 
 /// ArchRpcClient provides a simple interface for making RPC calls to the Arch blockchain.
@@ -138,6 +139,11 @@ impl BlockingArchRpcClient {
         tx_ids: Vec<Hash>,
     ) -> Result<Vec<ProcessedTransaction>> {
         block_on(async { self.client.wait_for_processed_transactions(tx_ids).await })
+    }
+
+    /// Get the status of multiple transactions by ID.
+    pub fn get_transaction_status(&self, tx_ids: Vec<Hash>) -> Result<Vec<Result<Status>>> {
+        block_on(async { self.client.get_transaction_status(tx_ids).await })
     }
 
     /// Get the best block hash
@@ -589,6 +595,34 @@ mod tests {
         let returned_tx = result.unwrap();
         assert_eq!(returned_tx.status, processed_tx.status);
         assert_eq!(returned_tx.logs, processed_tx.logs);
+        mock.assert();
+    }
+
+    #[test]
+    fn test_get_transaction_status() {
+        let mut server = Server::new();
+        let tx_id_1 = Hash::from([1; 32]);
+        let tx_id_2 = Hash::from([2; 32]);
+
+        let params = serde_json::json!({
+            "txids": [tx_id_1.to_string(), tx_id_2.to_string()]
+        });
+
+        let mock = mock_rpc_response_with_params(
+            &mut server,
+            GET_TRANSACTION_STATUS,
+            params,
+            serde_json::json!([{"type": "queued"}, null]),
+        );
+
+        let client = get_test_client(&server);
+        let result = client
+            .get_transaction_status(vec![tx_id_1, tx_id_2])
+            .unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].as_ref().unwrap(), &Status::Queued);
+        assert!(result[1].is_err());
         mock.assert();
     }
 

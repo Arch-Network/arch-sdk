@@ -35,6 +35,7 @@ pub const GET_BLOCK_HASH: &str = "get_block_hash";
 pub const GET_BEST_BLOCK_HASH: &str = "get_best_block_hash";
 pub const GET_BEST_FINALIZED_BLOCK_HASH: &str = "get_best_finalized_block_hash";
 pub const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
+pub const GET_TRANSACTION_STATUS: &str = "get_transaction_status";
 pub const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 pub const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
 pub const CHECK_PRE_ANCHOR_CONFLICT: &str = "check_pre_anchor_conflict";
@@ -305,6 +306,35 @@ impl ArchRpcClient {
         }
 
         Ok(processed_transactions)
+    }
+
+    pub async fn get_transaction_status(&self, tx_ids: Vec<Hash>) -> Result<Vec<Result<Status>>> {
+        let params = serde_json::json!({
+            "txids": tx_ids.iter().map(|tx_id| tx_id.to_string()).collect::<Vec<_>>()
+        });
+
+        let statuses: Vec<Option<Status>> = self
+            .call_method_with_params(GET_TRANSACTION_STATUS, params)
+            .await?
+            .ok_or_else(|| ArchError::NotFound("transaction statuses not found".to_string()))?;
+
+        if statuses.len() != tx_ids.len() {
+            return Err(ArchError::ParseError(format!(
+                "expected {} statuses, got {}",
+                tx_ids.len(),
+                statuses.len()
+            )));
+        }
+
+        Ok(statuses
+            .into_iter()
+            .zip(tx_ids)
+            .map(|(status, tx_id)| {
+                status.ok_or_else(|| {
+                    ArchError::NotFound(format!("transaction status not found: {}", tx_id))
+                })
+            })
+            .collect())
     }
 
     /// Get the best block hash
