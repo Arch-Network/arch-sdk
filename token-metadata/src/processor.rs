@@ -24,7 +24,7 @@ use {
         program_pack::{IsInitialized, Pack},
         pubkey::Pubkey,
         rent::minimum_rent,
-        system_instruction::create_account,
+        system_instruction::{create_account, create_account_with_anchor},
     },
 };
 
@@ -55,6 +55,25 @@ impl Processor {
                 image,
                 description,
                 immutable,
+                None,
+            ),
+            MetadataInstruction::CreateMetadataWithAnchor {
+                name,
+                symbol,
+                image,
+                description,
+                immutable,
+                txid,
+                vout,
+            } => Self::process_create_metadata(
+                program_id,
+                accounts,
+                name,
+                symbol,
+                image,
+                description,
+                immutable,
+                Some((txid, vout)),
             ),
             MetadataInstruction::UpdateMetadata {
                 name,
@@ -84,6 +103,7 @@ impl Processor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn process_create_metadata(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -92,6 +112,7 @@ impl Processor {
         image: String,
         description: String,
         immutable: bool,
+        anchor: Option<([u8; 32], u32)>,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let payer_info = next_account_info(account_info_iter)?; // [writable, signer]
@@ -194,14 +215,28 @@ impl Processor {
             let space = TokenMetadata::LEN as u64;
             let lamports = minimum_rent(TokenMetadata::LEN);
 
-            invoke_signed(
-                &create_account(
+            let create_account_instruction = if let Some((txid, vout)) = anchor {
+                create_account_with_anchor(
                     payer_info.key,
                     metadata_info.key,
                     lamports,
                     space,
                     program_id,
-                ),
+                    txid,
+                    vout,
+                )
+            } else {
+                create_account(
+                    payer_info.key,
+                    metadata_info.key,
+                    lamports,
+                    space,
+                    program_id,
+                )
+            };
+
+            invoke_signed(
+                &create_account_instruction,
                 &[
                     payer_info.clone(),
                     metadata_info.clone(),
@@ -586,6 +621,8 @@ impl Processor {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
+        Self::validate_anchor_signer(account_info.key, &input_signer)?;
+
         let buf = get_transaction_to_sign();
         let arr: [u8; 4] = buf
             .get(..4)
@@ -609,6 +646,14 @@ impl Processor {
 
         set_input_to_sign(accounts, txid_bytes, &[input_to_sign])?;
 
+        Ok(())
+    }
+
+    fn validate_anchor_signer(account: &Pubkey, input_signer: &Pubkey) -> ProgramResult {
+        if input_signer != account {
+            msg!("Anchor: input signer does not match metadata account");
+            return Err(MetadataError::InvalidAuthority.into());
+        }
         Ok(())
     }
 
@@ -651,4 +696,22 @@ impl Processor {
 /// Checks two pubkeys for equality using a cheap memcmp
 fn cmp_pubkeys(a: &Pubkey, b: &Pubkey) -> bool {
     arch_program::program_memory::sol_memcmp(a.as_ref(), b.as_ref(), 32) == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_anchor_signer_accepts_bound_signer() {
+        let account = Pubkey::new_unique();
+        assert!(Processor::validate_anchor_signer(&account, &account).is_ok());
+    }
+
+    #[test]
+    fn validate_anchor_signer_rejects_unbound_signer() {
+        let account = Pubkey::new_unique();
+        let err = Processor::validate_anchor_signer(&account, &Pubkey::new_unique()).unwrap_err();
+        assert_eq!(err, MetadataError::InvalidAuthority.into());
+    }
 }

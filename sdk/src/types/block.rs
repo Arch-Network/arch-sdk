@@ -54,9 +54,33 @@ pub struct Block {
 }
 
 impl Block {
+    pub fn new(
+        transactions: Vec<Hash>,
+        previous_block_hash: Hash,
+        timestamp: u128,
+        block_height: u64,
+        bitcoin_block_height: u64,
+    ) -> Self {
+        Self {
+            transactions,
+            previous_block_hash,
+            timestamp,
+            block_height,
+            bitcoin_block_height,
+        }
+    }
+
     pub const fn max_serialized_size() -> usize {
         8 // transaction_count
         + MAX_TRANSACTIONS_PER_BLOCK * 32 // transactions
+        + 32 // previous_block_hash
+        + 16 // timestamp
+        + 8 // block_height
+        + 8 // bitcoin_block_height
+    }
+
+    pub const fn min_serialized_size() -> usize {
+        8 // transaction_count
         + 32 // previous_block_hash
         + 16 // timestamp
         + 8 // block_height
@@ -131,6 +155,65 @@ impl Block {
     }
 }
 
+pub struct BlockBuilder {
+    transactions: Vec<Hash>,
+    previous_block_hash: Hash,
+    timestamp: u128,
+    block_height: u64,
+    bitcoin_block_height: u64,
+}
+
+impl BlockBuilder {
+    pub fn new(
+        previous_block_hash: Hash,
+        timestamp: u128,
+        block_height: u64,
+        bitcoin_block_height: u64,
+    ) -> Self {
+        Self {
+            transactions: Vec::new(),
+            previous_block_hash,
+            timestamp,
+            block_height,
+            bitcoin_block_height,
+        }
+    }
+
+    pub fn add_transaction(&mut self, transaction: Hash) {
+        self.transactions.push(transaction);
+    }
+
+    pub fn block_height(&self) -> u64 {
+        self.block_height
+    }
+
+    pub fn bitcoin_block_height(&self) -> u64 {
+        self.bitcoin_block_height
+    }
+
+    pub fn timestamp(&self) -> u128 {
+        self.timestamp
+    }
+
+    pub fn previous_block_hash(&self) -> Hash {
+        self.previous_block_hash
+    }
+
+    pub fn transactions(&self) -> &[Hash] {
+        &self.transactions
+    }
+
+    pub fn build(self) -> Block {
+        Block::new(
+            self.transactions,
+            self.previous_block_hash,
+            self.timestamp,
+            self.block_height,
+            self.bitcoin_block_height,
+        )
+    }
+}
+
 fn read_hash(data: &[u8], cursor: &mut usize) -> Result<Hash, BlockParseError> {
     if *cursor + 32 > data.len() {
         return Err(BlockParseError::InvalidBytes);
@@ -157,6 +240,37 @@ fn read_u128(data: &[u8], cursor: &mut usize) -> Result<u128, BlockParseError> {
     let result = u128::from_le_bytes(data[*cursor..*cursor + 16].try_into()?);
     *cursor += 16;
     Ok(result)
+}
+
+/// Tracker for the size of the serialized block.
+pub struct BlockSizeTracker {
+    /// Current size of the serialized block.
+    cur_size: usize,
+}
+
+impl BlockSizeTracker {
+    pub fn new() -> Self {
+        Self {
+            cur_size: Block::min_serialized_size(),
+        }
+    }
+
+    /// Update the size with an additional transaction.
+    pub fn add_transaction(&mut self) {
+        let serialized = Hash::from([0_u8; 32]).to_array();
+        self.cur_size += serialized.len();
+    }
+
+    /// Get the current size of the serialized block.
+    pub fn get_size(&self) -> usize {
+        self.cur_size
+    }
+}
+
+impl Default for BlockSizeTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(
@@ -231,8 +345,17 @@ impl From<FullBlock> for Block {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
+
     const GENESIS_BLOCK_PREVIOUS_HASH: &str =
         "0000000000000000000000000000000000000000000000000000000000000000";
+
+    pub(crate) fn random_bytes<const N: usize>() -> [u8; N] {
+        let mut rng = rand::thread_rng();
+        let mut ret = [0; N];
+        rng.fill(&mut ret[..]);
+        ret
+    }
 
     #[test]
     fn test_block_serialization_deserialization() {
@@ -301,5 +424,41 @@ mod tests {
         };
         let serialized_data = block.to_vec();
         assert_eq!(serialized_data.len(), Block::max_serialized_size());
+    }
+
+    #[test]
+    fn test_min_serialized_size() {
+        let block = Block {
+            transactions: vec![],
+            previous_block_hash: Hash::from_str(GENESIS_BLOCK_PREVIOUS_HASH).unwrap(),
+            timestamp: 1630000000,
+            block_height: 100,
+            bitcoin_block_height: 100,
+        };
+        let serialized_data = block.to_vec();
+        assert_eq!(serialized_data.len(), Block::min_serialized_size());
+    }
+
+    #[test]
+    fn test_size_tracker() {
+        let mut tracker = BlockSizeTracker::new();
+        assert_eq!(tracker.get_size(), Block::min_serialized_size());
+
+        let mut block = Block {
+            transactions: vec![],
+            previous_block_hash: Hash::from_str(GENESIS_BLOCK_PREVIOUS_HASH).unwrap(),
+            timestamp: 1630000000,
+            block_height: 100,
+            bitcoin_block_height: 100,
+        };
+
+        for _ in 0..10 {
+            let tx_id = Hash::from(random_bytes::<32>());
+            block.transactions.push(tx_id);
+            tracker.add_transaction();
+
+            let serialized_data = block.to_vec();
+            assert_eq!(serialized_data.len(), tracker.get_size());
+        }
     }
 }

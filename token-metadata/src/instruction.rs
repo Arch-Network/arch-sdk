@@ -21,6 +21,24 @@ pub enum MetadataInstruction {
         /// If true, metadata is immutable (no updates allowed)
         immutable: bool,
     },
+    /// Create core metadata for a token and anchor the metadata PDA to a
+    /// Bitcoin UTXO during account creation.
+    CreateMetadataWithAnchor {
+        /// The name of the token
+        name: String,
+        /// The symbol of the token
+        symbol: String,
+        /// Image URI
+        image: String,
+        /// The description
+        description: String,
+        /// If true, metadata is immutable (no updates allowed)
+        immutable: bool,
+        /// Bitcoin transaction id containing the metadata account UTXO
+        txid: [u8; 32],
+        /// Bitcoin transaction output index for the metadata account UTXO
+        vout: u32,
+    },
     /// Update core metadata
     UpdateMetadata {
         /// Optional new name for the token

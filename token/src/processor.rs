@@ -859,6 +859,8 @@ impl Processor {
             account_info_iter.as_slice(),
         )?;
 
+        Self::validate_anchor_signer(account_info.key, &input_to_sign)?;
+
         let buf = get_transaction_to_sign();
         let arr: [u8; 4] = buf
             .get(..4)
@@ -1050,6 +1052,21 @@ impl Processor {
         }
         Ok(())
     }
+
+    /// Validates that the signer of an [`Anchor`](enum.TokenInstruction.html)
+    /// input is the account whose authority was validated.
+    ///
+    /// The signer selects the tweaked key that spends the anchored UTXO. If
+    /// it were not bound to the validated account, a caller could request a
+    /// FROST signature spending a UTXO anchored to any token-program-owned
+    /// account it does not control (the syscall accepts program-owned
+    /// accounts as signers without a signature).
+    fn validate_anchor_signer(account: &Pubkey, input_to_sign: &InputToSign) -> ProgramResult {
+        if input_to_sign.signer != *account {
+            return Err(TokenError::OwnerMismatch.into());
+        }
+        Ok(())
+    }
 }
 
 /// Helper function to mostly delete an account in a test environment.  We could
@@ -1069,4 +1086,101 @@ fn delete_account(account_info: &AccountInfo) -> Result<(), ProgramError> {
 fn delete_account(account_info: &AccountInfo) -> Result<(), ProgramError> {
     account_info.assign(&Pubkey::system_program());
     account_info.realloc(0, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arch_program::utxo::UtxoMeta;
+
+    #[test]
+    fn validate_anchor_signer_accepts_bound_signer() {
+        let key = Pubkey::new_unique();
+        assert!(Processor::validate_anchor_signer(
+            &key,
+            &InputToSign {
+                index: 3,
+                signer: key
+            }
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_anchor_signer_rejects_unbound_signer() {
+        let key = Pubkey::new_unique();
+        let err = Processor::validate_anchor_signer(
+            &key,
+            &InputToSign {
+                index: 0,
+                signer: Pubkey::new_unique(),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, TokenError::OwnerMismatch.into());
+    }
+
+    /// Regression test for the audit finding: process_anchor must not forward
+    /// a signer other than the account whose authority was validated, or a
+    /// caller can have the network FROST-sign a spend of a UTXO anchored to
+    /// a victim's token-program-owned account.
+    #[test]
+    fn process_anchor_rejects_signer_not_matching_validated_account() {
+        let program_id = crate::id();
+        let owner_key = Pubkey::new_unique();
+        let account_key = Pubkey::new_unique();
+        let victim_key = Pubkey::new_unique();
+        let utxo = UtxoMeta::from([0; 32], 0);
+
+        // Token account owned by the token program, with authority `owner_key`.
+        let mut account_data = vec![0u8; Account::LEN];
+        Account {
+            mint: Pubkey::new_unique(),
+            owner: owner_key,
+            amount: 1,
+            delegate: COption::None,
+            state: AccountState::Initialized,
+            is_native: COption::None,
+            delegated_amount: 0,
+            close_authority: COption::None,
+        }
+        .pack_into_slice(&mut account_data);
+        let mut account_lamports = 1u64;
+        let account_info = AccountInfo::new(
+            &account_key,
+            &mut account_lamports,
+            &mut account_data,
+            &program_id,
+            &utxo,
+            false,
+            true,
+            false,
+        );
+
+        // The caller's authority (signs for its own account).
+        let mut owner_data = Vec::new();
+        let mut owner_lamports = 1u64;
+        let owner_info = AccountInfo::new(
+            &owner_key,
+            &mut owner_lamports,
+            &mut owner_data,
+            &SYSTEM_PROGRAM_ID,
+            &utxo,
+            true,
+            false,
+            false,
+        );
+
+        let accounts = vec![account_info, owner_info];
+        let err = Processor::process_anchor(
+            &program_id,
+            &accounts,
+            InputToSign {
+                index: 0,
+                signer: victim_key,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, TokenError::OwnerMismatch.into());
+    }
 }
