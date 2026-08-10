@@ -384,17 +384,15 @@ use core::fmt;
 
 use crate::program_error::ProgramError;
 
-/// TODO:
-///  Change this in future according to the correct base implementation
 impl fmt::Display for Pubkey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", hex::encode(self.0))
+        write!(f, "{}", bs58::encode(self.0).into_string())
     }
 }
 
 impl fmt::Debug for Pubkey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", hex::encode(self.0))
+        fmt::Display::fmt(self, f)
     }
 }
 
@@ -443,6 +441,43 @@ mod tests {
             let deserialized = Pubkey::from_slice(&serialized);
             assert_eq!(pubkey, deserialized);
         }
+    }
+
+    #[test]
+    fn test_display_uses_base58() {
+        let pubkey = Pubkey::new_from_array([0xff; 32]);
+
+        assert_eq!(
+            pubkey.to_string(),
+            "JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG"
+        );
+    }
+
+    #[test]
+    fn test_debug_uses_base58() {
+        let pubkey = Pubkey::new_from_array([0xff; 32]);
+
+        assert_eq!(
+            format!("{:?}", pubkey),
+            "JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG"
+        );
+    }
+
+    #[test]
+    fn test_display_preserves_leading_zeroes() {
+        let pubkey = Pubkey::new_from_array([0; 32]);
+
+        assert_eq!(pubkey.to_string(), "11111111111111111111111111111111");
+    }
+
+    #[test]
+    fn test_lower_hex_remains_available() {
+        let pubkey = Pubkey::new_from_array([0xff; 32]);
+
+        assert_eq!(
+            format!("{:x}", pubkey),
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        );
     }
 
     #[test]

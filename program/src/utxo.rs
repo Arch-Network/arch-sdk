@@ -171,12 +171,13 @@ impl UtxoMeta {
         self.0
     }
 
-    /// Returns true if the UTXO is defined, i.e., the txid is not all zeros.
+    /// Returns true unless the full UTXO metadata is the canonical all-zero value.
     ///
-    /// This is used to determine whether an utxo meta has been initialized.
-    /// A zero txid indicates an uninitialized/undefined UTXO.
+    /// Both the txid and vout must be zero for an uninitialized/undefined UTXO.
+    /// A zero txid with a nonzero vout is malformed defined metadata and must
+    /// still pass through ownership validation.
     pub fn is_defined(&self) -> bool {
-        self.0[..32].iter().any(|b| *b != 0)
+        self.0.iter().any(|b| *b != 0)
     }
 }
 
@@ -270,6 +271,13 @@ impl BorshDeserialize for UtxoMeta {
 mod tests {
     use crate::utxo::UtxoMeta;
     use proptest::prelude::*;
+
+    #[test]
+    fn only_all_zero_utxo_is_undefined() {
+        assert!(!UtxoMeta::from([0; 32], 0).is_defined());
+        assert!(UtxoMeta::from([0; 32], 1).is_defined());
+        assert!(UtxoMeta::from([1; 32], 0).is_defined());
+    }
 
     proptest! {
         #[test]

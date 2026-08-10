@@ -100,6 +100,10 @@ pub enum ProgramError {
     InvalidUtxoSigner,
     #[error("Invalid state transition: {0}")]
     InvalidStateTransition(String),
+    #[error("Invalid aggregate size")]
+    InvalidAggregateSize,
+    #[error("Duplicate shard accounts")]
+    DuplicateShardAccounts,
 }
 
 pub trait PrintProgramError {
@@ -165,6 +169,8 @@ impl PrintProgramError for ProgramError {
             Self::InvalidUtxoId => msg!("Error: InvalidUtxoId"),
             Self::InvalidUtxoSigner => msg!("Error: InvalidUtxoSigner"),
             Self::InvalidStateTransition(_) => msg!("Error: InvalidStateTransition"),
+            Self::InvalidAggregateSize => msg!("Error: InvalidAggregateSize"),
+            Self::DuplicateShardAccounts => msg!("Error: DuplicateShardAccounts"),
         }
     }
 }
@@ -218,6 +224,8 @@ pub const TRANSACTION_TO_SIGN_EMPTY: u64 = to_builtin!(39);
 pub const INVALID_UTXO_ID: u64 = to_builtin!(40);
 pub const INVALID_UTXO_SIGNER: u64 = to_builtin!(41);
 pub const INVALID_STATE_TRANSITION: u64 = to_builtin!(42);
+pub const INVALID_AGGREGATE_SIZE: u64 = to_builtin!(43);
+pub const DUPLICATE_SHARD_ACCOUNTS: u64 = to_builtin!(44);
 // Warning: Any new program errors added here must also be:
 // - Added to the below conversions
 // - Added as an equivalent to InstructionError
@@ -271,6 +279,8 @@ impl From<ProgramError> for u64 {
             ProgramError::InvalidUtxoId => INVALID_UTXO_ID,
             ProgramError::InvalidUtxoSigner => INVALID_UTXO_SIGNER,
             ProgramError::InvalidStateTransition(_) => INVALID_STATE_TRANSITION,
+            ProgramError::InvalidAggregateSize => INVALID_AGGREGATE_SIZE,
+            ProgramError::DuplicateShardAccounts => DUPLICATE_SHARD_ACCOUNTS,
             ProgramError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO

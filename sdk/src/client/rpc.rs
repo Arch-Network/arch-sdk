@@ -113,6 +113,15 @@ impl BlockingArchRpcClient {
         })
     }
 
+    /// Create and fund a program deployment authority on a faucet-enabled network.
+    pub fn create_and_fund_program_authority_with_faucet(&self, keypair: &Keypair) -> Result<()> {
+        block_on(async {
+            self.client
+                .create_and_fund_program_authority_with_faucet(keypair)
+                .await
+        })
+    }
+
     /// Get a processed transaction by ID
     pub fn get_processed_transaction(&self, tx_id: &Hash) -> Result<Option<ProcessedTransaction>> {
         block_on(async { self.client.get_processed_transaction(tx_id).await })

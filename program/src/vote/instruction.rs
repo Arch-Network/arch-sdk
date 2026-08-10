@@ -45,7 +45,12 @@ pub enum VoteInstruction {
     Initialize(VoteInit),
     Authorize(Pubkey),
     UpdateCommission(u8),
-    InitializeSharedValidatorAccount(Vec<u8>, Vec<u8>, Vec<Vec<u8>>),
+    InitializeSharedValidatorAccountChunk {
+        first_chunk: bool,
+        last_chunk: bool,
+        start_offset: u64,
+        chunk: Vec<u8>,
+    },
     UpdatePubkeyPackage(Vec<u8>),
     AddPeerToWhitelist(Vec<u8>),
     RemovePeerFromWhitelist(Vec<u8>),
@@ -99,20 +104,26 @@ pub fn update_commission(vote_pubkey: &Pubkey, authority: &Pubkey, commission: u
     )
 }
 
-pub fn initialize_shared_validator_account(
+pub fn initialize_shared_validator_account_chunk(
+    shared_validator_staging_pubkey: &Pubkey,
     shared_validator_pubkey: &Pubkey,
-    bootnode_pubkey: &[u8; 33],
-    serialized_pubkey_package: &[u8],
-    whitelist: &[[u8; 33]],
+    first_chunk: bool,
+    last_chunk: bool,
+    start_offset: u64,
+    chunk: Vec<u8>,
 ) -> Instruction {
     Instruction::new_with_bincode(
         VOTE_PROGRAM_ID,
-        VoteInstruction::InitializeSharedValidatorAccount(
-            bootnode_pubkey.to_vec(),
-            serialized_pubkey_package.to_vec(),
-            whitelist.iter().map(|p| p.to_vec()).collect(),
-        ),
-        vec![AccountMeta::new(*shared_validator_pubkey, false)],
+        VoteInstruction::InitializeSharedValidatorAccountChunk {
+            first_chunk,
+            last_chunk,
+            start_offset,
+            chunk,
+        },
+        vec![
+            AccountMeta::new(*shared_validator_staging_pubkey, false),
+            AccountMeta::new(*shared_validator_pubkey, false),
+        ],
     )
 }
 

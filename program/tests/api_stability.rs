@@ -158,6 +158,7 @@ fn account_types_and_methods() {
 
     // SHARED_VALIDATOR_DATA_ACCOUNT_ID constant
     let _: [u8; 32] = account::SHARED_VALIDATOR_DATA_ACCOUNT_ID;
+    let _: [u8; 32] = account::SHARED_VALIDATOR_STAGING_ACCOUNT_ID;
 
     // next_account_info function exists (verified by calling it)
     let empty: Vec<account::AccountInfo<'_>> = vec![];
@@ -940,19 +941,33 @@ fn serde_error_types() {
 fn resharing_types_and_constants() {
     let _: pubkey::Pubkey = resharing::RESHARING_PROGRAM_ID;
     let _: pubkey::Pubkey = resharing::RESHARING_DATA_ACCOUNT_ID;
-    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_1_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_2_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_3_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_4_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_5_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_6_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_7_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_8_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_9_ACCOUNT_ID;
+    let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_10_ACCOUNT_ID;
     let _: u64 = resharing::CHUNK_SIZE;
 
-    let ri = resharing::ResharingInstruction {
+    let ri = resharing::ShardChunk {
         first_chunk: true,
-        last_chunk: false,
         start_offset: 0,
         chunk: vec![],
     };
     let _: bool = ri.first_chunk;
-    let _: bool = ri.last_chunk;
     let _: u64 = ri.start_offset;
     let _: Vec<u8> = ri.chunk;
+
+    let ri = resharing::ShardAggregate {
+        total_size: 0,
+        shards: vec![],
+    };
+    let _: u64 = ri.total_size;
+    let _: Vec<(pubkey::Pubkey, u64)> = ri.shards;
 }
 
 // ---------------------------------------------------------------------------

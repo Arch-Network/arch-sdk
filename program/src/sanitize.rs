@@ -8,10 +8,21 @@ pub enum SanitizeError {
     ValueOutOfBounds,
     InvalidValue,
     InvalidVersion,
-    SignatureCountMismatch { expected: usize, actual: usize },
+    SignatureCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
     InvalidRecentBlockhash,
     DuplicateAccount,
-    InvalidSize { serialized_len: usize, limit: usize },
+    InvalidSize {
+        serialized_len: usize,
+        limit: usize,
+    },
+    InvalidShardArgs {
+        payload_size: usize,
+        chunk_size_cap: usize,
+        shard_accounts: usize,
+    },
 }
 
 impl Error for SanitizeError {}
@@ -40,6 +51,17 @@ impl fmt::Display for SanitizeError {
                     f,
                     "Invalid size: serialized_len {}, limit {}",
                     serialized_len, limit
+                )
+            }
+            SanitizeError::InvalidShardArgs {
+                payload_size,
+                chunk_size_cap,
+                shard_accounts,
+            } => {
+                write!(
+                    f,
+                    "invalid shard arguments: payload_size {}, chunk_size_cap {}, shard_accounts {}",
+                    payload_size, chunk_size_cap, shard_accounts
                 )
             }
         }

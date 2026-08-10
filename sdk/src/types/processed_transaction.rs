@@ -1375,17 +1375,17 @@ mod tests {
 
     #[test]
     fn test_biggest_processed_transaction_within_max_size() {
-        // Now let's create a truly maximum transaction with all fields maximized
-        let runtime_transaction = crate::RuntimeTransaction {
+        // Fill the runtime transaction to its exact serialized-size limit.
+        let mut runtime_transaction = crate::RuntimeTransaction {
             version: 0,
-            signatures: vec![Signature::from([0xFF; 64]); 10], // Some signatures
+            signatures: vec![Signature::from([0xFF; 64])],
             message: ArchMessage {
                 header: MessageHeader {
-                    num_required_signatures: 10,
-                    num_readonly_signed_accounts: 5,
-                    num_readonly_unsigned_accounts: 5,
+                    num_required_signatures: 1,
+                    num_readonly_signed_accounts: 0,
+                    num_readonly_unsigned_accounts: 1,
                 },
-                account_keys: (0..50)
+                account_keys: (0..2)
                     .map(|i| {
                         let mut bytes = [0u8; 32];
                         bytes[0] = i as u8;
@@ -1393,17 +1393,19 @@ mod tests {
                     })
                     .collect(),
                 instructions: vec![SanitizedInstruction {
-                    program_id_index: 0,
-                    accounts: (0..20).collect(),
-                    data: vec![0xAA; 7923],
+                    program_id_index: 1,
+                    accounts: vec![0],
+                    data: vec![],
                 }],
                 recent_blockhash: Hash::from([0xFF; 32]),
             },
         };
-
-        println!(
-            "runtime_transaction.serialize().len(): {}",
-            runtime_transaction.serialize().len()
+        let fixed_runtime_transaction_size = runtime_transaction.serialize().len();
+        runtime_transaction.message.instructions[0].data =
+            vec![0xAA; crate::RUNTIME_TX_SIZE_LIMIT - fixed_runtime_transaction_size];
+        assert_eq!(
+            runtime_transaction.serialize().len(),
+            crate::RUNTIME_TX_SIZE_LIMIT
         );
 
         // Ensure the runtime transaction is within its limit

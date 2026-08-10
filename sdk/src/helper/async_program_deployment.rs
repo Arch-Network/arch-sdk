@@ -31,6 +31,11 @@ impl ProgramDeployer {
         }
     }
 
+    /// Deploy a program using an authority that has already been funded.
+    ///
+    /// The authority pays for program-account setup and every packet-sized ELF
+    /// write. The caller must provision enough lamports before calling this
+    /// method; deployment never invokes a network faucet.
     pub async fn try_deploy_program(
         &self,
         program_name: String,
@@ -61,7 +66,6 @@ impl ProgramDeployer {
         {
             return Ok(pubkey);
         }
-
         self.write_program_elf(program_keypair, authority_keypair, &elf)
             .await?;
 
@@ -470,14 +474,16 @@ impl ProgramDeployer {
     }
 }
 
-/// Returns the remaining space in an account's data storage
+/// Returns the largest loader write payload that fits in a runtime transaction.
 pub fn extend_bytes_max_len() -> usize {
+    let program_pubkey = Pubkey::from([1_u8; 32]);
+    let authority_pubkey = Pubkey::from([2_u8; 32]);
     let message = ArchMessage::new(
         &[loader_instruction::write(
-            Pubkey::system_program(),
-            Pubkey::system_program(),
+            program_pubkey,
+            authority_pubkey,
             0,
-            vec![0_u8; 256],
+            Vec::new(),
         )],
         None,
         Hash::from([0; 32]),
@@ -491,4 +497,33 @@ pub fn extend_bytes_max_len() -> usize {
         }
         .serialize()
         .len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extend_bytes_max_len_fills_runtime_transaction() {
+        let max_len = extend_bytes_max_len();
+        let program_pubkey = Pubkey::from([1_u8; 32]);
+        let authority_pubkey = Pubkey::from([2_u8; 32]);
+        let message = ArchMessage::new(
+            &[loader_instruction::write(
+                program_pubkey,
+                authority_pubkey,
+                0,
+                vec![0_u8; max_len],
+            )],
+            None,
+            Hash::from([0; 32]),
+        );
+        let transaction = RuntimeTransaction {
+            version: 0,
+            signatures: vec![Signature([0_u8; 64])],
+            message,
+        };
+
+        assert_eq!(transaction.serialize().len(), RUNTIME_TX_SIZE_LIMIT);
+    }
 }

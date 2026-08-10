@@ -1,5 +1,6 @@
 use std::{
     fmt::{Display, Formatter},
+    ops::Deref,
     str::FromStr,
 };
 
@@ -20,7 +21,8 @@ use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
-pub const RUNTIME_TX_SIZE_LIMIT: usize = 10240;
+/// Maximum serialized transaction size, matching Solana's packet payload limit.
+pub const RUNTIME_TX_SIZE_LIMIT: usize = 1_232;
 
 /// Allowed versions for RuntimeTransaction
 pub const ALLOWED_VERSIONS: [u32; 1] = [0];
@@ -64,6 +66,41 @@ pub struct RuntimeTransaction {
     pub version: u32,
     pub signatures: Vec<Signature>,
     pub message: ArchMessage,
+}
+/// A runtime transaction whose structural invariants have been checked.
+///
+/// The inner transaction is only exposed immutably so sanitization remains
+/// valid for the lifetime of this value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SanitizedRuntimeTransaction(RuntimeTransaction);
+
+impl SanitizedRuntimeTransaction {
+    pub fn into_inner(self) -> RuntimeTransaction {
+        self.0
+    }
+}
+
+impl TryFrom<RuntimeTransaction> for SanitizedRuntimeTransaction {
+    type Error = SanitizeError;
+
+    fn try_from(transaction: RuntimeTransaction) -> Result<Self, Self::Error> {
+        transaction.sanitize()?;
+        Ok(Self(transaction))
+    }
+}
+
+impl AsRef<RuntimeTransaction> for SanitizedRuntimeTransaction {
+    fn as_ref(&self) -> &RuntimeTransaction {
+        &self.0
+    }
+}
+
+impl Deref for SanitizedRuntimeTransaction {
+    type Target = RuntimeTransaction;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl Sanitize for RuntimeTransaction {
@@ -208,7 +245,10 @@ impl RuntimeTransaction {
 
 #[cfg(test)]
 mod tests {
-    use super::{RuntimeTransaction, Signature, ALLOWED_VERSIONS};
+    use super::{
+        RuntimeTransaction, RuntimeTransactionError, Signature, ALLOWED_VERSIONS,
+        RUNTIME_TX_SIZE_LIMIT,
+    };
     use arch_program::hash::Hash;
     use arch_program::{
         pubkey::Pubkey,
@@ -282,6 +322,27 @@ mod tests {
 
         // The deserialized transaction must be identical to the original.
         assert_eq!(original_transaction, deserialized_transaction);
+    }
+
+    #[test]
+    fn test_transaction_size_limit_boundary() {
+        let mut transaction = create_test_transaction(0, 2, 4);
+        let instruction_data_len = transaction.message.instructions[0].data.len();
+        let fixed_serialized_len = transaction.serialize().len() - instruction_data_len;
+        transaction.message.instructions[0].data =
+            vec![0; RUNTIME_TX_SIZE_LIMIT - fixed_serialized_len];
+
+        assert_eq!(transaction.serialize().len(), RUNTIME_TX_SIZE_LIMIT);
+        assert!(transaction.serialize_with_size_limit().is_ok());
+
+        transaction.message.instructions[0].data.push(0);
+        assert_eq!(
+            transaction.check_tx_size_limit(),
+            Err(RuntimeTransactionError::RuntimeTransactionSizeExceedsLimit(
+                RUNTIME_TX_SIZE_LIMIT + 1,
+                RUNTIME_TX_SIZE_LIMIT,
+            ))
+        );
     }
 
     #[test]

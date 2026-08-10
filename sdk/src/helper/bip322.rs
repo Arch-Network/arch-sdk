@@ -128,7 +128,7 @@ fn create_message_signature_taproot(
 
     let key_pair = key_pair
         .tap_tweak(&secp, to_sign.inputs[0].tap_merkle_root)
-        .to_inner();
+        .to_keypair();
 
     let sig = secp.sign_schnorr(
         &bitcoin::secp256k1::Message::from_digest_slice(sighash.as_ref()).map_err(|_| {

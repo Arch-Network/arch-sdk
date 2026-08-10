@@ -201,6 +201,21 @@ impl ArchRpcClient {
         Ok(())
     }
 
+    /// Create and fund a program deployment authority on a faucet-enabled network.
+    ///
+    /// Program deployment can consume more than one faucet grant because each ELF
+    /// chunk is a separate fee-paying transaction. Mainnet callers must instead
+    /// pre-fund the authority from an external account.
+    pub async fn create_and_fund_program_authority_with_faucet(
+        &self,
+        keypair: &Keypair,
+    ) -> Result<()> {
+        self.create_and_fund_account_with_faucet(keypair).await?;
+        let pubkey = Pubkey::from_slice(&keypair.x_only_public_key().0.serialize());
+        self.request_airdrop(pubkey).await?;
+        Ok(())
+    }
+
     /// Get a processed transaction by ID
     pub async fn get_processed_transaction(
         &self,

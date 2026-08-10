@@ -437,6 +437,12 @@ pub enum InstructionError {
 
     #[error("Build Account Address Error")]
     BuildAccountAddressError,
+
+    #[error("Invalid aggregate size")]
+    InvalidAggregateSize,
+
+    #[error("Duplicate shard accounts")]
+    DuplicateShardAccounts,
 }
 
 impl From<SystemError> for InstructionError {
@@ -494,6 +500,8 @@ impl From<u64> for InstructionError {
             TRANSACTION_TO_SIGN_EMPTY => Self::TransactionToSignEmpty,
             INVALID_UTXO_ID => Self::InvalidUtxoId,
             INVALID_UTXO_SIGNER => Self::InvalidUtxoSigner,
+            INVALID_AGGREGATE_SIZE => Self::InvalidAggregateSize,
+            DUPLICATE_SHARD_ACCOUNTS => Self::DuplicateShardAccounts,
             _ => {
                 // A valid custom error has no bits set in the upper 32
                 if value >> BUILTIN_BIT_SHIFT == 0 {

@@ -410,7 +410,7 @@ fn program_account_fields() {
 fn runtime_transaction_fields_and_methods() {
     use arch_program::sanitized::{ArchMessage, MessageHeader};
 
-    assert_eq!(RUNTIME_TX_SIZE_LIMIT, 10240);
+    assert_eq!(RUNTIME_TX_SIZE_LIMIT, 1_232);
     assert_eq!(ALLOWED_VERSIONS, [0]);
 
     let rt = RuntimeTransaction {
@@ -817,7 +817,7 @@ fn build_and_sign_transaction_signature() {
 #[test]
 fn constant_values() {
     assert_eq!(MAX_TX_BATCH_SIZE, 100);
-    assert_eq!(RUNTIME_TX_SIZE_LIMIT, 10240);
+    assert_eq!(RUNTIME_TX_SIZE_LIMIT, 1_232);
     assert_eq!(ALLOWED_VERSIONS, [0]);
     assert_eq!(ACCOUNT_FUNDING_AMOUNT, 1_000_000);
     assert_eq!(MAX_TRANSACTIONS_PER_BLOCK, 1024);

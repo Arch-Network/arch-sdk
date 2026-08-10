@@ -214,7 +214,7 @@ pub async fn prepare_fees() -> Result<String, ArchError> {
     let secp = Secp256k1::new();
     let tweaked: TweakedKeypair = key_pair.tap_tweak(&secp, None);
     let msg = secp256k1::Message::from(sighash);
-    let signature = secp.sign_schnorr(&msg, &tweaked.to_inner());
+    let signature = secp.sign_schnorr(&msg, &tweaked.to_keypair());
 
     let signature = bitcoin::taproot::Signature {
         signature,

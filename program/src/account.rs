@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 
 /// This is the account id for the shared validator data account
 pub const SHARED_VALIDATOR_DATA_ACCOUNT_ID: [u8; 32] = [2; 32];
+/// This is the account id used to stage chunked shared validator data.
+pub const SHARED_VALIDATOR_STAGING_ACCOUNT_ID: [u8; 32] = [3; 32];
 
 /// Account information that is passed to programs during instruction execution.
 /// The account's data contains the actual account state managed by programs.
