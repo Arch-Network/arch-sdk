@@ -36,6 +36,8 @@ pub enum ParseProcessedTransactionError {
 
     #[error("rollback message too long")]
     RollbackMessageTooLong,
+    #[error("invalid rollback status tag: {0}")]
+    InvalidRollbackStatusTag(u8),
 
     #[error("runtime transaction size exceeds limit: {0} > {1}")]
     RuntimeTransactionSizeExceedsLimit(usize, usize),
@@ -119,23 +121,71 @@ impl Status {
 pub enum RollbackStatus {
     Rolledback(String),
     NotRolledback,
+    Finalized,
+}
+
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
+#[error("invalid rollback status transition from {current:?} to {requested:?}")]
+pub struct RollbackStatusTransitionError {
+    pub current: RollbackStatus,
+    pub requested: RollbackStatus,
 }
 
 impl RollbackStatus {
+    pub fn is_finalized(&self) -> bool {
+        matches!(self, Self::Finalized)
+    }
+
+    pub fn is_applied(&self) -> bool {
+        matches!(self, Self::NotRolledback | Self::Finalized)
+    }
+
+    pub fn is_rolled_back(&self) -> bool {
+        matches!(self, Self::Rolledback(_))
+    }
+
+    pub fn can_rollback(&self) -> bool {
+        matches!(self, Self::NotRolledback)
+    }
+
+    pub fn can_reapply(&self) -> bool {
+        matches!(self, Self::Rolledback(_))
+    }
+
+    pub fn validate_transition_to(
+        &self,
+        requested: &Self,
+    ) -> Result<(), RollbackStatusTransitionError> {
+        let valid = match self {
+            // Finality is the only new transition rule. Preserve the legacy
+            // rollback state machine for every non-final transaction.
+            Self::Finalized => requested.is_finalized(),
+            Self::NotRolledback => true,
+            Self::Rolledback(_) => !requested.is_finalized(),
+        };
+
+        if valid {
+            Ok(())
+        } else {
+            Err(RollbackStatusTransitionError {
+                current: self.clone(),
+                requested: requested.clone(),
+            })
+        }
+    }
+
     pub fn to_fixed_array(
         &self,
     ) -> Result<[u8; ROLLBACK_MESSAGE_BUFFER_SIZE], ParseProcessedTransactionError> {
         let mut buffer = [0; ROLLBACK_MESSAGE_BUFFER_SIZE];
 
-        if let RollbackStatus::Rolledback(msg) = self {
-            buffer[0] = 1;
-            let message_bytes = msg.as_bytes();
-            buffer[1..9].copy_from_slice(&(msg.len() as u64).to_le_bytes());
-
-            if message_bytes.len() > ROLLBACK_MESSAGE_BUFFER_SIZE - 9 {
-                return Err(ParseProcessedTransactionError::RollbackMessageTooLong);
+        match self {
+            Self::NotRolledback => {}
+            Self::Rolledback(message) => {
+                buffer[0] = 1;
+                Self::encode_message(&mut buffer, message)?;
             }
-            buffer[9..(9 + message_bytes.len())].copy_from_slice(message_bytes);
+            Self::Finalized => buffer[0] = 2,
         }
 
         Ok(buffer)
@@ -144,22 +194,47 @@ impl RollbackStatus {
     pub fn from_fixed_array(
         data: &[u8; ROLLBACK_MESSAGE_BUFFER_SIZE],
     ) -> Result<Self, ParseProcessedTransactionError> {
-        if data[0] == 1 {
-            let msg_len = u64::from_le_bytes(
-                data[1..9]
-                    .try_into()
-                    .map_err(|_| ParseProcessedTransactionError::TryFromSliceError)?,
-            ) as usize;
-            // Check that msg_len doesn't exceed the available space in the fixed buffer
-            if 9 + msg_len > ROLLBACK_MESSAGE_BUFFER_SIZE {
-                return Err(ParseProcessedTransactionError::BufferTooShort);
-            }
-            let msg = String::from_utf8(data[9..(9 + msg_len)].to_vec())
-                .map_err(ParseProcessedTransactionError::FromUtf8Error)?;
-            Ok(RollbackStatus::Rolledback(msg))
-        } else {
-            Ok(RollbackStatus::NotRolledback)
+        match data[0] {
+            0 => Ok(Self::NotRolledback),
+            1 => Ok(Self::Rolledback(Self::decode_message(data)?)),
+            2 => Ok(Self::Finalized),
+            tag => Err(ParseProcessedTransactionError::InvalidRollbackStatusTag(
+                tag,
+            )),
         }
+    }
+
+    fn encode_message(
+        buffer: &mut [u8; ROLLBACK_MESSAGE_BUFFER_SIZE],
+        message: &str,
+    ) -> Result<(), ParseProcessedTransactionError> {
+        let message_bytes = message.as_bytes();
+        if message_bytes.len() > ROLLBACK_MESSAGE_BUFFER_SIZE - 9 {
+            return Err(ParseProcessedTransactionError::RollbackMessageTooLong);
+        }
+
+        buffer[1..9].copy_from_slice(&(message_bytes.len() as u64).to_le_bytes());
+        buffer[9..9 + message_bytes.len()].copy_from_slice(message_bytes);
+        Ok(())
+    }
+
+    fn decode_message(
+        data: &[u8; ROLLBACK_MESSAGE_BUFFER_SIZE],
+    ) -> Result<String, ParseProcessedTransactionError> {
+        let message_len = u64::from_le_bytes(
+            data[1..9]
+                .try_into()
+                .map_err(|_| ParseProcessedTransactionError::TryFromSliceError)?,
+        ) as usize;
+        let message_end = 9usize
+            .checked_add(message_len)
+            .ok_or(ParseProcessedTransactionError::BufferTooShort)?;
+        if message_end > ROLLBACK_MESSAGE_BUFFER_SIZE {
+            return Err(ParseProcessedTransactionError::BufferTooShort);
+        }
+
+        String::from_utf8(data[9..message_end].to_vec())
+            .map_err(ParseProcessedTransactionError::FromUtf8Error)
     }
 }
 
@@ -615,6 +690,43 @@ mod tests {
         let serialized = processed_transaction.to_vec().unwrap();
         let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
         assert_eq!(processed_transaction, deserialized);
+    }
+
+    #[test]
+    fn finalized_status_round_trips() {
+        let applied = RollbackStatus::Finalized;
+        let applied_bytes = applied.to_fixed_array().unwrap();
+        assert_eq!(applied_bytes[0], 2);
+        assert_eq!(
+            RollbackStatus::from_fixed_array(&applied_bytes).unwrap(),
+            applied
+        );
+    }
+
+    #[test]
+    fn unknown_rollback_status_tag_is_rejected() {
+        let mut bytes = [0; ROLLBACK_MESSAGE_BUFFER_SIZE];
+        bytes[0] = 3;
+        assert_eq!(
+            RollbackStatus::from_fixed_array(&bytes),
+            Err(ParseProcessedTransactionError::InvalidRollbackStatusTag(3))
+        );
+    }
+
+    #[test]
+    fn finalized_status_is_terminal() {
+        assert!(RollbackStatus::NotRolledback
+            .validate_transition_to(&RollbackStatus::Finalized)
+            .is_ok());
+        assert!(RollbackStatus::Finalized
+            .validate_transition_to(&RollbackStatus::Rolledback("reorg".into()))
+            .is_err());
+        assert!(RollbackStatus::NotRolledback
+            .validate_transition_to(&RollbackStatus::NotRolledback)
+            .is_ok());
+        assert!(RollbackStatus::Rolledback("old".into())
+            .validate_transition_to(&RollbackStatus::Rolledback("new".into()))
+            .is_ok());
     }
 
     #[test]

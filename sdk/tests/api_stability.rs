@@ -365,6 +365,7 @@ fn processed_transaction_fields_and_methods() {
 
     let _ = RollbackStatus::NotRolledback;
     let _ = RollbackStatus::Rolledback(String::new());
+    let _ = RollbackStatus::Finalized;
 
     assert_eq!(ROLLBACK_MESSAGE_BUFFER_SIZE, 1033);
     assert_eq!(MAX_LOG_MESSAGES_COUNT, 400);
@@ -375,6 +376,7 @@ fn processed_transaction_fields_and_methods() {
     let _ = ParseProcessedTransactionError::TryFromSliceError;
     let _ = ParseProcessedTransactionError::BufferTooShort;
     let _ = ParseProcessedTransactionError::RollbackMessageTooLong;
+    let _ = ParseProcessedTransactionError::InvalidRollbackStatusTag(3);
     let _ = ParseProcessedTransactionError::LogMessageTooLong;
     let _ = ParseProcessedTransactionError::TooManyLogMessages;
     let _ = ParseProcessedTransactionError::StatusFailedMessageTooLong;

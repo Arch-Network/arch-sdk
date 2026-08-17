@@ -275,7 +275,7 @@ impl ArchRpcClient {
         };
 
         // Now wait for the transaction to finish processing
-        while !is_transaction_finalized(&tx) {
+        while !is_transaction_execution_complete(&tx) {
             tokio::time::sleep(poll_interval).await;
             if start.elapsed() >= timeout {
                 return Err(ArchError::TimeoutError(format!(
@@ -607,7 +607,7 @@ impl ArchRpcClient {
     }
 }
 
-/// Helper function to check if a transaction has reached a final status
-pub(crate) fn is_transaction_finalized(tx: &ProcessedTransaction) -> bool {
+/// Returns whether execution has reached a terminal processed or failed state.
+pub(crate) fn is_transaction_execution_complete(tx: &ProcessedTransaction) -> bool {
     matches!(&tx.status, Status::Processed | Status::Failed(_))
 }

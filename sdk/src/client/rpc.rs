@@ -233,7 +233,7 @@ impl BlockingArchRpcClient {
 mod tests {
     use super::*;
     use crate::arch_program::pubkey::Pubkey;
-    use crate::{is_transaction_finalized, ArchError, BlockTransactionFilter, Status};
+    use crate::{is_transaction_execution_complete, ArchError, BlockTransactionFilter, Status};
     use arch_program::hash::Hash;
     use arch_program::rent::minimum_rent;
     use arch_program::sanitized::ArchMessage;
@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_transaction_finalized_function() {
+    fn test_is_transaction_execution_complete_function() {
         use crate::types::RollbackStatus;
 
         // Create a RuntimeTransaction for testing
@@ -418,7 +418,7 @@ mod tests {
             rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: vec![],
         };
-        assert!(is_transaction_finalized(&processed_tx));
+        assert!(is_transaction_execution_complete(&processed_tx));
 
         let failed_tx = ProcessedTransaction {
             runtime_transaction: rt_tx.clone(),
@@ -428,7 +428,7 @@ mod tests {
             rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: vec![],
         };
-        assert!(is_transaction_finalized(&failed_tx));
+        assert!(is_transaction_execution_complete(&failed_tx));
 
         let queued_tx = ProcessedTransaction {
             runtime_transaction: rt_tx.clone(),
@@ -438,7 +438,7 @@ mod tests {
             rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: vec![],
         };
-        assert!(!is_transaction_finalized(&queued_tx));
+        assert!(!is_transaction_execution_complete(&queued_tx));
     }
 
     #[test]

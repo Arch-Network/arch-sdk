@@ -1,6 +1,5 @@
 use std::{
     fmt::{Display, Formatter},
-    ops::Deref,
     str::FromStr,
 };
 
@@ -15,17 +14,22 @@ use arch_program::{
     MAX_SIGNERS,
 };
 use bitcode::{Decode, Encode};
+use bitcoin::Network;
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "fuzzing")]
 use libfuzzer_sys::arbitrary;
 use serde::{Deserialize, Serialize};
 use sha256::digest;
 
+use crate::verify_message_bip322;
+
 /// Maximum serialized transaction size, matching Solana's packet payload limit.
 pub const RUNTIME_TX_SIZE_LIMIT: usize = 1_232;
 
 /// Allowed versions for RuntimeTransaction
 pub const ALLOWED_VERSIONS: [u32; 1] = [0];
+
+pub const MAX_SIGNERS_IN_TRANSACTION: usize = 11;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum RuntimeTransactionError {
@@ -46,6 +50,24 @@ pub enum RuntimeTransactionError {
 
     #[error("SerialisationError: {0}")]
     SerialisationError(#[from] SerialisationErrors),
+
+    #[error("MAX Signature Limit crossed; allowed {allowed} found {found}")]
+    MaxSignatureLimitCrossed { allowed: usize, found: usize },
+
+    #[error("signature count mismatch: expected {expected} found {found}")]
+    SignatureCountMismatch { expected: usize, found: usize },
+
+    #[error("account key count mismatch: expected at least {expected} found {found}")]
+    AccountKeyCountMismatch { expected: usize, found: usize },
+
+    #[error("BIP322 signature verification failed: {0}")]
+    BIP322SignatureVerificationFailed(String),
+
+    #[error("signature verification failed: {0}")]
+    SignatureVerificationFailed(String),
+
+    #[error("Try from slice error: {0}")]
+    TryFromSliceError(String),
 }
 
 #[derive(
@@ -78,28 +100,31 @@ impl SanitizedRuntimeTransaction {
     pub fn into_inner(self) -> RuntimeTransaction {
         self.0
     }
-}
 
-impl TryFrom<RuntimeTransaction> for SanitizedRuntimeTransaction {
-    type Error = SanitizeError;
+    pub fn inner(&self) -> &RuntimeTransaction {
+        &self.0
+    }
 
-    fn try_from(transaction: RuntimeTransaction) -> Result<Self, Self::Error> {
+    pub fn to_vec(&self) -> Result<Vec<u8>, RuntimeTransactionError> {
+        self.inner().serialize_with_size_limit()
+    }
+
+    pub fn from_vec(data: &[u8]) -> Result<Self, RuntimeTransactionError> {
+        let transaction = RuntimeTransaction::from_slice(data)?;
         transaction.sanitize()?;
         Ok(Self(transaction))
     }
 }
 
-impl AsRef<RuntimeTransaction> for SanitizedRuntimeTransaction {
-    fn as_ref(&self) -> &RuntimeTransaction {
-        &self.0
-    }
-}
+impl TryFrom<(RuntimeTransaction, Network)> for SanitizedRuntimeTransaction {
+    type Error = RuntimeTransactionError;
 
-impl Deref for SanitizedRuntimeTransaction {
-    type Target = RuntimeTransaction;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    fn try_from(
+        (transaction, network): (RuntimeTransaction, Network),
+    ) -> Result<Self, Self::Error> {
+        transaction.sanitize()?;
+        transaction.verify_sigs(network)?;
+        Ok(Self(transaction))
     }
 }
 
@@ -240,6 +265,78 @@ impl RuntimeTransaction {
         } else {
             Ok(())
         }
+    }
+
+    /// Verifies signatures for a RuntimeTransaction using the number of required signatures
+    /// specified in the ArchMessage header
+    ///
+    /// # Arguments
+    /// * `network` - Bitcoin network (mainnet, testnet, etc.)
+    ///
+    /// # Returns
+    /// * `Ok(true)` if all signatures are valid
+    /// * `Err` if transaction already exists or signature verification fails
+    pub fn verify_sigs(&self, network: Network) -> Result<(), RuntimeTransactionError> {
+        let required_sigs = self.message.header.num_required_signatures as usize;
+
+        if self.signatures.len() > MAX_SIGNERS_IN_TRANSACTION {
+            return Err(RuntimeTransactionError::MaxSignatureLimitCrossed {
+                allowed: MAX_SIGNERS_IN_TRANSACTION,
+                found: self.signatures.len(),
+            });
+        }
+
+        // Verify we have the correct number of signatures
+        if self.signatures.len() != required_sigs {
+            return Err(RuntimeTransactionError::SignatureCountMismatch {
+                expected: required_sigs,
+                found: self.signatures.len(),
+            });
+        }
+
+        let digest_slice = self.message.hash();
+
+        if self.message.account_keys.len() < required_sigs {
+            return Err(RuntimeTransactionError::AccountKeyCountMismatch {
+                expected: required_sigs,
+                found: self.message.account_keys.len(),
+            });
+        }
+
+        for i in 0..required_sigs {
+            let signature = &self.signatures[i];
+            // The first num_required_signatures of account_keys are the signers
+            let pubkey = &self.message.account_keys[i];
+
+            // Try Taproot verification first
+            if verify_message_bip322(
+                &digest_slice,
+                pubkey.serialize(),
+                signature.0[..]
+                    .try_into()
+                    .map_err(|e| RuntimeTransactionError::TryFromSliceError(format!("{e:?}")))?,
+                false,
+                network,
+            )
+            .is_err()
+            {
+                if let Err(e) = verify_message_bip322(
+                    &digest_slice,
+                    pubkey.serialize(),
+                    signature.0[..].try_into().map_err(|e| {
+                        RuntimeTransactionError::TryFromSliceError(format!("{e:?}"))
+                    })?,
+                    true,
+                    network,
+                ) {
+                    return Err(RuntimeTransactionError::BIP322SignatureVerificationFailed(
+                        e.to_string(),
+                    ));
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -75,8 +75,10 @@ impl BitcoinHelper {
                 .map_err(|e| format!("Failed to send to address: {}", e))?;
 
             let sent_tx = rpc
-                .get_raw_transaction(&txid, None)
-                .map_err(|e| format!("Failed to get raw transaction: {}", e))?;
+                .get_transaction(&txid, None)
+                .map_err(|e| format!("Failed to get wallet transaction: {e}"))?
+                .transaction()
+                .map_err(|e| format!("Failed to decode wallet transaction: {e}"))?;
 
             Ok::<_, String>((txid, sent_tx))
         })
@@ -93,6 +95,47 @@ impl BitcoinHelper {
         self.wait_until_titan_indexes_transaction(&txid).await?;
 
         Ok((txid.to_string(), vout))
+    }
+
+    /// Sends a UTXO and waits until it is confirmed and visible to Titan.
+    ///
+    /// Regtest confirmations are produced locally with enough depth for the validator's
+    /// asynchronously refreshed Bitcoin height. Other networks must confirm externally.
+    pub async fn send_confirmed_utxo(&self, pubkey: Pubkey) -> Result<(String, u32), String> {
+        let (txid, vout) = self.send_utxo(pubkey).await?;
+        let parsed_txid =
+            bitcoin::Txid::from_str(&txid).map_err(|e| format!("Invalid transaction ID: {e}"))?;
+
+        if self.network == Network::Regtest {
+            let rpc = self.rpc_client.clone();
+            tokio::task::spawn_blocking(move || {
+                let address = rpc
+                    .get_new_address(None, None)
+                    .map_err(|e| format!("Failed to get mining address: {e}"))?
+                    .require_network(Network::Regtest)
+                    .map_err(|e| format!("Invalid regtest mining address: {e}"))?;
+                rpc.generate_to_address(3, &address)
+                    .map_err(|e| format!("Failed to mine confirmation: {e}"))?;
+                Ok::<_, String>(())
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking join error: {e}"))??;
+        }
+
+        for _ in 0..60 {
+            if self
+                .titan_client
+                .get_transaction_status(&parsed_txid)
+                .await
+                .is_ok_and(|status| status.confirmed)
+            {
+                return Ok((txid, vout));
+            }
+
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+
+        Err("Failed to wait for transaction confirmation".to_string())
     }
 
     pub async fn get_account_address_string(&self, pubkey: Pubkey) -> Result<String, String> {

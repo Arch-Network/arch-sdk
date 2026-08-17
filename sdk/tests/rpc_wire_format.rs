@@ -317,6 +317,9 @@ fn rollback_status_response_deserialization() {
         rb,
         RollbackStatus::Rolledback("conflict detected".to_string())
     );
+
+    let finalized: RollbackStatus = serde_json::from_value(json!({"type": "finalized"})).unwrap();
+    assert_eq!(finalized, RollbackStatus::Finalized);
 }
 
 /// Helper: build a minimal empty ArchMessage JSON object.
