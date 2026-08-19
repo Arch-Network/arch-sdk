@@ -157,8 +157,6 @@ impl RollbackStatus {
         requested: &Self,
     ) -> Result<(), RollbackStatusTransitionError> {
         let valid = match self {
-            // Finality is the only new transition rule. Preserve the legacy
-            // rollback state machine for every non-final transaction.
             Self::Finalized => requested.is_finalized(),
             Self::NotRolledback => true,
             Self::Rolledback(_) => !requested.is_finalized(),
@@ -719,14 +717,20 @@ mod tests {
             .validate_transition_to(&RollbackStatus::Finalized)
             .is_ok());
         assert!(RollbackStatus::Finalized
+            .validate_transition_to(&RollbackStatus::Finalized)
+            .is_ok());
+        assert!(RollbackStatus::Finalized
             .validate_transition_to(&RollbackStatus::Rolledback("reorg".into()))
             .is_err());
-        assert!(RollbackStatus::NotRolledback
+        assert!(RollbackStatus::Finalized
+            .validate_transition_to(&RollbackStatus::NotRolledback)
+            .is_err());
+        assert!(RollbackStatus::Rolledback("old".into())
             .validate_transition_to(&RollbackStatus::NotRolledback)
             .is_ok());
         assert!(RollbackStatus::Rolledback("old".into())
-            .validate_transition_to(&RollbackStatus::Rolledback("new".into()))
-            .is_ok());
+            .validate_transition_to(&RollbackStatus::Finalized)
+            .is_err());
     }
 
     #[test]
