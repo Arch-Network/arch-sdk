@@ -388,48 +388,18 @@ impl ProgramDeployer {
         authority_keypair: Keypair,
         elf: &[u8],
     ) -> Result<(), ProgramDeployerError> {
-        let recent_blockhash = self.client.get_best_finalized_block_hash().await?;
         let chunk_size = extend_bytes_max_len();
         let num_chunks = elf.chunks(chunk_size).len();
+        let num_batches = num_chunks.div_ceil(MAX_TX_BATCH_SIZE);
 
         debug!(
             program = %program_pubkey,
             chunks = num_chunks,
-            blockhash = %recent_blockhash,
-            "Building ELF write transactions"
+            batches = num_batches,
+            "Preparing ELF write transactions"
         );
 
-        let txs = elf
-            .chunks(chunk_size)
-            .enumerate()
-            .map(|(i, chunk)| {
-                let offset: u32 = (i * chunk_size) as u32;
-                let message = ArchMessage::new(
-                    &[loader_instruction::write(
-                        program_pubkey,
-                        authority_pubkey,
-                        offset,
-                        chunk.to_vec(),
-                    )],
-                    Some(authority_pubkey),
-                    recent_blockhash,
-                );
-
-                let digest_slice = message.hash();
-
-                Ok(RuntimeTransaction {
-                    version: 0,
-                    signatures: vec![Signature(sign_message_bip322(
-                        &authority_keypair,
-                        &digest_slice,
-                        self.client.config.network,
-                    )?)],
-                    message,
-                })
-            })
-            .collect::<Result<Vec<RuntimeTransaction>, ProgramDeployerError>>()?;
-
-        let pb = ProgressBar::new(txs.len() as u64);
+        let pb = ProgressBar::new(num_chunks as u64);
         pb.set_style(
             ProgressStyle::default_bar()
                 .template(
@@ -439,34 +409,76 @@ impl ProgramDeployer {
                 .progress_chars("#>-"),
         );
 
-        let batches = txs
-            .chunks(MAX_TX_BATCH_SIZE)
-            .map(|chunk| chunk.to_vec())
-            .collect::<Vec<Vec<RuntimeTransaction>>>();
+        for (batch_index, batch_bytes) in elf.chunks(chunk_size * MAX_TX_BATCH_SIZE).enumerate() {
+            // A large program upload can span several blocks. Fetch the hash only
+            // when its batch is ready to send so later transactions do not use the
+            // hash captured at the beginning of the deployment.
+            let recent_blockhash = self.client.get_best_finalized_block_hash().await?;
+            let batch_start = batch_index * chunk_size * MAX_TX_BATCH_SIZE;
+            let txs = batch_bytes
+                .chunks(chunk_size)
+                .enumerate()
+                .map(|(i, chunk)| {
+                    let offset = (batch_start + i * chunk_size) as u32;
+                    let message = ArchMessage::new(
+                        &[loader_instruction::write(
+                            program_pubkey,
+                            authority_pubkey,
+                            offset,
+                            chunk.to_vec(),
+                        )],
+                        Some(authority_pubkey),
+                        recent_blockhash,
+                    );
+                    let digest_slice = message.hash();
 
-        let mut tx_ids = Vec::new();
-        for batch in batches {
-            let ids = self.client.send_transactions(batch).await?;
-            tx_ids.extend(ids);
-        }
+                    Ok(RuntimeTransaction {
+                        version: 0,
+                        signatures: vec![Signature(sign_message_bip322(
+                            &authority_keypair,
+                            &digest_slice,
+                            self.client.config.network,
+                        )?)],
+                        message,
+                    })
+                })
+                .collect::<Result<Vec<RuntimeTransaction>, ProgramDeployerError>>()?;
 
-        debug!(
-            program = %program_pubkey,
-            sent = tx_ids.len(),
-            "Waiting for ELF write confirmations"
-        );
+            debug!(
+                program = %program_pubkey,
+                batch = batch_index + 1,
+                batches = num_batches,
+                transactions = txs.len(),
+                blockhash = %recent_blockhash,
+                "Sending ELF write batch"
+            );
+            println!(
+                "Sending ELF batch {}/{} ({} transactions)",
+                batch_index + 1,
+                num_batches,
+                txs.len()
+            );
 
-        for (i, tx_id) in tx_ids.iter().enumerate() {
-            let processed_tx = self.client.wait_for_processed_transaction(tx_id).await?;
-            if let Status::Failed(reason) = processed_tx.status {
-                let offset = (i * chunk_size) as u32;
-                return Err(ProgramDeployerError::ElfWriteFailed {
-                    txid: *tx_id,
-                    offset,
-                    reason,
-                });
+            let tx_ids = self.client.send_transactions(txs).await?;
+            for (i, tx_id) in tx_ids.iter().enumerate() {
+                let processed_tx = self.client.wait_for_processed_transaction(tx_id).await?;
+                if let Status::Failed(reason) = processed_tx.status {
+                    let offset = (batch_start + i * chunk_size) as u32;
+                    return Err(ProgramDeployerError::ElfWriteFailed {
+                        txid: *tx_id,
+                        offset,
+                        reason,
+                    });
+                }
+                pb.inc(1);
             }
-            pb.inc(1);
+            println!(
+                "Confirmed ELF batch {}/{} ({}/{} transactions)",
+                batch_index + 1,
+                num_batches,
+                pb.position(),
+                num_chunks
+            );
         }
 
         pb.finish_with_message("ELF write transactions confirmed");
@@ -502,6 +514,9 @@ pub fn extend_bytes_max_len() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{ProcessedTransaction, RollbackStatus};
+    use mockito::Matcher;
+    use serde_json::json;
 
     #[test]
     fn extend_bytes_max_len_fills_runtime_transaction() {
@@ -525,5 +540,94 @@ mod tests {
         };
 
         assert_eq!(transaction.serialize().len(), RUNTIME_TX_SIZE_LIMIT);
+    }
+
+    #[tokio::test]
+    async fn refreshes_blockhash_for_each_elf_batch() {
+        let mut server = mockito::Server::new_async().await;
+        let blockhash = Hash::from([7; 32]);
+        let transaction_id = Hash::from([8; 32]);
+
+        let blockhash_mock = server
+            .mock("POST", "/")
+            .match_body(Matcher::PartialJson(json!({
+                "method": "get_best_finalized_block_hash"
+            })))
+            .with_body(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": "test",
+                    "result": blockhash.to_string()
+                })
+                .to_string(),
+            )
+            .expect(2)
+            .create_async()
+            .await;
+
+        let send_mock = server
+            .mock("POST", "/")
+            .match_body(Matcher::PartialJson(json!({
+                "method": "send_transactions"
+            })))
+            .with_body(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": "test",
+                    "result": [transaction_id.to_string()]
+                })
+                .to_string(),
+            )
+            .expect(2)
+            .create_async()
+            .await;
+
+        let processed = ProcessedTransaction {
+            runtime_transaction: RuntimeTransaction {
+                version: 0,
+                signatures: Vec::new(),
+                message: ArchMessage::new(&[], None, Hash::from([0; 32])),
+            },
+            status: Status::Processed,
+            bitcoin_txid: None,
+            logs: Vec::new(),
+            rollback_status: RollbackStatus::NotRolledback,
+            inner_instructions_list: Vec::new(),
+        };
+        let processed_mock = server
+            .mock("POST", "/")
+            .match_body(Matcher::PartialJson(json!({
+                "method": "get_processed_transaction"
+            })))
+            .with_body(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": "test",
+                    "result": processed
+                })
+                .to_string(),
+            )
+            .expect(2)
+            .create_async()
+            .await;
+
+        let mut config = Config::localnet();
+        config.arch_node_url = server.url();
+        let deployer = ProgramDeployer::new(&config);
+        let (program_keypair, _, _) = crate::generate_new_keypair(config.network);
+        let (authority_keypair, _, _) = crate::generate_new_keypair(config.network);
+        let program_pubkey = Pubkey::from_slice(&program_keypair.x_only_public_key().0.serialize());
+        let authority_pubkey =
+            Pubkey::from_slice(&authority_keypair.x_only_public_key().0.serialize());
+        let elf = vec![42; extend_bytes_max_len() * MAX_TX_BATCH_SIZE + 1];
+
+        deployer
+            .send_elf_chunks(program_pubkey, authority_pubkey, authority_keypair, &elf)
+            .await
+            .unwrap();
+
+        blockhash_mock.assert_async().await;
+        send_mock.assert_async().await;
+        processed_mock.assert_async().await;
     }
 }

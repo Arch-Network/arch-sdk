@@ -18,13 +18,13 @@ use {
         entrypoint::ProgramResult,
         input_to_sign::InputToSign,
         msg,
-        program::{get_transaction_to_sign, invoke_signed, set_input_to_sign},
+        program::{get_transaction_to_sign, invoke, invoke_signed, set_input_to_sign},
         program_error::ProgramError,
         program_option::COption,
         program_pack::{IsInitialized, Pack},
         pubkey::Pubkey,
         rent::minimum_rent,
-        system_instruction::{create_account, create_account_with_anchor},
+        system_instruction,
     },
 };
 
@@ -212,41 +212,14 @@ impl Processor {
                 return Err(ProgramError::MissingRequiredSignature);
             }
 
-            let space = TokenMetadata::LEN as u64;
-            let lamports = minimum_rent(TokenMetadata::LEN);
-
-            let create_account_instruction = if let Some((txid, vout)) = anchor {
-                create_account_with_anchor(
-                    payer_info.key,
-                    metadata_info.key,
-                    lamports,
-                    space,
-                    program_id,
-                    txid,
-                    vout,
-                )
-            } else {
-                create_account(
-                    payer_info.key,
-                    metadata_info.key,
-                    lamports,
-                    space,
-                    program_id,
-                )
-            };
-
-            invoke_signed(
-                &create_account_instruction,
-                &[
-                    payer_info.clone(),
-                    metadata_info.clone(),
-                    system_program_info.clone(),
-                ],
-                &[&[
-                    METADATA_SEED, //
-                    mint_info.key.as_ref(),
-                    &[md_bump],
-                ]],
+            create_or_adopt_pda(
+                payer_info,
+                metadata_info,
+                system_program_info,
+                TokenMetadata::LEN,
+                program_id,
+                &[METADATA_SEED, mint_info.key.as_ref(), &[md_bump]],
+                anchor,
             )?;
         }
 
@@ -369,6 +342,11 @@ impl Processor {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
+        if mint_info.owner != &apl_token::id() {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+        Mint::unpack(&mint_info.data.borrow())?;
+
         // Validate attribute PDA address using this program_id
         let (expected_attrs_pda, attrs_bump) =
             find_attributes_pda_with_program(program_id, mint_info.key);
@@ -378,6 +356,13 @@ impl Processor {
         }
 
         // Ensure metadata exists and authority matches
+        if metadata_info.owner != program_id {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+        let (expected_metadata_pda, _) = find_metadata_pda_with_program(program_id, mint_info.key);
+        if metadata_info.key != &expected_metadata_pda {
+            return Err(ProgramError::InvalidSeeds);
+        }
         let metadata = TokenMetadata::unpack(&metadata_info.data.borrow())
             .map_err(|_| ProgramError::InvalidAccountData)?;
         if !metadata.is_initialized() || !cmp_pubkeys(&metadata.mint, mint_info.key) {
@@ -432,26 +417,14 @@ impl Processor {
                 msg!("Payer is not a signer");
                 return Err(ProgramError::MissingRequiredSignature);
             }
-            let lamports = minimum_rent(TokenMetadataAttributes::LEN);
-
-            invoke_signed(
-                &create_account(
-                    payer_info.key,
-                    attributes_info.key,
-                    lamports,
-                    required_space,
-                    program_id,
-                ),
-                &[
-                    payer_info.clone(),
-                    attributes_info.clone(),
-                    system_program_info.clone(),
-                ],
-                &[&[
-                    ATTRIBUTES_SEED, //
-                    mint_info.key.as_ref(),
-                    &[attrs_bump],
-                ]],
+            create_or_adopt_pda(
+                payer_info,
+                attributes_info,
+                system_program_info,
+                TokenMetadataAttributes::LEN,
+                program_id,
+                &[ATTRIBUTES_SEED, mint_info.key.as_ref(), &[attrs_bump]],
+                None,
             )?;
         } else {
             let curr_len = attributes_info.data.borrow().len() as u64;
@@ -496,11 +469,22 @@ impl Processor {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
+        if attributes_info.owner != program_id {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
         // Validate metadata and authority
+        if metadata_info.owner != program_id {
+            return Err(ProgramError::IncorrectProgramId);
+        }
         let metadata = TokenMetadata::unpack(&metadata_info.data.borrow())
             .map_err(|_| ProgramError::InvalidAccountData)?;
         if !metadata.is_initialized() {
             return Err(ProgramError::UninitializedAccount);
+        }
+        let (expected_metadata_pda, _) = find_metadata_pda_with_program(program_id, &metadata.mint);
+        if metadata_info.key != &expected_metadata_pda {
+            return Err(ProgramError::InvalidSeeds);
         }
         match metadata.update_authority {
             Some(current_auth) => {
@@ -523,6 +507,9 @@ impl Processor {
             .map_err(|_| ProgramError::InvalidAccountData)?;
         if !attrs.is_initialized() {
             return Err(ProgramError::UninitializedAccount);
+        }
+        if attrs.mint != metadata.mint {
+            return Err(ProgramError::InvalidAccountData);
         }
 
         // Validate sizes
@@ -691,6 +678,74 @@ impl Processor {
         metadata.pack_into_slice(&mut metadata_info.data.borrow_mut());
         Ok(())
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_or_adopt_pda<'a>(
+    payer: &AccountInfo<'a>,
+    pda: &AccountInfo<'a>,
+    system_program: &AccountInfo<'a>,
+    space: usize,
+    owner: &Pubkey,
+    signer_seeds: &[&[u8]],
+    anchor: Option<([u8; 32], u32)>,
+) -> ProgramResult {
+    if pda.owner != &Pubkey::system_program() {
+        return Err(ProgramError::IllegalOwner);
+    }
+    if !pda.data_is_empty() {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    let required_lamports = minimum_rent(space);
+    let accounts = &[payer.clone(), pda.clone(), system_program.clone()];
+
+    if pda.lamports() == 0 {
+        let instruction = match anchor {
+            Some((txid, vout)) => system_instruction::create_account_with_anchor(
+                payer.key,
+                pda.key,
+                required_lamports,
+                space as u64,
+                owner,
+                txid,
+                vout,
+            ),
+            None => system_instruction::create_account(
+                payer.key,
+                pda.key,
+                required_lamports,
+                space as u64,
+                owner,
+            ),
+        };
+        return invoke_signed(&instruction, accounts, &[signer_seeds]);
+    }
+
+    let missing_lamports = required_lamports.saturating_sub(pda.lamports());
+    if missing_lamports > 0 {
+        invoke(
+            &system_instruction::transfer(payer.key, pda.key, missing_lamports),
+            accounts,
+        )?;
+    }
+    if let Some((txid, vout)) = anchor {
+        invoke_signed(
+            &system_instruction::anchor(pda.key, txid, vout),
+            &[pda.clone(), system_program.clone()],
+            &[signer_seeds],
+        )?;
+    }
+    invoke_signed(
+        &system_instruction::allocate(pda.key, space as u64),
+        &[pda.clone(), system_program.clone()],
+        &[signer_seeds],
+    )?;
+    invoke_signed(
+        &system_instruction::assign(pda.key, owner),
+        &[pda.clone(), system_program.clone()],
+        &[signer_seeds],
+    )
 }
 
 /// Checks two pubkeys for equality using a cheap memcmp
