@@ -11,11 +11,11 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.8.6"
+version = "0.8.7"
 
 [workspace.dependencies]
-apl-token = { path = "token", version = "0.8.6", features = ["no-entrypoint"] }
-arch_program = { path = "program", version = "0.8.6", features = ["default"] }
+apl-token = { path = "token", version = "0.8.7", features = ["no-entrypoint"] }
+arch_program = { path = "program", version = "0.8.7", features = ["default"] }
 arrayref = "0.3.9"
 async-trait = "0.1"
 base64 = { version = "0.22.1" }
