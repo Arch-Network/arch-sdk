@@ -97,16 +97,29 @@ impl BitcoinHelper {
         Ok((txid.to_string(), vout))
     }
 
-    /// Sends a UTXO and waits until it is confirmed and visible to Titan.
+    /// Sends a UTXO and waits until it is confirmed deeply enough for the
+    /// validator's state-only-spend check to pass.
     ///
-    /// Regtest confirmations are produced locally with enough depth for the validator's
-    /// asynchronously refreshed Bitcoin height. Other networks must confirm externally.
+    /// The validator requires `min_bitcoin_confirmations` (1 everywhere but
+    /// Signet) below ITS OWN asynchronously refreshed Bitcoin height (fed
+    /// from Titan's event stream), so returning on Titan's `confirmed` flag
+    /// alone races that refresh. On regtest this mines
+    /// `REGTEST_MINED_DEPTH` blocks and waits until Titan's tip shows the
+    /// transaction at that depth — the extra blocks are margin absorbing
+    /// the validator's height lag. Other networks must confirm externally;
+    /// there the `confirmed` flag is the whole condition.
     pub async fn send_confirmed_utxo(&self, pubkey: Pubkey) -> Result<(String, u32), String> {
+        /// Blocks mined on regtest. The spend check needs one confirmation
+        /// (`get_min_btc_confirmations` in
+        /// `bitcoin-internal/src/transaction/utils.rs`); the extra depth
+        /// covers the validator's asynchronous height refresh.
+        const REGTEST_MINED_DEPTH: u64 = 3;
+
         let (txid, vout) = self.send_utxo(pubkey).await?;
         let parsed_txid =
             bitcoin::Txid::from_str(&txid).map_err(|e| format!("Invalid transaction ID: {e}"))?;
 
-        if self.network == Network::Regtest {
+        let min_confirmations = if self.network == Network::Regtest {
             let rpc = self.rpc_client.clone();
             tokio::task::spawn_blocking(move || {
                 let address = rpc
@@ -114,28 +127,39 @@ impl BitcoinHelper {
                     .map_err(|e| format!("Failed to get mining address: {e}"))?
                     .require_network(Network::Regtest)
                     .map_err(|e| format!("Invalid regtest mining address: {e}"))?;
-                rpc.generate_to_address(3, &address)
+                rpc.generate_to_address(REGTEST_MINED_DEPTH, &address)
                     .map_err(|e| format!("Failed to mine confirmation: {e}"))?;
                 Ok::<_, String>(())
             })
             .await
             .map_err(|e| format!("spawn_blocking join error: {e}"))??;
-        }
+            REGTEST_MINED_DEPTH
+        } else {
+            1
+        };
 
         for _ in 0..60 {
-            if self
-                .titan_client
-                .get_transaction_status(&parsed_txid)
-                .await
-                .is_ok_and(|status| status.confirmed)
-            {
-                return Ok((txid, vout));
+            let status = self.titan_client.get_transaction_status(&parsed_txid).await;
+            if let Ok(status) = status {
+                let deep_enough = match (status.confirmed, status.block_height) {
+                    (true, Some(height)) => self.titan_client.get_tip().await.is_ok_and(|tip| {
+                        tip.height.saturating_sub(height) + 1 >= min_confirmations
+                    }),
+                    (true, None) => min_confirmations <= 1,
+                    (false, _) => false,
+                };
+                if deep_enough {
+                    return Ok((txid, vout));
+                }
             }
 
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
 
-        Err("Failed to wait for transaction confirmation".to_string())
+        Err(format!(
+            "transaction {txid} did not reach {min_confirmations} Titan-visible \
+             confirmation(s) within 60s"
+        ))
     }
 
     pub async fn get_account_address_string(&self, pubkey: Pubkey) -> Result<String, String> {
