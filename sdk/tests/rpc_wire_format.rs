@@ -34,6 +34,7 @@ use serde_json::{json, Value};
 /// used in `request_airdrop`, `create_account_with_faucet`, and
 /// `get_network_pubkey`.
 #[test]
+#[allow(deprecated)]
 fn rpc_method_name_strings() {
     assert_eq!(arch_sdk::READ_ACCOUNT_INFO, "read_account_info");
     assert_eq!(arch_sdk::GET_MULTIPLE_ACCOUNTS, "get_multiple_accounts");

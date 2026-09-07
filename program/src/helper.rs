@@ -21,6 +21,10 @@ use crate::{
 ///
 /// # Returns
 /// A `Result<Transaction, ProgramError>` representing the Arch state transition
+#[deprecated(
+    note = "spends the accounts' `utxo` fields, which are never set for accounts created without an anchor; build inputs from outputs paid to the accounts' addresses instead"
+)]
+#[allow(deprecated)]
 pub fn get_state_transition_tx(accounts: &[AccountInfo]) -> Result<Transaction, ProgramError> {
     let mut transaction = Transaction {
         version: Version::TWO,
@@ -48,6 +52,9 @@ pub fn get_state_transition_tx(accounts: &[AccountInfo]) -> Result<Transaction, 
 ///
 /// # Panics
 /// This function will panic if the provided account is not writable.
+#[deprecated(
+    note = "spends the account's `utxo` field, which is never set for accounts created without an anchor; build the input from an output paid to the account's address instead"
+)]
 pub fn add_state_transition(
     transaction: &mut Transaction,
     account: &AccountInfo,

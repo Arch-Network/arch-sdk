@@ -31,7 +31,8 @@ pub use bitcoin;
 
 // Re-export commonly used functions
 pub use program::{
-    get_bitcoin_block_height, get_clock, get_remaining_compute_units, get_stack_height,
+    get_bitcoin_block_height, get_clock, get_current_instruction_index, get_instruction_at,
+    get_instruction_relative, get_remaining_compute_units, get_stack_height,
 };
 
 /// Account management and ownership verification

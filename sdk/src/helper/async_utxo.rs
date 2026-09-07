@@ -97,22 +97,16 @@ impl BitcoinHelper {
         Ok((txid.to_string(), vout))
     }
 
-    /// Sends a UTXO and waits until it is confirmed deeply enough for the
-    /// validator's state-only-spend check to pass.
+    /// Sends a UTXO to the account address and waits until Titan reports it
+    /// confirmed, so a program can immediately spend it via
+    /// `set_transaction_to_sign` / `sign_input`.
     ///
-    /// The validator requires `min_bitcoin_confirmations` (1 everywhere but
-    /// Signet) below ITS OWN asynchronously refreshed Bitcoin height (fed
-    /// from Titan's event stream), so returning on Titan's `confirmed` flag
-    /// alone races that refresh. On regtest this mines
-    /// `REGTEST_MINED_DEPTH` blocks and waits until Titan's tip shows the
-    /// transaction at that depth — the extra blocks are margin absorbing
-    /// the validator's height lag. Other networks must confirm externally;
-    /// there the `confirmed` flag is the whole condition.
+    /// On regtest this mines `REGTEST_MINED_DEPTH` blocks and waits until
+    /// Titan's tip shows the transaction at that depth; the extra blocks
+    /// absorb the validator's asynchronous Bitcoin-height refresh (fed from
+    /// Titan's event stream). Other networks must confirm externally; there
+    /// the `confirmed` flag is the whole condition.
     pub async fn send_confirmed_utxo(&self, pubkey: Pubkey) -> Result<(String, u32), String> {
-        /// Blocks mined on regtest. The spend check needs one confirmation
-        /// (`get_min_btc_confirmations` in
-        /// `bitcoin-internal/src/transaction/utils.rs`); the extra depth
-        /// covers the validator's asynchronous height refresh.
         const REGTEST_MINED_DEPTH: u64 = 3;
 
         let (txid, vout) = self.send_utxo(pubkey).await?;

@@ -270,6 +270,9 @@ pub fn create_account(
     )
 }
 
+/// Legacy: accounts are no longer anchored to Bitcoin outputs, so the
+/// instruction fails with `AccountUtxoModified`. Kept so existing callers keep
+/// compiling; use `create_account`.
 pub fn create_account_with_anchor(
     from_pubkey: &Pubkey,
     to_pubkey: &Pubkey,
@@ -337,6 +340,9 @@ pub fn allocate(pubkey: &Pubkey, space: u64) -> Instruction {
     )
 }
 
+/// Legacy: accounts are no longer anchored to Bitcoin outputs, so the
+/// instruction fails with `AccountUtxoModified`. Kept so existing callers keep
+/// compiling; use `sign_input` to spend outputs paid to the account's address.
 pub fn anchor(pubkey: &Pubkey, txid: [u8; 32], vout: u32) -> Instruction {
     let account_metas = vec![AccountMeta::new(*pubkey, true)];
     Instruction::new_with_bincode(

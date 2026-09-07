@@ -85,6 +85,7 @@ use arch_sdk::{
 // ---------------------------------------------------------------------------
 
 #[allow(unused_imports)]
+#[allow(deprecated)]
 use arch_sdk::{
     // client/error.rs
     ArchError,
@@ -599,6 +600,7 @@ fn backoff_strategy_variants() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[allow(deprecated)]
 fn async_rpc_client_construction() {
     // Constants
     assert_eq!(ACCOUNT_FUNDING_AMOUNT, 1_000_000);
@@ -627,6 +629,7 @@ fn async_rpc_client_construction() {
 /// This test verifies that every public async method on ArchRpcClient exists
 /// with the expected signature by taking function pointers. The methods
 /// themselves are not called (they require a running node).
+#[allow(deprecated)]
 #[test]
 fn async_rpc_client_method_signatures() {
     use arch_program::hash::Hash;

@@ -209,6 +209,8 @@ impl BlockingArchRpcClient {
         block_on(async { self.client.get_program_accounts(program_id, filters).await })
     }
 
+    #[deprecated(note = "accounts are no longer anchored; the node always answers `false`")]
+    #[allow(deprecated)]
     pub fn check_pre_anchor_conflict(&self, accounts: Vec<Pubkey>) -> Result<bool> {
         block_on(async { self.client.check_pre_anchor_conflict(accounts).await })
     }

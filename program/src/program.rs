@@ -1,4 +1,3 @@
-use bitcoin::hashes::Hash;
 use bitcoin::Transaction;
 use bitcoin_slices::{bsl, Error, Visit, Visitor};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -233,37 +232,12 @@ pub fn next_account_info<'a, 'b, I: Iterator<Item = &'a AccountInfo<'b>>>(
 
 pub const MAX_TRANSACTION_TO_SIGN: usize = 4 * 1024;
 
-/// Returns whether registered input `input` re-anchors `account`'s state carrier.
-///
-/// Mirrors the runtime's classification: a defined account moves its carrier only through
-/// the input spending its exact current outpoint; an unanchored account first-anchors
-/// through its first registered input. Every other input is an additional owned-UTXO
-/// spend that leaves the carrier untouched.
-fn input_moves_state_carrier(
-    account_utxo: &UtxoMeta,
-    input: &InputToSign,
-    tx: &Transaction,
-    inputs_to_sign: &[InputToSign],
-) -> bool {
-    if account_utxo.is_defined() {
-        tx.input.get(input.index as usize).is_some_and(|txin| {
-            *account_utxo
-                == UtxoMeta::from_outpoint(txin.previous_output.txid, txin.previous_output.vout)
-        })
-    } else {
-        inputs_to_sign
-            .iter()
-            .find(|candidate| candidate.signer == input.signer)
-            .is_some_and(|first| first.index == input.index)
-    }
-}
-
 /// Sets an Arch transaction to be signed by the program.
 ///
 /// This function takes a transaction and its associated signing metadata and prepares it
-/// for signing through the runtime. It also re-anchors each signer's UTXO metadata at its
-/// state-carrying input's index; additional owned-UTXO spends leave the metadata untouched
-/// (see [`input_moves_state_carrier`]).
+/// for signing through the runtime. Each registered input must spend an output owned by
+/// its signer's account address; the runtime validates this when the inputs are
+/// registered.
 ///
 /// # Arguments
 /// * `accounts` - Slice of account information required for the transaction
@@ -273,7 +247,7 @@ fn input_moves_state_carrier(
 /// # Returns
 /// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
 pub fn set_transaction_to_sign<'info, T>(
-    accounts: &[T],
+    _accounts: &[T],
     tx: &Transaction,
     inputs_to_sign: &[InputToSign],
 ) -> ProgramResult
@@ -314,41 +288,23 @@ where
 
     match set_tx_result {
         crate::entrypoint::SUCCESS => match set_inputs_to_sign_result {
-            crate::entrypoint::SUCCESS => {
-                let txid = tx.compute_txid();
-                let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
-                txid_bytes.reverse();
-
-                for input in inputs_to_sign {
-                    if let Some(account) = accounts
-                        .iter()
-                        .map(AsRef::as_ref)
-                        .find(|account| *account.key == input.signer)
-                    {
-                        if input_moves_state_carrier(account.utxo, input, tx, inputs_to_sign) {
-                            account.set_utxo(&UtxoMeta::from(txid_bytes, input.index));
-                        }
-                    }
-                }
-                Ok(())
-            }
+            crate::entrypoint::SUCCESS => Ok(()),
             _ => Err(set_inputs_to_sign_result.into()),
         },
         _ => Err(set_tx_result.into()),
     }
 }
 
-/// Registers additional inputs on the pending transaction to sign and re-anchors each
-/// signer's UTXO metadata at `OutPoint(txid, index)`.
+/// Registers additional inputs on the pending transaction to sign.
 ///
-/// Unlike [`set_transaction_to_sign`], this helper cannot see the transaction's inputs and
-/// therefore treats **every** registered input as a state-carrier move (or first anchor).
-/// Programs spending additional owned UTXOs must not route them through this helper: use
-/// [`set_transaction_to_sign`], or register them separately and leave the account UTXO
-/// untouched.
+/// Each input must spend an output owned by its signer's account address; the runtime
+/// validates this when the inputs are registered. `accounts` and `txid` are unused:
+/// account UTXOs are immutable, so nothing is re-anchored. They remain in the signature
+/// because the sources of programs deployed on chain (`apl_token`, `apl_token_metadata`)
+/// are frozen and still pass them.
 pub fn set_input_to_sign(
-    accounts: &[AccountInfo],
-    txid: [u8; 32],
+    _accounts: &[AccountInfo],
+    _txid: [u8; 32],
     inputs_to_sign: &[InputToSign],
 ) -> ProgramResult {
     msg!("setting inputs to sign");
@@ -369,17 +325,7 @@ pub fn set_input_to_sign(
     );
 
     match set_inputs_to_sign_result {
-        crate::entrypoint::SUCCESS => {
-            for input in inputs_to_sign {
-                if let Some(account) = accounts.iter().find(|account| *account.key == input.signer)
-                {
-                    account
-                        .as_ref()
-                        .set_utxo(&UtxoMeta::from(txid, input.index));
-                }
-            }
-            Ok(())
-        }
+        crate::entrypoint::SUCCESS => Ok(()),
         _ => Err(set_inputs_to_sign_result.into()),
     }
 }
@@ -722,6 +668,51 @@ pub fn get_clock() -> Clock {
     clock
 }
 
+/// Returns the index of the currently executing top-level instruction.
+pub fn get_current_instruction_index() -> u16 {
+    #[cfg(target_os = "solana")]
+    let index = unsafe { crate::syscalls::arch_get_current_instruction_index() };
+
+    #[cfg(not(target_os = "solana"))]
+    let index = crate::program_stubs::arch_get_current_instruction_index();
+
+    index as u16
+}
+
+/// Returns a top-level instruction from the current transaction.
+pub fn get_instruction_at(index: usize) -> Option<Instruction> {
+    #[cfg(target_os = "solana")]
+    let size =
+        unsafe { crate::syscalls::arch_get_instruction(index as u64, core::ptr::null_mut(), 0) };
+
+    #[cfg(not(target_os = "solana"))]
+    let size = crate::program_stubs::arch_get_instruction(index as u64, core::ptr::null_mut(), 0);
+
+    let size = usize::try_from(size).ok().filter(|size| *size > 0)?;
+    let mut data = vec![0u8; size];
+
+    #[cfg(target_os = "solana")]
+    let written = unsafe {
+        crate::syscalls::arch_get_instruction(index as u64, data.as_mut_ptr(), size as u64)
+    };
+
+    #[cfg(not(target_os = "solana"))]
+    let written = crate::program_stubs::arch_get_instruction(index as u64, data.as_mut_ptr(), size);
+
+    if written as usize != size {
+        return None;
+    }
+    Instruction::try_from_slice(&data).ok()
+}
+
+/// Returns a top-level instruction relative to the currently executing instruction.
+pub fn get_instruction_relative(index_relative_to_current: i64) -> Option<Instruction> {
+    let index = i64::from(get_current_instruction_index())
+        .checked_add(index_relative_to_current)
+        .and_then(|index| usize::try_from(index).ok())?;
+    get_instruction_at(index)
+}
+
 /// Gets the current stack height from the runtime.
 ///
 /// # Returns
@@ -736,23 +727,24 @@ pub fn get_stack_height() -> u64 {
     crate::program_stubs::arch_get_stack_height()
 }
 
-/// Retrieves the confirmation status of a Bitcoin transaction by its transaction ID.
+/// Retrieves the number of Bitcoin confirmations of a transaction by its transaction ID.
+///
+/// A transaction mined in the block at the current Bitcoin block height (see
+/// [`get_bitcoin_block_height`]) has one confirmation.
 ///
 /// # Arguments
 /// * `txid` - 32-byte array containing the Bitcoin transaction ID
 ///
 /// # Returns
-/// * `bool` - The confirmation status of the transaction, false if not found
-pub fn get_bitcoin_tx_confirmation(txid: [u8; 32]) -> bool {
-    let mut buf = [0u8; 1];
-
+/// * `u64` - The number of confirmations, 0 if the transaction is unconfirmed
+pub fn get_bitcoin_tx_confirmation(txid: [u8; 32]) -> u64 {
     #[cfg(target_os = "solana")]
-    let _ = unsafe { crate::syscalls::arch_get_bitcoin_tx_confirmation(&txid, buf.as_mut_ptr()) };
+    unsafe {
+        crate::syscalls::arch_get_bitcoin_tx_confirmation(&txid)
+    }
 
     #[cfg(not(target_os = "solana"))]
-    let _ = crate::program_stubs::arch_get_bitcoin_tx_confirmation(&txid, buf.as_mut_ptr());
-
-    buf[0] == 1
+    crate::program_stubs::arch_get_bitcoin_tx_confirmation(&txid)
 }
 
 pub fn get_transaction_to_sign() -> [u8; 1024] {
@@ -771,86 +763,4 @@ pub fn get_transaction_to_sign() -> [u8; 1024] {
     let _ = crate::program_stubs::arch_get_transaction_to_sign(buf.as_mut_ptr(), buf.len());
 
     buf
-}
-
-#[cfg(test)]
-mod carrier_classification_tests {
-    use super::*;
-    use bitcoin::{absolute::LockTime, transaction::Version, OutPoint, Sequence, TxIn, Txid};
-
-    fn tx_spending(outpoints: &[(Txid, u32)]) -> Transaction {
-        Transaction {
-            version: Version::TWO,
-            lock_time: LockTime::ZERO,
-            input: outpoints
-                .iter()
-                .map(|&(txid, vout)| TxIn {
-                    previous_output: OutPoint { txid, vout },
-                    script_sig: Default::default(),
-                    sequence: Sequence::MAX,
-                    witness: Default::default(),
-                })
-                .collect(),
-            output: vec![],
-        }
-    }
-
-    #[test]
-    fn defined_account_moves_carrier_only_through_exact_outpoint() {
-        let signer = Pubkey::new_unique();
-        let carrier_txid = Txid::from_slice(&[7u8; 32]).unwrap();
-        let other_txid = Txid::from_slice(&[8u8; 32]).unwrap();
-        let carrier = UtxoMeta::from_outpoint(carrier_txid, 1);
-        let tx = tx_spending(&[(other_txid, 0), (carrier_txid, 1)]);
-        let inputs = [
-            InputToSign { index: 0, signer },
-            InputToSign { index: 1, signer },
-        ];
-
-        assert!(!input_moves_state_carrier(
-            &carrier, &inputs[0], &tx, &inputs
-        ));
-        assert!(input_moves_state_carrier(
-            &carrier, &inputs[1], &tx, &inputs
-        ));
-    }
-
-    #[test]
-    fn defined_account_ignores_out_of_bounds_index() {
-        let signer = Pubkey::new_unique();
-        let carrier = UtxoMeta::from_outpoint(Txid::from_slice(&[7u8; 32]).unwrap(), 1);
-        let tx = tx_spending(&[]);
-        let input = InputToSign { index: 5, signer };
-
-        assert!(!input_moves_state_carrier(
-            &carrier,
-            &input,
-            &tx,
-            &[input.clone()]
-        ));
-    }
-
-    #[test]
-    fn unanchored_account_first_registered_input_wins() {
-        let signer = Pubkey::new_unique();
-        let other = Pubkey::new_unique();
-        let txid = Txid::from_slice(&[9u8; 32]).unwrap();
-        let tx = tx_spending(&[(txid, 0), (txid, 1), (txid, 2)]);
-        let inputs = [
-            InputToSign {
-                index: 0,
-                signer: other,
-            },
-            InputToSign { index: 1, signer },
-            InputToSign { index: 2, signer },
-        ];
-        let undefined = UtxoMeta::default();
-
-        assert!(input_moves_state_carrier(
-            &undefined, &inputs[1], &tx, &inputs
-        ));
-        assert!(!input_moves_state_carrier(
-            &undefined, &inputs[2], &tx, &inputs
-        ));
-    }
 }

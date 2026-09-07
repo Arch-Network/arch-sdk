@@ -124,6 +124,7 @@ pub enum RollbackStatus {
     Finalized,
 }
 
+/// Error of the deprecated [`RollbackStatus::validate_transition_to`].
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 #[error("invalid rollback status transition from {current:?} to {requested:?}")]
 pub struct RollbackStatusTransitionError {
@@ -144,14 +145,18 @@ impl RollbackStatus {
         matches!(self, Self::Rolledback(_))
     }
 
+    #[deprecated(note = "transactions are no longer rolled back")]
     pub fn can_rollback(&self) -> bool {
         matches!(self, Self::NotRolledback)
     }
 
+    #[deprecated(note = "transactions are no longer reapplied")]
     pub fn can_reapply(&self) -> bool {
         matches!(self, Self::Rolledback(_))
     }
 
+    #[deprecated(note = "transactions are no longer rolled back or reapplied")]
+    #[allow(deprecated)]
     pub fn validate_transition_to(
         &self,
         requested: &Self,
@@ -712,6 +717,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn finalized_status_is_terminal() {
         assert!(RollbackStatus::NotRolledback
             .validate_transition_to(&RollbackStatus::Finalized)

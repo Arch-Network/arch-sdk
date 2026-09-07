@@ -103,7 +103,8 @@ use arch_program::bitcoin;
 // Re-exported top-level functions
 #[allow(unused_imports)]
 use arch_program::{
-    get_bitcoin_block_height, get_clock, get_remaining_compute_units, get_stack_height,
+    get_bitcoin_block_height, get_clock, get_current_instruction_index, get_instruction_at,
+    get_instruction_relative, get_remaining_compute_units, get_stack_height,
 };
 
 // ---------------------------------------------------------------------------
@@ -347,6 +348,7 @@ fn instruction_error_variants() {
     let _ = InstructionError::InvalidUtxo;
     let _ = InstructionError::UnableToFetchUtxoTx;
     let _ = InstructionError::BuildAccountAddressError;
+    let _ = InstructionError::AccountUtxoModified;
 
     // Conversions
     let _: InstructionError = InstructionError::from(0u64);
@@ -401,6 +403,7 @@ fn program_error_variants() {
     let _ = ProgramError::InvalidUtxoId;
     let _ = ProgramError::InvalidUtxoSigner;
     let _ = ProgramError::InvalidStateTransition(String::new());
+    let _ = ProgramError::AccountUtxoModified;
 
     // Conversions
     let _: u64 = u64::from(ProgramError::InvalidArgument);
@@ -457,6 +460,7 @@ fn program_error_constants() {
     let _: u64 = INVALID_UTXO_ID;
     let _: u64 = INVALID_UTXO_SIGNER;
     let _: u64 = INVALID_STATE_TRANSITION;
+    let _: u64 = ACCOUNT_UTXO_MODIFIED;
 }
 
 // ---------------------------------------------------------------------------
@@ -624,6 +628,7 @@ fn system_instruction_enum_variants() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn system_instruction_functions() {
     let pk = pubkey::Pubkey::system_program();
 
@@ -721,6 +726,7 @@ fn transaction_to_sign_methods() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[allow(deprecated)]
 fn helper_functions_exist() {
     // We can only check function signatures, not call them without valid accounts
     let _: fn(

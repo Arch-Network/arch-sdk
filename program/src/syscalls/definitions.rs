@@ -27,12 +27,14 @@ define_syscall!(fn arch_set_inputs_to_sign(inputs_to_sign: *const u8, length: u6
 define_syscall!(fn arch_get_bitcoin_tx(data: *mut u8, length: u64, txid: &[u8; 32]) -> u64);
 define_syscall!(fn arch_get_runes_from_output(data: *mut u8, length: u64, txid: &[u8; 32], output_index: u32) -> u64);
 define_syscall!(fn arch_get_rune_info(data: *mut u8, length: u64, block: u64, tx: u64) -> u64);
-define_syscall!(fn arch_get_bitcoin_tx_confirmation(txid: &[u8; 32], result: *mut u8) -> u64);
+define_syscall!(fn arch_get_bitcoin_tx_confirmation(txid: &[u8; 32]) -> u64);
 define_syscall!(fn arch_get_network_xonly_pubkey(data: *mut u8) -> u64);
 define_syscall!(fn arch_validate_utxo_ownership(utxo: *const UtxoMeta, owner: *const Pubkey) -> u64);
 define_syscall!(fn arch_get_account_script_pubkey(script: *mut u8, pubkey: *const Pubkey) -> u64);
 define_syscall!(fn arch_get_bitcoin_block_height() -> u64);
 define_syscall!(fn arch_get_clock(clock: *mut Clock) -> u64);
+define_syscall!(fn arch_get_current_instruction_index() -> u64);
+define_syscall!(fn arch_get_instruction(index: u64, data: *mut u8, length: u64) -> u64);
 define_syscall!(fn sol_secp256k1_recover( hash_addr: *const u8, recovery_id_val: u64, signature_addr: *const u8, result_addr: *mut u8) ->  u64);
 define_syscall!(fn sol_keccak256(data: *const u8, length: u64, result: *mut u8) -> u64);
 define_syscall!(fn sol_sha256(data: *const u8, length: u64, result: *mut u8) -> u64);

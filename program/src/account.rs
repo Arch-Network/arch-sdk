@@ -388,6 +388,9 @@ impl<'a> AccountInfo<'a> {
     /// # Safety
     /// This method uses unsafe operations to modify a non-mutable reference.
     /// It should only be used in contexts where this operation is valid.
+    #[deprecated(
+        note = "an account's UTXO never changes; the runtime fails the instruction with `AccountUtxoModified` when the written value differs"
+    )]
     #[rustversion::attr(since(1.72), allow(invalid_reference_casting))]
     pub fn set_utxo(&self, utxo: &UtxoMeta) {
         // Set the non-mut owner field

@@ -104,6 +104,8 @@ pub enum ProgramError {
     InvalidAggregateSize,
     #[error("Duplicate shard accounts")]
     DuplicateShardAccounts,
+    #[error("Account UTXO cannot be modified")]
+    AccountUtxoModified,
 }
 
 pub trait PrintProgramError {
@@ -171,6 +173,7 @@ impl PrintProgramError for ProgramError {
             Self::InvalidStateTransition(_) => msg!("Error: InvalidStateTransition"),
             Self::InvalidAggregateSize => msg!("Error: InvalidAggregateSize"),
             Self::DuplicateShardAccounts => msg!("Error: DuplicateShardAccounts"),
+            Self::AccountUtxoModified => msg!("Error: AccountUtxoModified"),
         }
     }
 }
@@ -226,6 +229,7 @@ pub const INVALID_UTXO_SIGNER: u64 = to_builtin!(41);
 pub const INVALID_STATE_TRANSITION: u64 = to_builtin!(42);
 pub const INVALID_AGGREGATE_SIZE: u64 = to_builtin!(43);
 pub const DUPLICATE_SHARD_ACCOUNTS: u64 = to_builtin!(44);
+pub const ACCOUNT_UTXO_MODIFIED: u64 = to_builtin!(45);
 // Warning: Any new program errors added here must also be:
 // - Added to the below conversions
 // - Added as an equivalent to InstructionError
@@ -281,6 +285,7 @@ impl From<ProgramError> for u64 {
             ProgramError::InvalidStateTransition(_) => INVALID_STATE_TRANSITION,
             ProgramError::InvalidAggregateSize => INVALID_AGGREGATE_SIZE,
             ProgramError::DuplicateShardAccounts => DUPLICATE_SHARD_ACCOUNTS,
+            ProgramError::AccountUtxoModified => ACCOUNT_UTXO_MODIFIED,
             ProgramError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO
@@ -331,6 +336,7 @@ impl From<u64> for ProgramError {
             TRANSACTION_TO_SIGN_EMPTY => Self::TransactionToSignEmpty,
             INVALID_UTXO_ID => Self::InvalidUtxoId,
             INVALID_UTXO_SIGNER => Self::InvalidUtxoSigner,
+            ACCOUNT_UTXO_MODIFIED => Self::AccountUtxoModified,
             _ => Self::Custom(error as u32),
         }
     }

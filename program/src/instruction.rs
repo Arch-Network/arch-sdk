@@ -443,6 +443,10 @@ pub enum InstructionError {
 
     #[error("Duplicate shard accounts")]
     DuplicateShardAccounts,
+
+    /// A program wrote a different UTXO for an account; account UTXOs never change.
+    #[error("Account UTXO cannot be modified")]
+    AccountUtxoModified,
 }
 
 impl From<SystemError> for InstructionError {
@@ -502,6 +506,7 @@ impl From<u64> for InstructionError {
             INVALID_UTXO_SIGNER => Self::InvalidUtxoSigner,
             INVALID_AGGREGATE_SIZE => Self::InvalidAggregateSize,
             DUPLICATE_SHARD_ACCOUNTS => Self::DuplicateShardAccounts,
+            ACCOUNT_UTXO_MODIFIED => Self::AccountUtxoModified,
             _ => {
                 // A valid custom error has no bits set in the upper 32
                 if value >> BUILTIN_BIT_SHIFT == 0 {
