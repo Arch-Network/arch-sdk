@@ -34,7 +34,6 @@ use serde_json::{json, Value};
 /// used in `request_airdrop`, `create_account_with_faucet`, and
 /// `get_network_pubkey`.
 #[test]
-#[allow(deprecated)]
 fn rpc_method_name_strings() {
     assert_eq!(arch_sdk::READ_ACCOUNT_INFO, "read_account_info");
     assert_eq!(arch_sdk::GET_MULTIPLE_ACCOUNTS, "get_multiple_accounts");
@@ -59,10 +58,6 @@ fn rpc_method_name_strings() {
     );
     assert_eq!(arch_sdk::GET_ACCOUNT_ADDRESS, "get_account_address");
     assert_eq!(arch_sdk::GET_PROGRAM_ACCOUNTS, "get_program_accounts");
-    assert_eq!(
-        arch_sdk::CHECK_PRE_ANCHOR_CONFLICT,
-        "check_pre_anchor_conflict"
-    );
 }
 
 // =========================================================================
@@ -71,7 +66,7 @@ fn rpc_method_name_strings() {
 
 /// `Pubkey` serializes as an array of 32 integers.
 /// Used by: read_account_info, request_airdrop, create_account_with_faucet,
-///          check_pre_anchor_conflict, get_multiple_accounts
+///          get_multiple_accounts
 #[test]
 fn pubkey_json_serialization() {
     let pk = Pubkey::from([
@@ -660,10 +655,6 @@ fn per_method_param_shapes() {
     let params = json!([pk.serialize(), filters]);
     assert!(params.is_array());
     assert_eq!(params.as_array().unwrap().len(), 2);
-
-    // check_pre_anchor_conflict: params = Vec<Pubkey>
-    let params = serde_json::to_value(&vec![pk]).unwrap();
-    assert!(params.is_array());
 
     // send_transaction: params = RuntimeTransaction
     let rt = RuntimeTransaction {

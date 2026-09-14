@@ -124,14 +124,6 @@ pub enum RollbackStatus {
     Finalized,
 }
 
-/// Error of the deprecated [`RollbackStatus::validate_transition_to`].
-#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
-#[error("invalid rollback status transition from {current:?} to {requested:?}")]
-pub struct RollbackStatusTransitionError {
-    pub current: RollbackStatus,
-    pub requested: RollbackStatus,
-}
-
 impl RollbackStatus {
     pub fn is_finalized(&self) -> bool {
         matches!(self, Self::Finalized)
@@ -143,38 +135,6 @@ impl RollbackStatus {
 
     pub fn is_rolled_back(&self) -> bool {
         matches!(self, Self::Rolledback(_))
-    }
-
-    #[deprecated(note = "transactions are no longer rolled back")]
-    pub fn can_rollback(&self) -> bool {
-        matches!(self, Self::NotRolledback)
-    }
-
-    #[deprecated(note = "transactions are no longer reapplied")]
-    pub fn can_reapply(&self) -> bool {
-        matches!(self, Self::Rolledback(_))
-    }
-
-    #[deprecated(note = "transactions are no longer rolled back or reapplied")]
-    #[allow(deprecated)]
-    pub fn validate_transition_to(
-        &self,
-        requested: &Self,
-    ) -> Result<(), RollbackStatusTransitionError> {
-        let valid = match self {
-            Self::Finalized => requested.is_finalized(),
-            Self::NotRolledback => true,
-            Self::Rolledback(_) => !requested.is_finalized(),
-        };
-
-        if valid {
-            Ok(())
-        } else {
-            Err(RollbackStatusTransitionError {
-                current: self.clone(),
-                requested: requested.clone(),
-            })
-        }
     }
 
     pub fn to_fixed_array(
@@ -714,29 +674,6 @@ mod tests {
             RollbackStatus::from_fixed_array(&bytes),
             Err(ParseProcessedTransactionError::InvalidRollbackStatusTag(3))
         );
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn finalized_status_is_terminal() {
-        assert!(RollbackStatus::NotRolledback
-            .validate_transition_to(&RollbackStatus::Finalized)
-            .is_ok());
-        assert!(RollbackStatus::Finalized
-            .validate_transition_to(&RollbackStatus::Finalized)
-            .is_ok());
-        assert!(RollbackStatus::Finalized
-            .validate_transition_to(&RollbackStatus::Rolledback("reorg".into()))
-            .is_err());
-        assert!(RollbackStatus::Finalized
-            .validate_transition_to(&RollbackStatus::NotRolledback)
-            .is_err());
-        assert!(RollbackStatus::Rolledback("old".into())
-            .validate_transition_to(&RollbackStatus::NotRolledback)
-            .is_ok());
-        assert!(RollbackStatus::Rolledback("old".into())
-            .validate_transition_to(&RollbackStatus::Finalized)
-            .is_err());
     }
 
     #[test]

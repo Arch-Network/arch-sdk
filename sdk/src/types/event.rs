@@ -14,10 +14,6 @@ pub enum EventTopic {
     Transaction,
     #[serde(rename = "account_update")]
     AccountUpdate,
-    #[serde(rename = "rolledback_transactions")]
-    RolledbackTransactions,
-    #[serde(rename = "reapplied_transactions")]
-    ReappliedTransactions,
     #[serde(rename = "dkg")]
     DKG,
 }
@@ -28,8 +24,6 @@ impl fmt::Display for EventTopic {
             EventTopic::Block => write!(f, "block"),
             EventTopic::Transaction => write!(f, "transaction"),
             EventTopic::AccountUpdate => write!(f, "account_update"),
-            EventTopic::RolledbackTransactions => write!(f, "rolledback_transactions"),
-            EventTopic::ReappliedTransactions => write!(f, "reapplied_transactions"),
             EventTopic::DKG => write!(f, "dkg"),
         }
     }
@@ -48,12 +42,6 @@ pub enum Event {
     /// An account was updated
     #[serde(rename = "account_update")]
     AccountUpdate(AccountUpdateEvent),
-    /// A transaction was rolled back
-    #[serde(rename = "rolledback_transactions")]
-    RolledbackTransactions(RolledbackTransactionsEvent),
-    /// A transaction was reapplied
-    #[serde(rename = "reapplied_transactions")]
-    ReappliedTransactions(ReappliedTransactionsEvent),
     /// A DKG event
     #[serde(rename = "dkg")]
     DKG(DKGEvent),
@@ -66,8 +54,6 @@ impl Event {
             Event::Block(_) => EventTopic::Block,
             Event::Transaction(_) => EventTopic::Transaction,
             Event::AccountUpdate(_) => EventTopic::AccountUpdate,
-            Event::RolledbackTransactions(_) => EventTopic::RolledbackTransactions,
-            Event::ReappliedTransactions(_) => EventTopic::ReappliedTransactions,
             Event::DKG(_) => EventTopic::DKG,
         }
     }
@@ -108,24 +94,6 @@ pub struct AccountUpdateEvent {
     pub transaction_hash: String,
     /// Block height
     pub block_height: u64,
-}
-
-/// Transactions that were rolled back
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RolledbackTransactionsEvent {
-    /// Block height
-    pub block_height: u64,
-    /// The transaction hashes that were rolled back
-    pub transaction_hashes: Vec<String>,
-}
-
-/// Transactions that were reapplied
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReappliedTransactionsEvent {
-    /// Block height
-    pub block_height: u64,
-    /// The transaction hashes that were reapplied
-    pub transaction_hashes: Vec<String>,
 }
 
 /// Information about a DKG event

@@ -243,6 +243,7 @@ fn read_u128(data: &[u8], cursor: &mut usize) -> Result<u128, BlockParseError> {
 }
 
 /// Tracker for the size of the serialized block.
+#[derive(Clone)]
 pub struct BlockSizeTracker {
     /// Current size of the serialized block.
     cur_size: usize,

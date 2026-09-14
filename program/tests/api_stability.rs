@@ -38,8 +38,6 @@ use arch_program::hash;
 #[allow(unused_imports)]
 use arch_program::hashing_functions;
 #[allow(unused_imports)]
-use arch_program::helper;
-#[allow(unused_imports)]
 use arch_program::input_to_sign;
 #[allow(unused_imports)]
 use arch_program::instruction;
@@ -628,7 +626,6 @@ fn system_instruction_enum_variants() {
 }
 
 #[test]
-#[allow(deprecated)]
 fn system_instruction_functions() {
     let pk = pubkey::Pubkey::system_program();
 
@@ -719,20 +716,6 @@ fn transaction_to_sign_methods() {
         signer: pubkey::Pubkey::system_program(),
     }];
     let _: Vec<u8> = TransactionToSign::serialise_inputs_to_sign(&inputs);
-}
-
-// ---------------------------------------------------------------------------
-// 17. helper module
-// ---------------------------------------------------------------------------
-
-#[test]
-#[allow(deprecated)]
-fn helper_functions_exist() {
-    // We can only check function signatures, not call them without valid accounts
-    let _: fn(
-        &[account::AccountInfo],
-    ) -> Result<bitcoin::Transaction, program_error::ProgramError> =
-        helper::get_state_transition_tx;
 }
 
 // ---------------------------------------------------------------------------

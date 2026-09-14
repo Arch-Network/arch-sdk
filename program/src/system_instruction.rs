@@ -53,7 +53,10 @@ pub enum SystemInstruction {
         owner: Pubkey,
     },
 
-    /// Create a new account with an anchor
+    /// Legacy: accounts are no longer anchored to Bitcoin outputs. The system
+    /// program rejects this instruction with `AccountUtxoModified`. The variant
+    /// is retained only because `SystemInstruction` is bincode-encoded with
+    /// positional discriminants. Use `CreateAccount` instead.
     ///
     /// # Account references
     ///   0. `[WRITE, SIGNER]` Funding account
@@ -68,12 +71,12 @@ pub enum SystemInstruction {
         /// Address of program that will own the new account
         owner: Pubkey,
 
-        /// UTXO to be anchored to the new account
+        /// UTXO that would have been anchored; ignored
         txid: [u8; 32],
         vout: u32,
     },
 
-    /// Anchor an account to a utxo
+    /// Assign account to a program
     ///
     /// # Account references
     ///   0. `[WRITE, SIGNER]` Assigned account public key
@@ -82,12 +85,16 @@ pub enum SystemInstruction {
         owner: Pubkey,
     },
 
-    /// Assign account to a program
+    /// Legacy: accounts are no longer anchored to Bitcoin outputs. The system
+    /// program rejects this instruction with `AccountUtxoModified`. The variant
+    /// is retained only because `SystemInstruction` is bincode-encoded with
+    /// positional discriminants. Use `SignInput` to spend outputs paid to the
+    /// account's address.
     ///
     /// # Account references
-    ///   0. `[WRITE, SIGNER]` Assigned account public key
+    ///   0. `[WRITE, SIGNER]` Account that would have been anchored
     Anchor {
-        /// UTXO to be anchored to the new account
+        /// UTXO that would have been anchored; ignored
         txid: [u8; 32],
         vout: u32,
     },
@@ -270,9 +277,10 @@ pub fn create_account(
     )
 }
 
-/// Legacy: accounts are no longer anchored to Bitcoin outputs, so the
-/// instruction fails with `AccountUtxoModified`. Kept so existing callers keep
-/// compiling; use `create_account`.
+/// Legacy: accounts are no longer anchored to Bitcoin outputs; the system
+/// program rejects this instruction with `AccountUtxoModified`. Retained because
+/// `apl-associated-token-account` and `apl-token-metadata` still reference it.
+/// Use `create_account`.
 pub fn create_account_with_anchor(
     from_pubkey: &Pubkey,
     to_pubkey: &Pubkey,
@@ -340,9 +348,10 @@ pub fn allocate(pubkey: &Pubkey, space: u64) -> Instruction {
     )
 }
 
-/// Legacy: accounts are no longer anchored to Bitcoin outputs, so the
-/// instruction fails with `AccountUtxoModified`. Kept so existing callers keep
-/// compiling; use `sign_input` to spend outputs paid to the account's address.
+/// Legacy: accounts are no longer anchored to Bitcoin outputs; the system
+/// program rejects this instruction with `AccountUtxoModified`. Retained because
+/// `apl-associated-token-account` and `apl-token-metadata` still reference it.
+/// Use `sign_input` to spend outputs paid to the account's address.
 pub fn anchor(pubkey: &Pubkey, txid: [u8; 32], vout: u32) -> Instruction {
     let account_metas = vec![AccountMeta::new(*pubkey, true)];
     Instruction::new_with_bincode(

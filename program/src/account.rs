@@ -380,28 +380,6 @@ impl<'a> AccountInfo<'a> {
         }
     }
 
-    /// Sets a new UTXO for the account.
-    ///
-    /// # Arguments
-    /// * `utxo` - The new UTXO metadata to associate with this account
-    ///
-    /// # Safety
-    /// This method uses unsafe operations to modify a non-mutable reference.
-    /// It should only be used in contexts where this operation is valid.
-    #[deprecated(
-        note = "an account's UTXO never changes; the runtime fails the instruction with `AccountUtxoModified` when the written value differs"
-    )]
-    #[rustversion::attr(since(1.72), allow(invalid_reference_casting))]
-    pub fn set_utxo(&self, utxo: &UtxoMeta) {
-        // Set the non-mut owner field
-        unsafe {
-            std::ptr::write_volatile(
-                self.utxo as *const UtxoMeta as *mut [u8; 36],
-                utxo.serialize(),
-            );
-        }
-    }
-
     pub fn get_utxo(&self) -> &UtxoMeta {
         self.utxo
     }

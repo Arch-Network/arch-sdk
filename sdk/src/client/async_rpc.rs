@@ -38,8 +38,6 @@ pub const GET_PROCESSED_TRANSACTION: &str = "get_processed_transaction";
 pub const GET_TRANSACTION_STATUS: &str = "get_transaction_status";
 pub const GET_ACCOUNT_ADDRESS: &str = "get_account_address";
 pub const GET_PROGRAM_ACCOUNTS: &str = "get_program_accounts";
-#[deprecated(note = "accounts are no longer anchored; the node always answers `false`")]
-pub const CHECK_PRE_ANCHOR_CONFLICT: &str = "check_pre_anchor_conflict";
 
 /// Error code returned by the RPC server for "not found" responses
 const RPC_NOT_FOUND_CODE: i64 = 404;
@@ -481,21 +479,6 @@ impl ArchRpcClient {
                 "Program accounts not found for program ID: {}",
                 program_id
             ))),
-        }
-    }
-
-    #[deprecated(note = "accounts are no longer anchored; the node always answers `false`")]
-    #[allow(deprecated)]
-    pub async fn check_pre_anchor_conflict(&self, accounts: Vec<Pubkey>) -> Result<bool> {
-        let params = accounts;
-        match self
-            .call_method_with_params(CHECK_PRE_ANCHOR_CONFLICT, params)
-            .await?
-        {
-            Some(result) => Ok(result),
-            None => Err(ArchError::RpcRequestFailed(
-                "check_pre_anchor_conflict returned no result".to_string(),
-            )),
         }
     }
 

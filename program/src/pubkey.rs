@@ -133,10 +133,14 @@ impl Pubkey {
     /// This method is used within programs to output the public key to the program's log,
     /// which can be useful for debugging and monitoring program execution.
     ///
-    /// # Safety
-    /// This method makes a direct system call and should only be used within a program context.
+    /// Uses a runtime syscall on the VM and prints to stdout on native targets.
     pub fn log(&self) {
-        unsafe { crate::syscalls::sol_log_pubkey(self.as_ref() as *const _ as *const u8) };
+        #[cfg(target_os = "solana")]
+        unsafe {
+            crate::syscalls::sol_log_pubkey(self.as_ref() as *const _ as *const u8)
+        };
+        #[cfg(not(target_os = "solana"))]
+        crate::program_stubs::sol_log(&self.to_string());
     }
 
     /// Checks if a public key represents a point on the secp256k1 curve.

@@ -49,9 +49,7 @@ use arch_sdk::{
     ProcessedTransaction,
     // types/program_account.rs
     ProgramAccount,
-    ReappliedTransactionsEvent,
     RollbackStatus,
-    RolledbackTransactionsEvent,
     // types/runtime_transaction.rs
     RuntimeTransaction,
     RuntimeTransactionError,
@@ -85,7 +83,6 @@ use arch_sdk::{
 // ---------------------------------------------------------------------------
 
 #[allow(unused_imports)]
-#[allow(deprecated)]
 use arch_sdk::{
     // client/error.rs
     ArchError,
@@ -100,7 +97,6 @@ use arch_sdk::{
     WebSocketError,
     WebSocketMessage,
     ACCOUNT_FUNDING_AMOUNT,
-    CHECK_PRE_ANCHOR_CONFLICT,
     GET_ACCOUNT_ADDRESS,
     GET_BEST_BLOCK_HASH,
     GET_BEST_FINALIZED_BLOCK_HASH,
@@ -259,8 +255,6 @@ fn event_topic_variants() {
     let _ = EventTopic::Block;
     let _ = EventTopic::Transaction;
     let _ = EventTopic::AccountUpdate;
-    let _ = EventTopic::RolledbackTransactions;
-    let _ = EventTopic::ReappliedTransactions;
     let _ = EventTopic::DKG;
     let _ = format!("{}", EventTopic::Block);
 }
@@ -294,20 +288,6 @@ fn event_variants() {
     let _: String = aue.transaction_hash;
     let _: u64 = aue.block_height;
 
-    let rte = RolledbackTransactionsEvent {
-        block_height: 0,
-        transaction_hashes: vec![],
-    };
-    let _: u64 = rte.block_height;
-    let _: Vec<String> = rte.transaction_hashes;
-
-    let rate = ReappliedTransactionsEvent {
-        block_height: 0,
-        transaction_hashes: vec![],
-    };
-    let _: u64 = rate.block_height;
-    let _: Vec<String> = rate.transaction_hashes;
-
     let de = DKGEvent {
         status: String::new(),
     };
@@ -317,8 +297,6 @@ fn event_variants() {
     let _ = Event::Block(be);
     let _ = Event::Transaction(te);
     let _ = Event::AccountUpdate(aue);
-    let _ = Event::RolledbackTransactions(rte);
-    let _ = Event::ReappliedTransactions(rate);
     let _ = Event::DKG(de);
 }
 
@@ -600,7 +578,6 @@ fn backoff_strategy_variants() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[allow(deprecated)]
 fn async_rpc_client_construction() {
     // Constants
     assert_eq!(ACCOUNT_FUNDING_AMOUNT, 1_000_000);
@@ -618,7 +595,6 @@ fn async_rpc_client_construction() {
     let _: &str = GET_PROCESSED_TRANSACTION;
     let _: &str = GET_ACCOUNT_ADDRESS;
     let _: &str = GET_PROGRAM_ACCOUNTS;
-    let _: &str = CHECK_PRE_ANCHOR_CONFLICT;
 
     // Construction
     let config = Config::localnet();
@@ -629,7 +605,6 @@ fn async_rpc_client_construction() {
 /// This test verifies that every public async method on ArchRpcClient exists
 /// with the expected signature by taking function pointers. The methods
 /// themselves are not called (they require a running node).
-#[allow(deprecated)]
 #[test]
 fn async_rpc_client_method_signatures() {
     use arch_program::hash::Hash;
@@ -682,7 +657,6 @@ fn async_rpc_client_method_signatures() {
         let _: arch_sdk::Result<Option<FullBlock>> = client.get_full_block_by_height(0).await;
         let _: arch_sdk::Result<String> = client.get_account_address(&pk).await;
         let _: arch_sdk::Result<Vec<ProgramAccount>> = client.get_program_accounts(&pk, None).await;
-        let _: arch_sdk::Result<bool> = client.check_pre_anchor_conflict(vec![pk]).await;
         let _: arch_sdk::Result<String> = client.get_network_pubkey().await;
         let rt = RuntimeTransaction {
             version: 0,

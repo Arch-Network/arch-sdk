@@ -54,20 +54,11 @@ pub enum RuntimeTransactionError {
     #[error("MAX Signature Limit crossed; allowed {allowed} found {found}")]
     MaxSignatureLimitCrossed { allowed: usize, found: usize },
 
-    #[error("signature count mismatch: expected {expected} found {found}")]
-    SignatureCountMismatch { expected: usize, found: usize },
-
-    #[error("account key count mismatch: expected at least {expected} found {found}")]
-    AccountKeyCountMismatch { expected: usize, found: usize },
-
     #[error("BIP322 signature verification failed: {0}")]
     BIP322SignatureVerificationFailed(String),
 
     #[error("signature verification failed: {0}")]
     SignatureVerificationFailed(String),
-
-    #[error("Try from slice error: {0}")]
-    TryFromSliceError(String),
 }
 
 #[derive(
@@ -109,6 +100,9 @@ impl SanitizedRuntimeTransaction {
         self.inner().serialize_with_size_limit()
     }
 
+    /// Restores a transaction with structural checks only.
+    ///
+    /// Authenticate with [`RuntimeTransaction::verify_sigs`] before execution.
     pub fn from_vec(data: &[u8]) -> Result<Self, RuntimeTransactionError> {
         let transaction = RuntimeTransaction::from_slice(data)?;
         transaction.sanitize()?;
@@ -122,7 +116,6 @@ impl TryFrom<(RuntimeTransaction, Network)> for SanitizedRuntimeTransaction {
     fn try_from(
         (transaction, network): (RuntimeTransaction, Network),
     ) -> Result<Self, Self::Error> {
-        transaction.sanitize()?;
         transaction.verify_sigs(network)?;
         Ok(Self(transaction))
     }
@@ -267,16 +260,12 @@ impl RuntimeTransaction {
         }
     }
 
-    /// Verifies signatures for a RuntimeTransaction using the number of required signatures
-    /// specified in the ArchMessage header
+    /// Validates the transaction and authenticates the canonical signer prefix.
     ///
-    /// # Arguments
-    /// * `network` - Bitcoin network (mainnet, testnet, etc.)
-    ///
-    /// # Returns
-    /// * `Ok(true)` if all signatures are valid
-    /// * `Err` if transaction already exists or signature verification fails
+    /// The signed message header and ordered account keys also determine runtime
+    /// signer privileges. Reject noncanonical messages before verifying signatures.
     pub fn verify_sigs(&self, network: Network) -> Result<(), RuntimeTransactionError> {
+        self.sanitize()?;
         let required_sigs = self.message.header.num_required_signatures as usize;
 
         if self.signatures.len() > MAX_SIGNERS_IN_TRANSACTION {
@@ -286,54 +275,31 @@ impl RuntimeTransaction {
             });
         }
 
-        // Verify we have the correct number of signatures
-        if self.signatures.len() != required_sigs {
-            return Err(RuntimeTransactionError::SignatureCountMismatch {
-                expected: required_sigs,
-                found: self.signatures.len(),
-            });
-        }
-
+        // `sanitize` bounds `required_sigs` by the account keys and matches it to
+        // the signature count, so the prefix and the zip below are exact.
+        let signers = &self.message.account_keys[..required_sigs];
         let digest_slice = self.message.hash();
 
-        if self.message.account_keys.len() < required_sigs {
-            return Err(RuntimeTransactionError::AccountKeyCountMismatch {
-                expected: required_sigs,
-                found: self.message.account_keys.len(),
-            });
-        }
-
-        for i in 0..required_sigs {
-            let signature = &self.signatures[i];
-            // The first num_required_signatures of account_keys are the signers
-            let pubkey = &self.message.account_keys[i];
-
-            // Try Taproot verification first
-            if verify_message_bip322(
+        for (pubkey, signature) in signers.iter().zip(&self.signatures) {
+            verify_message_bip322(
                 &digest_slice,
                 pubkey.serialize(),
-                signature.0[..]
-                    .try_into()
-                    .map_err(|e| RuntimeTransactionError::TryFromSliceError(format!("{e:?}")))?,
+                signature.0,
                 false,
                 network,
             )
-            .is_err()
-            {
-                if let Err(e) = verify_message_bip322(
+            .or_else(|_| {
+                verify_message_bip322(
                     &digest_slice,
                     pubkey.serialize(),
-                    signature.0[..].try_into().map_err(|e| {
-                        RuntimeTransactionError::TryFromSliceError(format!("{e:?}"))
-                    })?,
+                    signature.0,
                     true,
                     network,
-                ) {
-                    return Err(RuntimeTransactionError::BIP322SignatureVerificationFailed(
-                        e.to_string(),
-                    ));
-                }
-            }
+                )
+            })
+            .map_err(|err| {
+                RuntimeTransactionError::BIP322SignatureVerificationFailed(err.to_string())
+            })?;
         }
 
         Ok(())
@@ -343,15 +309,139 @@ impl RuntimeTransaction {
 #[cfg(test)]
 mod tests {
     use super::{
-        RuntimeTransaction, RuntimeTransactionError, Signature, ALLOWED_VERSIONS,
-        RUNTIME_TX_SIZE_LIMIT,
+        RuntimeTransaction, RuntimeTransactionError, SanitizedRuntimeTransaction, Signature,
+        ALLOWED_VERSIONS, RUNTIME_TX_SIZE_LIMIT,
     };
     use arch_program::hash::Hash;
+    use arch_program::system_instruction;
     use arch_program::{
         pubkey::Pubkey,
         sanitize::{Sanitize as _, SanitizeError},
         sanitized::{ArchMessage, MessageHeader, SanitizedInstruction},
     };
+    use bitcoin::{
+        key::Keypair,
+        secp256k1::{Secp256k1, SecretKey},
+        Network,
+    };
+
+    use crate::{build_and_sign_transaction, sign_message_bip322};
+
+    fn authorization_keypair(seed: u8) -> Keypair {
+        Keypair::from_secret_key(
+            &Secp256k1::new(),
+            &SecretKey::from_slice(&[seed; 32]).unwrap(),
+        )
+    }
+
+    fn authorization_transfer() -> (RuntimeTransaction, Keypair, Keypair) {
+        let payer = authorization_keypair(1);
+        let owner = authorization_keypair(2);
+        let payer_key = Pubkey(payer.x_only_public_key().0.serialize());
+        let owner_key = Pubkey(owner.x_only_public_key().0.serialize());
+        let instruction = system_instruction::transfer(&owner_key, &payer_key, 1);
+        let message = ArchMessage::new(&[instruction], Some(payer_key), Hash::from([9; 32]));
+        let transaction =
+            build_and_sign_transaction(message, vec![owner, payer], Network::Regtest).unwrap();
+        (transaction, payer, owner)
+    }
+
+    #[test]
+    fn transaction_authorization_rejects_duplicate_signer_keys() {
+        let (mut transaction, payer, _) = authorization_transfer();
+        transaction.message.account_keys[1] = transaction.message.account_keys[0];
+        let signature =
+            sign_message_bip322(&payer, &transaction.message.hash(), Network::Regtest).unwrap();
+        transaction.signatures = vec![Signature(signature); 2];
+
+        assert_eq!(
+            transaction.verify_sigs(Network::Regtest),
+            Err(RuntimeTransactionError::SanitizeError(
+                SanitizeError::DuplicateAccount
+            ))
+        );
+    }
+
+    #[test]
+    fn transaction_authorization_rejects_unsigned_fee_payer() {
+        let (mut transaction, _, _) = authorization_transfer();
+        transaction.message.header.num_required_signatures = 0;
+        transaction.signatures.clear();
+
+        assert_eq!(
+            transaction.verify_sigs(Network::Regtest),
+            Err(RuntimeTransactionError::SanitizeError(
+                SanitizeError::IndexOutOfBounds
+            ))
+        );
+    }
+
+    #[test]
+    fn transaction_authorization_rejects_malformed_signer_header() {
+        let (mut transaction, payer, owner) = authorization_transfer();
+        transaction.message.header.num_readonly_signed_accounts = 3;
+        transaction =
+            build_and_sign_transaction(transaction.message, vec![payer, owner], Network::Regtest)
+                .unwrap();
+
+        assert_eq!(
+            transaction.verify_sigs(Network::Regtest),
+            Err(RuntimeTransactionError::SanitizeError(
+                SanitizeError::IndexOutOfBounds
+            ))
+        );
+    }
+
+    #[test]
+    fn transaction_authorization_requires_the_transfer_owners_signature() {
+        let (mut transaction, payer, _) = authorization_transfer();
+        SanitizedRuntimeTransaction::try_from((transaction.clone(), Network::Regtest)).unwrap();
+
+        // Preserve the correct count while substituting the attacker's valid signature
+        // for the victim's signature. Signing the instruction is not owner consent.
+        let signature =
+            sign_message_bip322(&payer, &transaction.message.hash(), Network::Regtest).unwrap();
+        transaction.signatures = vec![Signature(signature); 2];
+
+        assert!(matches!(
+            transaction.verify_sigs(Network::Regtest),
+            Err(RuntimeTransactionError::BIP322SignatureVerificationFailed(
+                _
+            ))
+        ));
+        assert!(matches!(
+            SanitizedRuntimeTransaction::try_from((transaction, Network::Regtest)),
+            Err(RuntimeTransactionError::BIP322SignatureVerificationFailed(
+                _
+            ))
+        ));
+    }
+
+    #[test]
+    fn transaction_authorization_rejects_missing_extra_and_reordered_signatures() {
+        let (transaction, _, _) = authorization_transfer();
+        for count in [0, 1, 3] {
+            let mut malformed = transaction.clone();
+            malformed
+                .signatures
+                .resize(count, transaction.signatures[0].clone());
+            assert!(malformed.verify_sigs(Network::Regtest).is_err());
+            assert!(SanitizedRuntimeTransaction::try_from((malformed, Network::Regtest)).is_err());
+        }
+
+        let mut reordered = transaction.clone();
+        reordered.signatures.swap(0, 1);
+        assert!(matches!(
+            reordered.verify_sigs(Network::Regtest),
+            Err(RuntimeTransactionError::BIP322SignatureVerificationFailed(
+                _
+            ))
+        ));
+
+        let mut missing_key = transaction;
+        missing_key.message.account_keys.truncate(1);
+        assert!(missing_key.verify_sigs(Network::Regtest).is_err());
+    }
 
     fn create_test_transaction(
         version: u32,
