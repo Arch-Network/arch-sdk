@@ -764,6 +764,7 @@ fn key_helper_signatures() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[allow(clippy::type_complexity)]
 fn bip322_function_signatures() {
     let _: fn(
         &bitcoin::key::UntweakedKeypair,

@@ -3,7 +3,8 @@
 use crate::account::{AccountMeta, SHARED_VALIDATOR_DATA_ACCOUNT_ID};
 use crate::instruction::{Instruction, InstructionError};
 use crate::pubkey::Pubkey;
-use borsh::{BorshDeserialize, BorshSerialize};
+pub use crate::resharing_types::{ResharingShardInstruction, ShardAggregate, ShardChunk};
+use borsh::BorshSerialize;
 use std::collections::HashSet;
 
 crate::declare_id!("Resharing1111111111111111111111111111111111");
@@ -76,39 +77,6 @@ pub const RESHARING_STAGING_SHARD_9_ACCOUNT_ID: Pubkey = shard_account_9::ID;
 pub const RESHARING_STAGING_SHARD_10_ACCOUNT_ID: Pubkey = shard_account_10::ID;
 
 pub const CHUNK_SIZE: u64 = 8192;
-
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, PartialEq, Eq, Clone)]
-pub enum ResharingShardInstruction {
-    /// Info about the chunk in a shard.
-    Chunk(ShardChunk),
-
-    /// Instruction to aggregate the chunks.
-    Aggregate(ShardAggregate),
-}
-
-/// Info about the chunk in a shard.
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, PartialEq, Eq, Clone)]
-pub struct ShardChunk {
-    /// If this is the first chunk in the shard.
-    pub first_chunk: bool,
-
-    /// Byte offset of the chunk in the shard.
-    pub start_offset: u64,
-
-    /// Chunk data.
-    pub chunk: Vec<u8>,
-}
-
-/// Info for agggeating from the shards.
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, PartialEq, Eq, Clone)]
-pub struct ShardAggregate {
-    /// Total size of the data.
-    pub total_size: u64,
-
-    /// Shards to aggregate from.
-    /// (shard account key, data size in the shard).
-    pub shards: Vec<(Pubkey, u64)>,
-}
 
 impl ResharingShardInstruction {
     /// Helper to build the chunk instruction.

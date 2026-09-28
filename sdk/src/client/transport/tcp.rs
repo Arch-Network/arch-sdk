@@ -10,6 +10,12 @@ use tokio::sync::Mutex;
 use crate::client::error::Result;
 use crate::client::transport::RpcTransport;
 
+/// Maximum request payload size; matches validator `rpc::http::MAX_REQUEST_SIZE`.
+const MAX_REQUEST_SIZE: u64 = 10 * 1024 * 1024;
+
+/// Maximum response payload size; matches validator `rpc::http::MAX_RESPONSE_SIZE`.
+const MAX_RESPONSE_SIZE: u64 = 100 * 1024 * 1024;
+
 pub struct TcpClient {
     stream: Mutex<TcpStream>,
 }
@@ -31,6 +37,14 @@ impl TcpClient {
     async fn write_all(stream: &mut TcpStream, val: &str) -> Result<()> {
         let mut serialized = Vec::new();
         BorshSerialize::serialize(val, &mut serialized).map_err(TcpClientError::BorshSerialize)?;
+
+        if serialized.len() as u64 > MAX_REQUEST_SIZE {
+            return Err(TcpClientError::PayloadTooLarge {
+                len: serialized.len() as u64,
+                limit: MAX_REQUEST_SIZE,
+            }
+            .into());
+        }
 
         let len = serialized.len() as u64;
         let prefix = len.to_be_bytes();
@@ -55,11 +69,29 @@ impl TcpClient {
             .map_err(TcpClientError::SocketRead)?;
         let payload_len = u64::from_be_bytes(prefix);
 
-        let mut payload = vec![0_u8; payload_len as usize];
+        if payload_len > MAX_RESPONSE_SIZE {
+            return Err(TcpClientError::PayloadTooLarge {
+                len: payload_len,
+                limit: MAX_RESPONSE_SIZE,
+            }
+            .into());
+        }
+
+        // Grow with received bytes instead of allocating the claimed size up front.
+        let mut payload = Vec::new();
         stream
-            .read_exact(&mut payload)
+            .take(payload_len)
+            .read_to_end(&mut payload)
             .await
             .map_err(TcpClientError::SocketRead)?;
+
+        if payload.len() as u64 != payload_len {
+            return Err(TcpClientError::IncompletePayload {
+                expected: payload_len,
+                actual: payload.len() as u64,
+            }
+            .into());
+        }
 
         let mut cursor = &payload[..];
         let ret = T::deserialize_reader(&mut cursor).map_err(TcpClientError::BorshDeserialize)?;
@@ -97,4 +129,10 @@ pub enum TcpClientError {
 
     #[error("Failed to deserialize: {0}")]
     BorshDeserialize(std::io::Error),
+
+    #[error("Payload too large: len={len}, limit={limit}")]
+    PayloadTooLarge { len: u64, limit: u64 },
+
+    #[error("Incomplete payload: expected={expected}, actual={actual}")]
+    IncompletePayload { expected: u64, actual: u64 },
 }

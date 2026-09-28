@@ -426,6 +426,9 @@ impl Processor {
 
                     account.delegate = COption::None;
                     account.delegated_amount = 0;
+                    if account.is_native() {
+                        account.close_authority = COption::None;
+                    }
                 }
                 AuthorityType::CloseAccount => {
                     let authority = account.close_authority.unwrap_or(account.owner);
@@ -656,14 +659,12 @@ impl Processor {
             .close_authority
             .unwrap_or(source_account.owner);
 
-        if source_account.owner != SYSTEM_PROGRAM_ID {
-            Self::validate_owner(
-                program_id,
-                &authority,
-                authority_info,
-                account_info_iter.as_slice(),
-            )?;
-        }
+        Self::validate_owner(
+            program_id,
+            &authority,
+            authority_info,
+            account_info_iter.as_slice(),
+        )?;
 
         let destination_starting_lamports = destination_account_info.lamports();
         **destination_account_info.lamports.borrow_mut() = destination_starting_lamports
@@ -1182,5 +1183,80 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, TokenError::OwnerMismatch.into());
+    }
+
+    /// Runs `SetAuthority(AccountOwner)` on a token account whose close
+    /// authority is the current owner, returning the resulting account state.
+    fn transfer_owner_with_close_authority(is_native: COption<u64>) -> Account {
+        let program_id = crate::id();
+        let owner_key = Pubkey::new_unique();
+        let new_owner_key = Pubkey::new_unique();
+        let account_key = Pubkey::new_unique();
+        let utxo = UtxoMeta::from([0; 32], 0);
+
+        let mut account_data = vec![0u8; Account::LEN];
+        Account {
+            mint: Pubkey::new_unique(),
+            owner: owner_key,
+            amount: 1,
+            delegate: COption::None,
+            state: AccountState::Initialized,
+            is_native,
+            delegated_amount: 0,
+            close_authority: COption::Some(owner_key),
+        }
+        .pack_into_slice(&mut account_data);
+        let mut account_lamports = 1u64;
+        let account_info = AccountInfo::new(
+            &account_key,
+            &mut account_lamports,
+            &mut account_data,
+            &program_id,
+            &utxo,
+            false,
+            true,
+            false,
+        );
+
+        let mut owner_data = Vec::new();
+        let mut owner_lamports = 1u64;
+        let owner_info = AccountInfo::new(
+            &owner_key,
+            &mut owner_lamports,
+            &mut owner_data,
+            &SYSTEM_PROGRAM_ID,
+            &utxo,
+            true,
+            false,
+            false,
+        );
+
+        let accounts = vec![account_info, owner_info];
+        Processor::process_set_authority(
+            &program_id,
+            &accounts,
+            AuthorityType::AccountOwner,
+            COption::Some(new_owner_key),
+        )
+        .unwrap();
+
+        let account = Account::unpack(&accounts[0].data.borrow()).unwrap();
+        assert_eq!(account.owner, new_owner_key);
+        account
+    }
+
+    /// The previous owner must not keep the ability to close (and sweep the
+    /// lamports of) a native account after handing ownership to someone else.
+    #[test]
+    fn set_owner_clears_close_authority_on_native_account() {
+        let account = transfer_owner_with_close_authority(COption::Some(0));
+        assert_eq!(account.close_authority, COption::None);
+    }
+
+    /// Non-native accounts keep their close authority, matching upstream SPL.
+    #[test]
+    fn set_owner_keeps_close_authority_on_non_native_account() {
+        let account = transfer_owner_with_close_authority(COption::None);
+        assert!(account.close_authority.is_some());
     }
 }

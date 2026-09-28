@@ -51,6 +51,10 @@ pub enum VoteInstruction {
         start_offset: u64,
         chunk: Vec<u8>,
     },
+    /// Removed: this instruction is always rejected by the vote program.
+    ///
+    /// The variant is kept only to preserve bincode discriminants of the
+    /// variants that follow it. Do not remove or reorder.
     UpdatePubkeyPackage(Vec<u8>),
     AddPeerToWhitelist(Vec<u8>),
     RemovePeerFromWhitelist(Vec<u8>),
@@ -127,17 +131,6 @@ pub fn initialize_shared_validator_account_chunk(
     )
 }
 
-pub fn update_pubkey_package(
-    shared_validator_pubkey: &Pubkey,
-    serialized_pubkey_package: &[u8],
-) -> Instruction {
-    Instruction::new_with_bincode(
-        VOTE_PROGRAM_ID,
-        VoteInstruction::UpdatePubkeyPackage(serialized_pubkey_package.to_vec()),
-        vec![AccountMeta::new(*shared_validator_pubkey, false)],
-    )
-}
-
 pub fn add_peer_to_whitelist(
     shared_validator_pubkey: &Pubkey,
     bootnode_pubkey: &[u8; 33],
@@ -166,4 +159,32 @@ pub fn remove_peer_from_whitelist(
             AccountMeta::new(Pubkey::from_slice(&bootnode_pubkey[1..33]), true),
         ],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bincode encodes the variant index; existing ledgers and independently
+    /// built clients (bootnode, arch-cli) depend on these values.
+    #[test]
+    fn vote_instruction_discriminants_are_stable() {
+        let discriminant = |ix: &VoteInstruction| -> u32 {
+            let bytes = bincode::serialize(ix).unwrap();
+            u32::from_le_bytes(bytes[..4].try_into().unwrap())
+        };
+
+        assert_eq!(
+            discriminant(&VoteInstruction::UpdatePubkeyPackage(vec![])),
+            4
+        );
+        assert_eq!(
+            discriminant(&VoteInstruction::AddPeerToWhitelist(vec![])),
+            5
+        );
+        assert_eq!(
+            discriminant(&VoteInstruction::RemovePeerFromWhitelist(vec![])),
+            6
+        );
+    }
 }

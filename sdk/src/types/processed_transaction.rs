@@ -302,9 +302,13 @@ impl ProcessedTransaction {
 
             serialized.extend((self.logs.len() as u64).to_le_bytes());
             for log in &self.logs {
-                let log_len = std::cmp::min(log.len(), LOG_MESSAGES_BYTES_LIMIT);
+                // Cut at a char boundary so the stored bytes stay valid UTF-8.
+                let mut log_len = std::cmp::min(log.len(), LOG_MESSAGES_BYTES_LIMIT);
+                while !log.is_char_boundary(log_len) {
+                    log_len -= 1;
+                }
                 serialized.extend((log_len as u64).to_le_bytes());
-                serialized.extend(log.as_bytes()[..log_len].to_vec());
+                serialized.extend_from_slice(&log.as_bytes()[..log_len]);
             }
         }
 
@@ -795,6 +799,26 @@ mod tests {
             deserialized.logs[0],
             "a".repeat(super::LOG_MESSAGES_BYTES_LIMIT)
         );
+    }
+
+    #[test]
+    fn test_serialization_log_truncation_respects_char_boundary() {
+        let mut processed_transaction = create_minimal_processed_transaction();
+
+        // A 2-byte char occupying bytes LIMIT-1..=LIMIT straddles the byte cut.
+        let prefix = format!(
+            "Program log: {}",
+            "a".repeat(super::LOG_MESSAGES_BYTES_LIMIT - 1 - "Program log: ".len())
+        );
+        assert_eq!(prefix.len(), super::LOG_MESSAGES_BYTES_LIMIT - 1);
+        processed_transaction.logs = vec![format!("{prefix}é tail")];
+        assert!(!processed_transaction.logs[0].is_char_boundary(super::LOG_MESSAGES_BYTES_LIMIT));
+
+        let serialized = processed_transaction.to_vec().unwrap();
+        let deserialized = ProcessedTransaction::from_vec(&serialized)
+            .expect("truncated log must remain valid UTF-8");
+
+        assert_eq!(deserialized.logs, vec![prefix]);
     }
 
     #[test]

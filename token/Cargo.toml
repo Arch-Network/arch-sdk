@@ -9,9 +9,7 @@ license = "MIT"
 
 [dependencies]
 arch_program = { workspace = true }
-borsh = { workspace = true }
 bitcoin = { workspace = true }
-bitcoin-io = { workspace = true }
 
 arrayref = { workspace = true }
 bytemuck = { workspace = true }

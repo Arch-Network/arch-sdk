@@ -127,6 +127,8 @@ macro_rules! declare_id {
 pub mod rent;
 /// Resharing defines.
 pub mod resharing;
+/// Resharing data types.
+pub mod resharing_types;
 /// Sanitization trait and error types for validating over-the-wire messages
 pub mod sanitize;
 /// Sanitized transaction processing

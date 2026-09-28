@@ -73,7 +73,7 @@ fn pubkey_json_serialization() {
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32,
     ]);
-    let json_val = serde_json::to_value(&pk).unwrap();
+    let json_val = serde_json::to_value(pk).unwrap();
 
     // Must be an array of 32 numbers
     assert!(json_val.is_array(), "Pubkey must serialize as JSON array");
@@ -90,7 +90,7 @@ fn pubkey_json_serialization() {
 #[test]
 fn hash_json_serialization() {
     let h = Hash::from([0xAB; 32]);
-    let json_val = serde_json::to_value(&h).unwrap();
+    let json_val = serde_json::to_value(h).unwrap();
 
     assert!(json_val.is_array(), "Hash must serialize as JSON array");
     assert_eq!(json_val.as_array().unwrap().len(), 32);
@@ -610,12 +610,12 @@ fn per_method_param_shapes() {
     let h = Hash::from([2; 32]);
 
     // read_account_info: params = Pubkey
-    let params = serde_json::to_value(&pk).unwrap();
+    let params = serde_json::to_value(pk).unwrap();
     assert!(params.is_array());
     assert_eq!(params.as_array().unwrap().len(), 32);
 
     // get_multiple_accounts: params = Vec<Pubkey>
-    let params = serde_json::to_value(&vec![pk]).unwrap();
+    let params = serde_json::to_value(vec![pk]).unwrap();
     assert!(params.is_array());
     assert!(params.as_array().unwrap()[0].is_array());
 
@@ -637,7 +637,7 @@ fn per_method_param_shapes() {
     assert!(params.is_number());
 
     // get_full_block_by_hash: params = [hash, "full"]
-    let params = vec![
+    let params = [
         serde_json::to_value("abc123").unwrap(),
         serde_json::to_value(BlockTransactionFilter::Full).unwrap(),
     ];
@@ -667,7 +667,7 @@ fn per_method_param_shapes() {
     assert!(params.as_object().unwrap().contains_key("version"));
 
     // send_transactions: params = Vec<RuntimeTransaction>
-    let params = serde_json::to_value(&vec![rt]).unwrap();
+    let params = serde_json::to_value(vec![rt]).unwrap();
     assert!(params.is_array());
     assert!(params.as_array().unwrap()[0].is_object());
 }

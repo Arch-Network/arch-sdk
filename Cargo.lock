@@ -19,30 +19,19 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "apl-associated-token-account"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "apl-token",
  "arch_program",
- "arrayref",
- "bitcoin",
- "bitcoin-io",
- "borsh",
- "bytemuck",
- "num-derive",
- "num-traits",
- "num_enum",
- "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "apl-token"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "arch_program",
  "arrayref",
  "bitcoin",
- "bitcoin-io",
- "borsh",
  "bytemuck",
  "num-derive",
  "num-traits",
@@ -53,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "apl-token-metadata"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "apl-token",
  "arch_program",
@@ -124,14 +113,13 @@ dependencies = [
 
 [[package]]
 name = "arch_program"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "arch-titan-types-core",
  "base64 0.22.1",
  "bincode",
  "bitcode",
  "bitcoin",
- "bitcoin-io",
  "bitcoin_slices",
  "bitflags",
  "borsh",
@@ -158,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "arch_sdk"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "arch-titan-client",
  "arch_program",
@@ -180,10 +168,12 @@ dependencies = [
  "serde",
  "serde_json",
  "sha256",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-tungstenite",
  "tracing",
+ "url",
  "uuid",
 ]
 
@@ -2641,6 +2631,7 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+ "serde_derive",
 ]
 
 [[package]]

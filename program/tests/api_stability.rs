@@ -68,6 +68,8 @@ use arch_program::rent;
 #[allow(unused_imports)]
 use arch_program::resharing;
 #[allow(unused_imports)]
+use arch_program::resharing_types;
+#[allow(unused_imports)]
 use arch_program::rune;
 #[allow(unused_imports)]
 use arch_program::sanitize;
@@ -406,8 +408,7 @@ fn program_error_variants() {
     // Conversions
     let _: u64 = u64::from(ProgramError::InvalidArgument);
     let _: ProgramError = ProgramError::from(0u64);
-    let _: ProgramError =
-        ProgramError::from(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+    let _: ProgramError = ProgramError::from(std::io::Error::other("test"));
 }
 
 #[test]
@@ -942,7 +943,7 @@ fn resharing_types_and_constants() {
     let _: pubkey::Pubkey = resharing::RESHARING_STAGING_SHARD_10_ACCOUNT_ID;
     let _: u64 = resharing::CHUNK_SIZE;
 
-    let ri = resharing::ShardChunk {
+    let ri = resharing_types::ShardChunk {
         first_chunk: true,
         start_offset: 0,
         chunk: vec![],
@@ -951,12 +952,13 @@ fn resharing_types_and_constants() {
     let _: u64 = ri.start_offset;
     let _: Vec<u8> = ri.chunk;
 
-    let ri = resharing::ShardAggregate {
+    let ri = resharing_types::ShardAggregate {
         total_size: 0,
         shards: vec![],
     };
     let _: u64 = ri.total_size;
     let _: Vec<(pubkey::Pubkey, u64)> = ri.shards;
+    let _: Option<resharing_types::ResharingShardInstruction> = None;
 }
 
 // ---------------------------------------------------------------------------
