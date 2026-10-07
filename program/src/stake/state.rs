@@ -1,7 +1,4 @@
 #![allow(clippy::arithmetic_side_effects)]
-// Remove the following `allow` when `StakeState` is removed, required to avoid
-// warnings from uses of deprecated types during trait derivations.
-#![allow(deprecated)]
 
 use {
     super::history::StakeHistoryEntry,
@@ -16,7 +13,17 @@ pub type StakeActivationStatus = StakeHistoryEntry;
 // epoch
 pub const DEFAULT_SLASH_PENALTY: u8 = ((5 * u8::MAX as usize) / 100) as u8;
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Copy)]
+#[derive(
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Copy,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
+)]
 #[allow(clippy::large_enum_variant)]
 pub enum StakeState {
     #[default]
@@ -47,7 +54,17 @@ impl StakeState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
+)]
 pub enum StakeAuthorize {
     Staker,
     Withdrawer,
@@ -64,6 +81,8 @@ pub enum StakeAuthorize {
     Copy,
     BorshDeserialize,
     BorshSerialize,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
 )]
 #[borsh(crate = "borsh")]
 pub struct Authorized {
@@ -114,7 +133,16 @@ impl Authorized {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, PartialEq, Clone, Copy, BorshDeserialize, BorshSerialize,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Copy,
+    BorshDeserialize,
+    BorshSerialize,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
 )]
 #[borsh(crate = "borsh")]
 pub struct Delegation {
@@ -130,7 +158,6 @@ pub struct Delegation {
 
 impl Default for Delegation {
     fn default() -> Self {
-        #[allow(deprecated)]
         Self {
             voter_pubkey: Pubkey::default(),
             stake: 0,

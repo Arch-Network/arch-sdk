@@ -14,11 +14,10 @@ use {
     apl_token::{self, state::Mint},
     arch_program::{
         account::{next_account_info, AccountInfo},
-        bitcoin::{self as arch_bitcoin, hashes::Hash},
         entrypoint::ProgramResult,
         input_to_sign::InputToSign,
         msg,
-        program::{get_transaction_to_sign, invoke, invoke_signed, set_input_to_sign},
+        program::{invoke, invoke_signed, set_input_to_sign},
         program_error::ProgramError,
         program_option::COption,
         program_pack::{IsInitialized, Pack},
@@ -55,25 +54,6 @@ impl Processor {
                 image,
                 description,
                 immutable,
-                None,
-            ),
-            MetadataInstruction::CreateMetadataWithAnchor {
-                name,
-                symbol,
-                image,
-                description,
-                immutable,
-                txid,
-                vout,
-            } => Self::process_create_metadata(
-                program_id,
-                accounts,
-                name,
-                symbol,
-                image,
-                description,
-                immutable,
-                Some((txid, vout)),
             ),
             MetadataInstruction::UpdateMetadata {
                 name,
@@ -103,7 +83,6 @@ impl Processor {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn process_create_metadata(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -112,7 +91,6 @@ impl Processor {
         image: String,
         description: String,
         immutable: bool,
-        anchor: Option<([u8; 32], u32)>,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let payer_info = next_account_info(account_info_iter)?; // [writable, signer]
@@ -219,7 +197,6 @@ impl Processor {
                 TokenMetadata::LEN,
                 program_id,
                 &[METADATA_SEED, mint_info.key.as_ref(), &[md_bump]],
-                anchor,
             )?;
         }
 
@@ -424,7 +401,6 @@ impl Processor {
                 TokenMetadataAttributes::LEN,
                 program_id,
                 &[ATTRIBUTES_SEED, mint_info.key.as_ref(), &[attrs_bump]],
-                None,
             )?;
         } else {
             let curr_len = attributes_info.data.borrow().len() as u64;
@@ -610,28 +586,12 @@ impl Processor {
 
         Self::validate_anchor_signer(account_info.key, &input_signer)?;
 
-        let buf = get_transaction_to_sign();
-        let arr: [u8; 4] = buf
-            .get(..4)
-            .and_then(|s| s.try_into().ok())
-            .ok_or(ProgramError::InvalidInstructionData)?;
-        let tx_len = u32::from_le_bytes(arr) as usize;
-        let tx_data = buf
-            .get(4..4 + tx_len)
-            .ok_or(ProgramError::InvalidInstructionData)?;
-        let tx: arch_bitcoin::Transaction = arch_bitcoin::consensus::deserialize(tx_data)
-            .map_err(|_| ProgramError::InvalidInstructionData)?;
-
-        let txid = tx.compute_txid();
-        let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
-        txid_bytes.reverse();
-
         let input_to_sign = InputToSign {
             index: input_index,
             signer: input_signer,
         };
 
-        set_input_to_sign(accounts, txid_bytes, &[input_to_sign])?;
+        set_input_to_sign(&[input_to_sign])?;
 
         Ok(())
     }
@@ -680,7 +640,6 @@ impl Processor {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn create_or_adopt_pda<'a>(
     payer: &AccountInfo<'a>,
     pda: &AccountInfo<'a>,
@@ -688,7 +647,6 @@ fn create_or_adopt_pda<'a>(
     space: usize,
     owner: &Pubkey,
     signer_seeds: &[&[u8]],
-    anchor: Option<([u8; 32], u32)>,
 ) -> ProgramResult {
     if pda.owner != &Pubkey::system_program() {
         return Err(ProgramError::IllegalOwner);
@@ -701,24 +659,13 @@ fn create_or_adopt_pda<'a>(
     let accounts = &[payer.clone(), pda.clone(), system_program.clone()];
 
     if pda.lamports() == 0 {
-        let instruction = match anchor {
-            Some((txid, vout)) => system_instruction::create_account_with_anchor(
-                payer.key,
-                pda.key,
-                required_lamports,
-                space as u64,
-                owner,
-                txid,
-                vout,
-            ),
-            None => system_instruction::create_account(
-                payer.key,
-                pda.key,
-                required_lamports,
-                space as u64,
-                owner,
-            ),
-        };
+        let instruction = system_instruction::create_account(
+            payer.key,
+            pda.key,
+            required_lamports,
+            space as u64,
+            owner,
+        );
         return invoke_signed(&instruction, accounts, &[signer_seeds]);
     }
 
@@ -727,13 +674,6 @@ fn create_or_adopt_pda<'a>(
         invoke(
             &system_instruction::transfer(payer.key, pda.key, missing_lamports),
             accounts,
-        )?;
-    }
-    if let Some((txid, vout)) = anchor {
-        invoke_signed(
-            &system_instruction::anchor(pda.key, txid, vout),
-            &[pda.clone(), system_program.clone()],
-            &[signer_seeds],
         )?;
     }
     invoke_signed(

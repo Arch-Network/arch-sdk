@@ -7,7 +7,7 @@ use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 extern crate alloc;
-use crate::{account::AccountInfo, program_error::ProgramError, pubkey::Pubkey, utxo::UtxoMeta};
+use crate::{account::AccountInfo, program_error::ProgramError, pubkey::Pubkey};
 use alloc::vec::Vec;
 /// Start address of the memory region used for program heap.
 pub const HEAP_START_ADDRESS: u64 = 0x300000000;
@@ -117,15 +117,9 @@ pub unsafe fn deserialize<'a>(input: *mut u8) -> (&'a Pubkey, Vec<AccountInfo<'a
             let owner: &Pubkey = &*(input.add(offset) as *const Pubkey);
             offset += size_of::<Pubkey>();
 
-            let utxo: &UtxoMeta = &*(input.add(offset) as *const UtxoMeta);
-            offset += size_of::<UtxoMeta>();
-
-            offset += 4 * size_of::<u8>();
-
             accounts.push(AccountInfo {
                 key,
                 lamports,
-                utxo,
                 data,
                 owner,
                 is_signer,

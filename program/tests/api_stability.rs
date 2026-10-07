@@ -175,14 +175,12 @@ fn account_info_construction_and_methods() {
     let owner = pubkey::Pubkey::system_program();
     let mut lamports: u64 = 100;
     let mut data = vec![0u8; 32];
-    let utxo_meta = utxo::UtxoMeta::from([0u8; 32], 0);
 
     let info = account::AccountInfo::new(
         &key,
         &mut lamports,
         &mut data,
         &owner,
-        &utxo_meta,
         true,  // is_signer
         true,  // is_writable
         false, // is_executable
@@ -207,7 +205,6 @@ fn account_info_construction_and_methods() {
     let _ = info.try_borrow_mut_lamports().unwrap();
     let _ = info.try_borrow_data().unwrap();
     let _ = info.try_borrow_mut_data().unwrap();
-    let _: &utxo::UtxoMeta = info.get_utxo();
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +261,7 @@ fn instruction_types_and_methods() {
     let _ =
         instruction::Instruction::new_with_borsh(pubkey::Pubkey::system_program(), &0u8, vec![]);
     let _ =
-        instruction::Instruction::new_with_bincode(pubkey::Pubkey::system_program(), 0u8, vec![]);
+        instruction::Instruction::new_with_wincode(pubkey::Pubkey::system_program(), 0u8, vec![]);
 
     // Methods
     let serialized = ix.serialize();
@@ -338,17 +335,13 @@ fn instruction_error_variants() {
     let _ = InstructionError::BitcoinEncodingError;
     let _ = InstructionError::TitanError;
     let _ = InstructionError::InvalidUtxoOwner;
-    let _ = InstructionError::AccountNotAnchored;
     let _ = InstructionError::NotEnoughComputeUnits;
     let _ = InstructionError::TranscriptVerificationFailed;
     let _ = InstructionError::InvalidChunk(String::new());
     let _ = InstructionError::TransactionToSignEmpty;
     let _ = InstructionError::InvalidUtxoId;
     let _ = InstructionError::InvalidUtxoSigner;
-    let _ = InstructionError::InvalidUtxo;
-    let _ = InstructionError::UnableToFetchUtxoTx;
     let _ = InstructionError::BuildAccountAddressError;
-    let _ = InstructionError::AccountUtxoModified;
 
     // Conversions
     let _: InstructionError = InstructionError::from(0u64);
@@ -393,7 +386,6 @@ fn program_error_variants() {
     let _ = ProgramError::NegativeAccountLamports;
     let _ = ProgramError::ReadonlyLamportChange;
     let _ = ProgramError::ExecutableLamportChange;
-    let _ = ProgramError::AccountNotAnchored;
     let _ = ProgramError::NotEnoughComputeUnits;
     let _ = ProgramError::InsufficientDataLength;
     let _ = ProgramError::IncorrectLength;
@@ -403,7 +395,6 @@ fn program_error_variants() {
     let _ = ProgramError::InvalidUtxoId;
     let _ = ProgramError::InvalidUtxoSigner;
     let _ = ProgramError::InvalidStateTransition(String::new());
-    let _ = ProgramError::AccountUtxoModified;
 
     // Conversions
     let _: u64 = u64::from(ProgramError::InvalidArgument);
@@ -449,7 +440,6 @@ fn program_error_constants() {
     let _: u64 = NEGATIVE_ACCOUNT_LAMPORTS;
     let _: u64 = READONLY_LAMPORT_CHANGE;
     let _: u64 = EXECUTABLE_LAMPORT_CHANGE;
-    let _: u64 = ACCOUNT_NOT_ANCHORED;
     let _: u64 = NOT_ENOUGH_COMPUTE_UNITS;
     let _: u64 = INSUFFICIENT_DATA_LENGTH;
     let _: u64 = INCORRECT_LENGTH;
@@ -459,7 +449,6 @@ fn program_error_constants() {
     let _: u64 = INVALID_UTXO_ID;
     let _: u64 = INVALID_UTXO_SIGNER;
     let _: u64 = INVALID_STATE_TRANSITION;
-    let _: u64 = ACCOUNT_UTXO_MODIFIED;
 }
 
 // ---------------------------------------------------------------------------
@@ -584,19 +573,8 @@ fn system_instruction_enum_variants() {
         space: 0,
         owner: pubkey::Pubkey::system_program(),
     };
-    let _ = SystemInstruction::CreateAccountWithAnchor {
-        lamports: 0,
-        space: 0,
-        owner: pubkey::Pubkey::system_program(),
-        txid: [0; 32],
-        vout: 0,
-    };
     let _ = SystemInstruction::Assign {
         owner: pubkey::Pubkey::system_program(),
-    };
-    let _ = SystemInstruction::Anchor {
-        txid: [0; 32],
-        vout: 0,
     };
     let _ = SystemInstruction::SignInput { index: 0 };
     let _ = SystemInstruction::Transfer { lamports: 0 };
@@ -631,12 +609,9 @@ fn system_instruction_functions() {
     let pk = pubkey::Pubkey::system_program();
 
     let _: instruction::Instruction = system_instruction::create_account(&pk, &pk, 0, 0, &pk);
-    let _: instruction::Instruction =
-        system_instruction::create_account_with_anchor(&pk, &pk, 0, 0, &pk, [0; 32], 0);
     let _: instruction::Instruction = system_instruction::assign(&pk, &pk);
     let _: instruction::Instruction = system_instruction::transfer(&pk, &pk, 0);
     let _: instruction::Instruction = system_instruction::allocate(&pk, 0);
-    let _: instruction::Instruction = system_instruction::anchor(&pk, [0; 32], 0);
     let _: instruction::Instruction = system_instruction::sign_input(0, &pk);
     let _: instruction::Instruction =
         system_instruction::create_account_with_seed(&pk, &pk, &pk, "seed", 0, 0, &pk);
@@ -657,9 +632,7 @@ fn system_error_variants() {
     let _ = SystemError::InvalidAccountDataLength;
     let _ = SystemError::MaxSeedLengthExceeded;
     let _ = SystemError::AddressWithSeedMismatch;
-    let _ = SystemError::NonceNoRecentBlockhashes;
-    let _ = SystemError::NonceBlockhashNotExpired;
-    let _ = SystemError::NonceUnexpectedBlockhashValue;
+    let _ = SystemError::NonceAlreadyAdvanced;
 }
 
 // ---------------------------------------------------------------------------

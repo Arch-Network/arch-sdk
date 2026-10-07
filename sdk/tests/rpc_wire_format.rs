@@ -20,8 +20,7 @@ use arch_sdk::arch_program::{
 };
 use arch_sdk::{
     AccountFilter, AccountInfo, AccountInfoWithPubkey, Block, BlockTransactionFilter, Config,
-    FullBlock, ProcessedTransaction, ProgramAccount, RollbackStatus, RuntimeTransaction, Signature,
-    Status,
+    FullBlock, ProcessedTransaction, ProgramAccount, RuntimeTransaction, Signature, Status,
 };
 use serde_json::{json, Value};
 
@@ -258,13 +257,11 @@ fn account_info_response_deserialization() {
     obj.insert("lamports".into(), json!(1000000));
     obj.insert("owner".into(), zeros(32));
     obj.insert("data".into(), json!([1, 2, 3, 4]));
-    obj.insert("utxo".into(), json!("abc123:0"));
     obj.insert("is_executable".into(), json!(false));
 
     let ai: AccountInfo = serde_json::from_value(Value::Object(obj)).unwrap();
     assert_eq!(ai.lamports, 1000000);
     assert_eq!(ai.data, vec![1, 2, 3, 4]);
-    assert_eq!(ai.utxo, "abc123:0");
     assert!(!ai.is_executable);
 }
 
@@ -277,7 +274,6 @@ fn account_info_with_pubkey_response_deserialization() {
     obj.insert("lamports".into(), json!(500));
     obj.insert("owner".into(), zeros(32));
     obj.insert("data".into(), json!([]));
-    obj.insert("utxo".into(), json!(""));
     obj.insert("is_executable".into(), json!(false));
 
     let aip: AccountInfoWithPubkey = serde_json::from_value(Value::Object(obj)).unwrap();
@@ -298,24 +294,6 @@ fn status_response_deserialization() {
     let failed: Status =
         serde_json::from_value(json!({"type": "failed", "message": "out of gas"})).unwrap();
     assert_eq!(failed, Status::Failed("out of gas".to_string()));
-}
-
-/// RollbackStatus variants deserialize from their tagged representation.
-#[test]
-fn rollback_status_response_deserialization() {
-    let not_rb: RollbackStatus = serde_json::from_value(json!({"type": "notRolledback"})).unwrap();
-    assert_eq!(not_rb, RollbackStatus::NotRolledback);
-
-    let rb: RollbackStatus =
-        serde_json::from_value(json!({"type": "rolledback", "message": "conflict detected"}))
-            .unwrap();
-    assert_eq!(
-        rb,
-        RollbackStatus::Rolledback("conflict detected".to_string())
-    );
-
-    let finalized: RollbackStatus = serde_json::from_value(json!({"type": "finalized"})).unwrap();
-    assert_eq!(finalized, RollbackStatus::Finalized);
 }
 
 /// Helper: build a minimal empty ArchMessage JSON object.
@@ -343,7 +321,6 @@ fn minimal_processed_tx_json(status: Value) -> Value {
         "status": status,
         "bitcoin_txid": null,
         "logs": [],
-        "rollback_status": {"type": "notRolledback"},
         "inner_instructions_list": []
     })
 }
@@ -359,7 +336,6 @@ fn processed_transaction_response_deserialization() {
     assert_eq!(pt.status, Status::Processed);
     assert_eq!(pt.bitcoin_txid, None);
     assert_eq!(pt.logs, vec!["Program log: hello"]);
-    assert_eq!(pt.rollback_status, RollbackStatus::NotRolledback);
     assert!(pt.inner_instructions_list.is_empty());
 }
 
@@ -442,7 +418,6 @@ fn program_account_response_deserialization() {
             "lamports": 999,
             "owner": zeros(32),
             "data": [10, 20],
-            "utxo": "txid:1",
             "is_executable": true
         }
     });
@@ -559,7 +534,6 @@ fn processed_transaction_json_round_trip() {
         status: Status::Failed("test error".to_string()),
         bitcoin_txid: Some(Hash::from([0xFF; 32])),
         logs: vec!["log1".to_string(), "log2".to_string()],
-        rollback_status: RollbackStatus::Rolledback("reason".to_string()),
         inner_instructions_list: vec![],
     };
 
@@ -574,7 +548,6 @@ fn account_info_json_round_trip() {
         lamports: 42,
         owner: Pubkey::from([7; 32]),
         data: vec![1, 2, 3],
-        utxo: "deadbeef:0".to_string(),
         is_executable: true,
     };
 

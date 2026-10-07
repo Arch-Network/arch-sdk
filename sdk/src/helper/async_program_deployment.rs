@@ -12,6 +12,7 @@ use crate::{
     Status,
 };
 use arch_program::bpf_loader::{LoaderState, BPF_LOADER_ID};
+use arch_program::compute_budget::ComputeBudgetInstruction;
 use arch_program::hash::Hash;
 use arch_program::loader_instruction;
 use arch_program::sanitized::ArchMessage;
@@ -188,7 +189,6 @@ impl ProgramDeployer {
             program = %program_pubkey,
             owner = %account_info.owner,
             data_len = account_info.data.len(),
-            utxo = %account_info.utxo,
             executable = account_info.is_executable,
             "Program account state after ELF upload"
         );
@@ -227,7 +227,6 @@ impl ProgramDeployer {
             program = %program_pubkey,
             owner = %account_info.owner,
             data_len = account_info.data.len(),
-            utxo = %account_info.utxo,
             executable = account_info.is_executable,
             "Final program account state"
         );
@@ -242,9 +241,15 @@ impl ProgramDeployer {
         authority_keypair: Keypair,
     ) -> Result<(), ProgramDeployerError> {
         let recent_blockhash = self.client.get_best_finalized_block_hash().await?;
+        // Deploy charges compute units per ELF byte, so a large program
+        // needs more than the default per-instruction limit. Request as much
+        // as possible; the runtime clamps the request to the transaction maximum.
         let executability_tx = build_and_sign_transaction(
             ArchMessage::new(
-                &[loader_instruction::deploy(program_pubkey, authority_pubkey)],
+                &[
+                    ComputeBudgetInstruction::set_compute_unit_limit(u32::MAX),
+                    loader_instruction::deploy(program_pubkey, authority_pubkey),
+                ],
                 Some(authority_pubkey),
                 recent_blockhash,
             ),
@@ -279,7 +284,6 @@ impl ProgramDeployer {
             program = %program_pubkey,
             executable = account_info.is_executable,
             data_len = account_info.data.len(),
-            utxo = %account_info.utxo,
             owner = %account_info.owner,
             "Account state before ELF write"
         );
@@ -514,7 +518,7 @@ pub fn extend_bytes_max_len() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ProcessedTransaction, RollbackStatus};
+    use crate::ProcessedTransaction;
     use mockito::Matcher;
     use serde_json::json;
 
@@ -591,7 +595,6 @@ mod tests {
             status: Status::Processed,
             bitcoin_txid: None,
             logs: Vec::new(),
-            rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: Vec::new(),
         };
         let processed_mock = server

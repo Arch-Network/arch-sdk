@@ -21,7 +21,7 @@ serde = { workspace = true }
 num-derive = { workspace = true }
 num-traits = { workspace = true }
 bytemuck = { workspace = true }
-bincode = { workspace = true }
+wincode = { workspace = true }
 bs58 = { workspace = true }
 serde_derive = { workspace = true }
 serde_bytes = { workspace = true }
@@ -44,3 +44,6 @@ bitflags = { workspace = true }
 [features]
 default = []
 fuzzing = ["libfuzzer-sys"]
+
+[package.metadata.cargo-machete]
+ignored = ["serde_bytes"] # used via `#[serde(with = "serde_bytes")]`

@@ -7,7 +7,17 @@ pub const VALIDATOR_STATE_SEED_PREFIX: &[u8] = b"validator-state";
 /// It would be better to have the bootnode pubkey and whitelist saved as [u8;33] instead of Vec<u8>
 /// However, Serialize can only be derived for slices whose length is <= 32.
 /// A custom serializer would be needed to support this.
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
+)]
 pub struct SharedValidatorState {
     /// The account that will hold the whitelist, we check it against the bootnode input to the validator
     pub bootnode_pubkey: Vec<u8>,
@@ -29,11 +39,11 @@ impl SharedValidatorState {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        bincode::serialize(self).unwrap()
+        wincode::serialize(self).unwrap()
     }
 
     pub fn deserialize(data: &[u8]) -> Self {
-        bincode::deserialize(data).unwrap()
+        wincode::deserialize(data).unwrap()
     }
 }
 

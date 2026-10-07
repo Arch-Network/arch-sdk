@@ -240,20 +240,12 @@ pub const MAX_TRANSACTION_TO_SIGN: usize = 4 * 1024;
 /// registered.
 ///
 /// # Arguments
-/// * `accounts` - Slice of account information required for the transaction
 /// * `tx` - The transaction
 /// * `inputs_to_sign` - The inputs to sign
 ///
 /// # Returns
 /// * `ProgramResult` - Ok(()) if successful, or an error if the operation fails
-pub fn set_transaction_to_sign<'info, T>(
-    _accounts: &[T],
-    tx: &Transaction,
-    inputs_to_sign: &[InputToSign],
-) -> ProgramResult
-where
-    T: AsRef<AccountInfo<'info>>,
-{
+pub fn set_transaction_to_sign(tx: &Transaction, inputs_to_sign: &[InputToSign]) -> ProgramResult {
     msg!("setting tx to sign");
     // Use the new method that avoids double allocation
 
@@ -298,15 +290,8 @@ where
 /// Registers additional inputs on the pending transaction to sign.
 ///
 /// Each input must spend an output owned by its signer's account address; the runtime
-/// validates this when the inputs are registered. `accounts` and `txid` are unused:
-/// account UTXOs are immutable, so nothing is re-anchored. They remain in the signature
-/// because the sources of programs deployed on chain (`apl_token`, `apl_token_metadata`)
-/// are frozen and still pass them.
-pub fn set_input_to_sign(
-    _accounts: &[AccountInfo],
-    _txid: [u8; 32],
-    inputs_to_sign: &[InputToSign],
-) -> ProgramResult {
+/// validates this when the inputs are registered.
+pub fn set_input_to_sign(inputs_to_sign: &[InputToSign]) -> ProgramResult {
     msg!("setting inputs to sign");
 
     let serialized_inputs_to_sign = TransactionToSign::serialise_inputs_to_sign(inputs_to_sign);

@@ -9,7 +9,10 @@ use crate::{
 use num_derive::{FromPrimitive, ToPrimitive};
 use thiserror::Error;
 
-use super::{program::VOTE_PROGRAM_ID, state::VoteInit};
+use super::{
+    program::{VOTE_ACCOUNT_SEED, VOTE_PROGRAM_ID},
+    state::VoteInit,
+};
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum VoteError {
@@ -31,7 +34,9 @@ impl<E> DecodeError<E> for VoteError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(
+    Serialize, Deserialize, Debug, PartialEq, Eq, Clone, wincode::SchemaWrite, wincode::SchemaRead,
+)]
 pub enum VoteInstruction {
     /// Initialize a stake with lockup and authorization information
     ///
@@ -51,20 +56,20 @@ pub enum VoteInstruction {
         start_offset: u64,
         chunk: Vec<u8>,
     },
-    /// Removed: this instruction is always rejected by the vote program.
-    ///
-    /// The variant is kept only to preserve bincode discriminants of the
-    /// variants that follow it. Do not remove or reorder.
-    UpdatePubkeyPackage(Vec<u8>),
     AddPeerToWhitelist(Vec<u8>),
     RemovePeerFromWhitelist(Vec<u8>),
 }
 
+/// Initializes a vote account. The validator identity `vote_init.node_pubkey`
+/// must sign: it agrees to be represented by this vote account.
 pub fn initialize(vote_pubkey: &Pubkey, vote_init: &VoteInit) -> Instruction {
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         VOTE_PROGRAM_ID,
         VoteInstruction::Initialize(*vote_init),
-        vec![AccountMeta::new(*vote_pubkey, false)],
+        vec![
+            AccountMeta::new(*vote_pubkey, false),
+            AccountMeta::new_readonly(*vote_init.node_pubkey(), true),
+        ],
     )
 }
 
@@ -86,8 +91,33 @@ pub fn create_account(
     ]
 }
 
+/// Creates and initializes the vote account of the validator whose identity
+/// is `node_pubkey`, at
+/// [`vote_account_address`](super::program::vote_account_address). The
+/// identity signs as the base of the derived address.
+pub fn create_account_with_seed(
+    from_pubkey: &Pubkey,
+    node_pubkey: &Pubkey,
+    vote_init: &VoteInit,
+    lamports: u64,
+) -> Vec<Instruction> {
+    let vote_pubkey = super::program::vote_account_address(node_pubkey);
+    vec![
+        system_instruction::create_account_with_seed(
+            from_pubkey,
+            &vote_pubkey,
+            node_pubkey,
+            VOTE_ACCOUNT_SEED,
+            lamports,
+            VoteState::size_of_new() as u64,
+            &VOTE_PROGRAM_ID,
+        ),
+        initialize(&vote_pubkey, vote_init),
+    ]
+}
+
 pub fn authorize(vote_pubkey: &Pubkey, authority: &Pubkey, new_authority: &Pubkey) -> Instruction {
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         VOTE_PROGRAM_ID,
         VoteInstruction::Authorize(*new_authority),
         vec![
@@ -98,7 +128,7 @@ pub fn authorize(vote_pubkey: &Pubkey, authority: &Pubkey, new_authority: &Pubke
 }
 
 pub fn update_commission(vote_pubkey: &Pubkey, authority: &Pubkey, commission: u8) -> Instruction {
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         VOTE_PROGRAM_ID,
         VoteInstruction::UpdateCommission(commission),
         vec![
@@ -116,7 +146,7 @@ pub fn initialize_shared_validator_account_chunk(
     start_offset: u64,
     chunk: Vec<u8>,
 ) -> Instruction {
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         VOTE_PROGRAM_ID,
         VoteInstruction::InitializeSharedValidatorAccountChunk {
             first_chunk,
@@ -136,7 +166,7 @@ pub fn add_peer_to_whitelist(
     bootnode_pubkey: &[u8; 33],
     peer_pubkey: &[u8; 33],
 ) -> Instruction {
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         VOTE_PROGRAM_ID,
         VoteInstruction::AddPeerToWhitelist(peer_pubkey.to_vec()),
         vec![
@@ -151,7 +181,7 @@ pub fn remove_peer_from_whitelist(
     bootnode_pubkey: &[u8; 33],
     peer_pubkey: &[u8; 33],
 ) -> Instruction {
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         VOTE_PROGRAM_ID,
         VoteInstruction::RemovePeerFromWhitelist(peer_pubkey.to_vec()),
         vec![
@@ -165,26 +195,22 @@ pub fn remove_peer_from_whitelist(
 mod tests {
     use super::*;
 
-    /// Bincode encodes the variant index; existing ledgers and independently
-    /// built clients (bootnode, arch-cli) depend on these values.
+    /// Wincode encodes the variant index; independently built clients
+    /// (bootnode, arch-cli) depend on these values.
     #[test]
     fn vote_instruction_discriminants_are_stable() {
         let discriminant = |ix: &VoteInstruction| -> u32 {
-            let bytes = bincode::serialize(ix).unwrap();
+            let bytes = wincode::serialize(ix).unwrap();
             u32::from_le_bytes(bytes[..4].try_into().unwrap())
         };
 
         assert_eq!(
-            discriminant(&VoteInstruction::UpdatePubkeyPackage(vec![])),
+            discriminant(&VoteInstruction::AddPeerToWhitelist(vec![])),
             4
         );
         assert_eq!(
-            discriminant(&VoteInstruction::AddPeerToWhitelist(vec![])),
-            5
-        );
-        assert_eq!(
             discriminant(&VoteInstruction::RemovePeerFromWhitelist(vec![])),
-            6
+            5
         );
     }
 }

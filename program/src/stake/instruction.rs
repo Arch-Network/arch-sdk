@@ -81,7 +81,9 @@ impl<E> DecodeError<E> for StakeError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(
+    Serialize, Deserialize, Debug, PartialEq, Eq, Clone, wincode::SchemaWrite, wincode::SchemaRead,
+)]
 pub enum StakeInstruction {
     /// Initialize a stake with lockup and authorization information
     ///
@@ -143,7 +145,7 @@ pub enum StakeInstruction {
 }
 
 pub fn initialize(stake_pubkey: &Pubkey, authorized: &Authorized) -> Instruction {
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         STAKE_PROGRAM_ID,
         StakeInstruction::Initialize(*authorized),
         vec![
@@ -199,7 +201,7 @@ pub fn authorize(
         AccountMeta::new_readonly(*authorized_pubkey, true),
     ];
 
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         STAKE_PROGRAM_ID,
         StakeInstruction::Authorize(*new_authorized_pubkey, stake_authorize),
         account_metas,
@@ -216,7 +218,7 @@ pub fn delegate_stake(
         AccountMeta::new_readonly(*vote_pubkey, false),
         AccountMeta::new_readonly(*authorized_pubkey, true),
     ];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         STAKE_PROGRAM_ID,
         &StakeInstruction::DelegateStake,
         account_metas,
@@ -235,7 +237,7 @@ pub fn withdraw(
         AccountMeta::new_readonly(*withdrawer_pubkey, true),
     ];
 
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         STAKE_PROGRAM_ID,
         StakeInstruction::Withdraw(lamports),
         account_metas,
@@ -248,7 +250,7 @@ pub fn deactivate_stake(stake_pubkey: &Pubkey, authorized_pubkey: &Pubkey) -> In
         // AccountMeta::new_readonly(sysvar::clock::STAKE_PROGRAM_ID, false),
         AccountMeta::new_readonly(*authorized_pubkey, true),
     ];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         STAKE_PROGRAM_ID,
         &StakeInstruction::Deactivate,
         account_metas,

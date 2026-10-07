@@ -6,7 +6,6 @@ pub struct AccountInfo {
     pub lamports: u64,
     pub owner: Pubkey,
     pub data: Vec<u8>,
-    pub utxo: String,
     pub is_executable: bool,
 }
 
@@ -16,7 +15,6 @@ pub struct AccountInfoWithPubkey {
     pub lamports: u64,
     pub owner: Pubkey,
     pub data: Vec<u8>,
-    pub utxo: String,
     pub is_executable: bool,
 }
 
@@ -27,7 +25,6 @@ impl From<(Pubkey, AccountInfo)> for AccountInfoWithPubkey {
             lamports: info.1.lamports,
             owner: info.1.owner,
             data: info.1.data,
-            utxo: info.1.utxo,
             is_executable: info.1.is_executable,
         }
     }
@@ -39,7 +36,6 @@ impl From<AccountInfoWithPubkey> for AccountInfo {
             lamports: info.lamports,
             owner: info.owner,
             data: info.data,
-            utxo: info.utxo,
             is_executable: info.is_executable,
         }
     }

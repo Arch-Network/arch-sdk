@@ -361,7 +361,6 @@ mod tests {
             lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
             data: vec![1u8, 2, 3, 4],
-            utxo: "utxo123".to_string(),
             is_executable: false,
         };
 
@@ -377,7 +376,6 @@ mod tests {
 
         assert_eq!(result.owner, account_info.owner);
         assert_eq!(result.data, account_info.data);
-        assert_eq!(result.utxo, account_info.utxo);
         assert_eq!(result.is_executable, account_info.is_executable);
         mock.assert();
     }
@@ -396,8 +394,6 @@ mod tests {
 
     #[test]
     fn test_is_transaction_execution_complete_function() {
-        use crate::types::RollbackStatus;
-
         // Create a RuntimeTransaction for testing
         let rt_tx = RuntimeTransaction {
             version: 0,
@@ -411,7 +407,6 @@ mod tests {
             status: Status::Processed,
             bitcoin_txid: None,
             logs: Vec::new(),
-            rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: vec![],
         };
         assert!(is_transaction_execution_complete(&processed_tx));
@@ -421,7 +416,6 @@ mod tests {
             status: Status::Failed("error".to_string()),
             bitcoin_txid: None,
             logs: Vec::new(),
-            rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: vec![],
         };
         assert!(is_transaction_execution_complete(&failed_tx));
@@ -431,7 +425,6 @@ mod tests {
             status: Status::Queued,
             bitcoin_txid: None,
             logs: Vec::new(),
-            rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: vec![],
         };
         assert!(!is_transaction_execution_complete(&queued_tx));
@@ -476,7 +469,6 @@ mod tests {
             lamports: minimum_rent(4),
             owner: program_id,
             data: vec![1u8, 2, 3, 4],
-            utxo: "utxo123".to_string(),
             is_executable: false,
         };
 
@@ -568,8 +560,6 @@ mod tests {
         let mut server = Server::new();
         let tx_id = Hash::from([0; 32]);
 
-        use crate::types::RollbackStatus;
-
         // Create a sample processed transaction
         let rt_tx = RuntimeTransaction {
             version: 0,
@@ -582,7 +572,6 @@ mod tests {
             status: Status::Processed,
             bitcoin_txid: None,
             logs: vec!["Log entry 1".to_string(), "Log entry 2".to_string()],
-            rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: vec![],
         };
 
@@ -726,7 +715,6 @@ mod tests {
             lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
             data: vec![1u8, 2, 3, 4],
-            utxo: "utxo123".to_string(),
             is_executable: false,
         };
 
@@ -784,7 +772,6 @@ mod tests {
             lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
             data: vec![1u8, 2, 3, 4],
-            utxo: "utxo123".to_string(),
             is_executable: false,
         };
 
@@ -792,7 +779,6 @@ mod tests {
             lamports: minimum_rent(4),
             owner: Pubkey::new_unique(),
             data: vec![5, 6, 7, 8],
-            utxo: "utxo456".to_string(),
             is_executable: true,
         };
 
@@ -802,7 +788,6 @@ mod tests {
             lamports: minimum_rent(account_info1.data.len()),
             owner: account_info1.owner,
             data: account_info1.data.clone(),
-            utxo: account_info1.utxo.clone(),
             is_executable: account_info1.is_executable,
         };
 
@@ -812,7 +797,6 @@ mod tests {
             lamports: minimum_rent(account_info2.data.len()),
             owner: account_info2.owner,
             data: account_info2.data.clone(),
-            utxo: account_info2.utxo.clone(),
             is_executable: account_info2.is_executable,
         };
 

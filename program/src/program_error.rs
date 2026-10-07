@@ -80,8 +80,6 @@ pub enum ProgramError {
     ReadonlyLamportChange,
     #[error("Executable lamport change")]
     ExecutableLamportChange,
-    #[error("Account is not anchored")]
-    AccountNotAnchored,
     #[error("Not enough compute units available to complete the instruction")]
     NotEnoughComputeUnits,
     #[error("Insufficient data length")]
@@ -104,8 +102,6 @@ pub enum ProgramError {
     InvalidAggregateSize,
     #[error("Duplicate shard accounts")]
     DuplicateShardAccounts,
-    #[error("Account UTXO cannot be modified")]
-    AccountUtxoModified,
 }
 
 pub trait PrintProgramError {
@@ -161,7 +157,6 @@ impl PrintProgramError for ProgramError {
             Self::NegativeAccountLamports => msg!("Error: NegativeAccountLamports"),
             Self::ReadonlyLamportChange => msg!("Error: ReadonlyLamportChange"),
             Self::ExecutableLamportChange => msg!("Error: ExecutableLamportChange"),
-            Self::AccountNotAnchored => msg!("Error: AccountNotAnchored"),
             Self::NotEnoughComputeUnits => msg!("Error: NotEnoughComputeUnits"),
             Self::InsufficientDataLength => msg!("Error: InsufficientDataLength"),
             Self::IncorrectLength => msg!("Error: IncorrectLength"),
@@ -173,7 +168,6 @@ impl PrintProgramError for ProgramError {
             Self::InvalidStateTransition(_) => msg!("Error: InvalidStateTransition"),
             Self::InvalidAggregateSize => msg!("Error: InvalidAggregateSize"),
             Self::DuplicateShardAccounts => msg!("Error: DuplicateShardAccounts"),
-            Self::AccountUtxoModified => msg!("Error: AccountUtxoModified"),
         }
     }
 }
@@ -217,7 +211,6 @@ pub const FROM_HEX_ERROR: u64 = to_builtin!(28);
 pub const NEGATIVE_ACCOUNT_LAMPORTS: u64 = to_builtin!(29);
 pub const READONLY_LAMPORT_CHANGE: u64 = to_builtin!(30);
 pub const EXECUTABLE_LAMPORT_CHANGE: u64 = to_builtin!(31);
-pub const ACCOUNT_NOT_ANCHORED: u64 = to_builtin!(32);
 pub const NOT_ENOUGH_COMPUTE_UNITS: u64 = to_builtin!(33);
 pub const INSUFFICIENT_DATA_LENGTH: u64 = to_builtin!(35);
 pub const INCORRECT_LENGTH: u64 = to_builtin!(36);
@@ -229,7 +222,6 @@ pub const INVALID_UTXO_SIGNER: u64 = to_builtin!(41);
 pub const INVALID_STATE_TRANSITION: u64 = to_builtin!(42);
 pub const INVALID_AGGREGATE_SIZE: u64 = to_builtin!(43);
 pub const DUPLICATE_SHARD_ACCOUNTS: u64 = to_builtin!(44);
-pub const ACCOUNT_UTXO_MODIFIED: u64 = to_builtin!(45);
 // Warning: Any new program errors added here must also be:
 // - Added to the below conversions
 // - Added as an equivalent to InstructionError
@@ -273,7 +265,6 @@ impl From<ProgramError> for u64 {
             ProgramError::NegativeAccountLamports => NEGATIVE_ACCOUNT_LAMPORTS,
             ProgramError::ReadonlyLamportChange => READONLY_LAMPORT_CHANGE,
             ProgramError::ExecutableLamportChange => EXECUTABLE_LAMPORT_CHANGE,
-            ProgramError::AccountNotAnchored => ACCOUNT_NOT_ANCHORED,
             ProgramError::NotEnoughComputeUnits => NOT_ENOUGH_COMPUTE_UNITS,
             ProgramError::InsufficientDataLength => INSUFFICIENT_DATA_LENGTH,
             ProgramError::IncorrectLength => INCORRECT_LENGTH,
@@ -285,7 +276,6 @@ impl From<ProgramError> for u64 {
             ProgramError::InvalidStateTransition(_) => INVALID_STATE_TRANSITION,
             ProgramError::InvalidAggregateSize => INVALID_AGGREGATE_SIZE,
             ProgramError::DuplicateShardAccounts => DUPLICATE_SHARD_ACCOUNTS,
-            ProgramError::AccountUtxoModified => ACCOUNT_UTXO_MODIFIED,
             ProgramError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO
@@ -327,7 +317,6 @@ impl From<u64> for ProgramError {
             IMMUTABLE => Self::Immutable,
             INCORRECT_AUTHORITY => Self::IncorrectAuthority,
             FROM_HEX_ERROR => Self::FromHexError,
-            ACCOUNT_NOT_ANCHORED => Self::AccountNotAnchored,
             NOT_ENOUGH_COMPUTE_UNITS => Self::NotEnoughComputeUnits,
             INSUFFICIENT_DATA_LENGTH => Self::InsufficientDataLength,
             INCORRECT_LENGTH => Self::IncorrectLength,
@@ -336,7 +325,6 @@ impl From<u64> for ProgramError {
             TRANSACTION_TO_SIGN_EMPTY => Self::TransactionToSignEmpty,
             INVALID_UTXO_ID => Self::InvalidUtxoId,
             INVALID_UTXO_SIGNER => Self::InvalidUtxoSigner,
-            ACCOUNT_UTXO_MODIFIED => Self::AccountUtxoModified,
             _ => Self::Custom(error as u32),
         }
     }

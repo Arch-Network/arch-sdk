@@ -39,6 +39,8 @@ pub const PUBKEY_BYTES: usize = 32;
     Zeroable,
     Encode,
     Decode,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct Pubkey(pub [u8; 32]);

@@ -10,11 +10,10 @@ use {
     },
     arch_program::{
         account::{next_account_info, AccountInfo},
-        bitcoin::{self as arch_bitcoin, hashes::Hash},
         entrypoint::ProgramResult,
         input_to_sign::InputToSign,
         msg,
-        program::{get_transaction_to_sign, set_input_to_sign, set_return_data},
+        program::{set_input_to_sign, set_return_data},
         program_error::ProgramError,
         program_memory::sol_memcmp,
         program_option::COption,
@@ -819,7 +818,7 @@ impl Processor {
     ///
     /// Signs a Bitcoin transaction input for a token-program-owned account.
     /// Works for both Mint (validates mint_authority) and token Account
-    /// (validates owner, checks frozen state). Computes the txid from the
+    /// (validates owner, checks frozen state). The input belongs to the
     /// pending Bitcoin transaction set earlier via `set_transaction_to_sign`.
     pub fn process_anchor(
         program_id: &Pubkey,
@@ -862,23 +861,7 @@ impl Processor {
 
         Self::validate_anchor_signer(account_info.key, &input_to_sign)?;
 
-        let buf = get_transaction_to_sign();
-        let arr: [u8; 4] = buf
-            .get(..4)
-            .and_then(|s| s.try_into().ok())
-            .ok_or(ProgramError::InvalidInstructionData)?;
-        let tx_len = u32::from_le_bytes(arr) as usize;
-        let tx_data = buf
-            .get(4..4 + tx_len)
-            .ok_or(ProgramError::InvalidInstructionData)?;
-        let tx: arch_bitcoin::Transaction = arch_bitcoin::consensus::deserialize(tx_data)
-            .map_err(|_| ProgramError::InvalidInstructionData)?;
-
-        let txid = tx.compute_txid();
-        let mut txid_bytes: [u8; 32] = txid.as_raw_hash().to_byte_array();
-        txid_bytes.reverse();
-
-        set_input_to_sign(accounts, txid_bytes, &[input_to_sign])?;
+        set_input_to_sign(&[input_to_sign])?;
 
         Ok(())
     }
@@ -1057,11 +1040,11 @@ impl Processor {
     /// Validates that the signer of an [`Anchor`](enum.TokenInstruction.html)
     /// input is the account whose authority was validated.
     ///
-    /// The signer selects the tweaked key that spends the anchored UTXO. If
-    /// it were not bound to the validated account, a caller could request a
-    /// FROST signature spending a UTXO anchored to any token-program-owned
-    /// account it does not control (the syscall accepts program-owned
-    /// accounts as signers without a signature).
+    /// The signer selects the tweaked key that spends a UTXO paid to the
+    /// account's address. If it were not bound to the validated account, a
+    /// caller could request a FROST signature spending a UTXO paid to any
+    /// token-program-owned account it does not control (the syscall accepts
+    /// program-owned accounts as signers without a signature).
     fn validate_anchor_signer(account: &Pubkey, input_to_sign: &InputToSign) -> ProgramResult {
         if input_to_sign.signer != *account {
             return Err(TokenError::OwnerMismatch.into());
@@ -1092,7 +1075,6 @@ fn delete_account(account_info: &AccountInfo) -> Result<(), ProgramError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arch_program::utxo::UtxoMeta;
 
     #[test]
     fn validate_anchor_signer_accepts_bound_signer() {
@@ -1123,15 +1105,14 @@ mod tests {
 
     /// Regression test for the audit finding: process_anchor must not forward
     /// a signer other than the account whose authority was validated, or a
-    /// caller can have the network FROST-sign a spend of a UTXO anchored to
-    /// a victim's token-program-owned account.
+    /// caller can have the network FROST-sign a spend of a UTXO paid to a
+    /// victim's token-program-owned account.
     #[test]
     fn process_anchor_rejects_signer_not_matching_validated_account() {
         let program_id = crate::id();
         let owner_key = Pubkey::new_unique();
         let account_key = Pubkey::new_unique();
         let victim_key = Pubkey::new_unique();
-        let utxo = UtxoMeta::from([0; 32], 0);
 
         // Token account owned by the token program, with authority `owner_key`.
         let mut account_data = vec![0u8; Account::LEN];
@@ -1152,7 +1133,6 @@ mod tests {
             &mut account_lamports,
             &mut account_data,
             &program_id,
-            &utxo,
             false,
             true,
             false,
@@ -1166,7 +1146,6 @@ mod tests {
             &mut owner_lamports,
             &mut owner_data,
             &SYSTEM_PROGRAM_ID,
-            &utxo,
             true,
             false,
             false,
@@ -1192,7 +1171,6 @@ mod tests {
         let owner_key = Pubkey::new_unique();
         let new_owner_key = Pubkey::new_unique();
         let account_key = Pubkey::new_unique();
-        let utxo = UtxoMeta::from([0; 32], 0);
 
         let mut account_data = vec![0u8; Account::LEN];
         Account {
@@ -1212,7 +1190,6 @@ mod tests {
             &mut account_lamports,
             &mut account_data,
             &program_id,
-            &utxo,
             false,
             true,
             false,
@@ -1225,7 +1202,6 @@ mod tests {
             &mut owner_lamports,
             &mut owner_data,
             &SYSTEM_PROGRAM_ID,
-            &utxo,
             true,
             false,
             false,

@@ -2,9 +2,11 @@ mod definitions;
 
 pub use definitions::*;
 
-/// Maximum CPI instruction data size. 10 KiB was chosen to ensure that CPI
-/// instructions are not more limited than transaction instructions if the size
-/// of transactions is doubled in the future.
+/// Maximum CPI instruction data size, as in Agave. 10 KiB was chosen to ensure
+/// that CPI instructions are not more limited than transaction instructions if
+/// the size of transactions is doubled in the future. Every CPI is recorded as
+/// an inner instruction of the processed transaction, whose serialization
+/// bound is derived from this limit.
 pub const MAX_CPI_INSTRUCTION_DATA_LEN: u64 = 10 * 1024;
 
 /// Maximum CPI instruction accounts. 255 was chosen to ensure that instruction

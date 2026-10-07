@@ -5,7 +5,9 @@ use crate::{
 };
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(
+    Serialize, Deserialize, Debug, PartialEq, Eq, Clone, wincode::SchemaWrite, wincode::SchemaRead,
+)]
 pub enum LoaderInstruction {
     /// Write ELF data into an undeployed program account.
     ///
@@ -92,7 +94,7 @@ pub fn write(
             AccountMeta::new(program_account, false),
             AccountMeta::new_readonly(authority, true),
         ],
-        data: bincode::serialize(&LoaderInstruction::Write { offset, bytes }).unwrap(),
+        data: wincode::serialize(&LoaderInstruction::Write { offset, bytes }).unwrap(),
     }
 }
 
@@ -103,7 +105,7 @@ pub fn truncate(program_account: Pubkey, authority: Pubkey, new_size: u32) -> In
             AccountMeta::new(program_account, true),
             AccountMeta::new_readonly(authority, true),
         ],
-        data: bincode::serialize(&LoaderInstruction::Truncate { new_size }).unwrap(),
+        data: wincode::serialize(&LoaderInstruction::Truncate { new_size }).unwrap(),
     }
 }
 
@@ -114,7 +116,7 @@ pub fn deploy(program_account: Pubkey, authority: Pubkey) -> Instruction {
             AccountMeta::new(program_account, false),
             AccountMeta::new_readonly(authority, true),
         ],
-        data: bincode::serialize(&LoaderInstruction::Deploy).unwrap(),
+        data: wincode::serialize(&LoaderInstruction::Deploy).unwrap(),
     }
 }
 
@@ -125,7 +127,7 @@ pub fn retract(program_account: Pubkey, authority: Pubkey) -> Instruction {
             AccountMeta::new(program_account, false),
             AccountMeta::new_readonly(authority, true),
         ],
-        data: bincode::serialize(&LoaderInstruction::Retract).unwrap(),
+        data: wincode::serialize(&LoaderInstruction::Retract).unwrap(),
     }
 }
 
@@ -141,7 +143,7 @@ pub fn transfer_authority(
             AccountMeta::new_readonly(current_authority, true),
             AccountMeta::new_readonly(new_authority, true),
         ],
-        data: bincode::serialize(&LoaderInstruction::TransferAuthority).unwrap(),
+        data: wincode::serialize(&LoaderInstruction::TransferAuthority).unwrap(),
     }
 }
 
@@ -153,7 +155,7 @@ pub fn finalize(program_account: Pubkey, authority: Pubkey, next_version: Pubkey
             AccountMeta::new_readonly(authority, true),
             AccountMeta::new_readonly(next_version, false),
         ],
-        data: bincode::serialize(&LoaderInstruction::Finalize).unwrap(),
+        data: wincode::serialize(&LoaderInstruction::Finalize).unwrap(),
     }
 }
 

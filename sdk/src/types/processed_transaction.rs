@@ -2,6 +2,7 @@ use std::{array::TryFromSliceError, string::FromUtf8Error};
 
 use arch_program::hash::Hash;
 use arch_program::sanitized::{SanitizedInstruction, MAX_INSTRUCTION_COUNT_PER_TRANSACTION};
+use arch_program::syscalls::{MAX_CPI_INSTRUCTION_ACCOUNTS, MAX_CPI_INSTRUCTION_DATA_LEN};
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -33,11 +34,6 @@ pub enum ParseProcessedTransactionError {
 
     #[error("runtime transaction error: {0}")]
     RuntimeTransactionError(#[from] RuntimeTransactionError),
-
-    #[error("rollback message too long")]
-    RollbackMessageTooLong,
-    #[error("invalid rollback status tag: {0}")]
-    InvalidRollbackStatusTag(u8),
 
     #[error("runtime transaction size exceeds limit: {0} > {1}")]
     RuntimeTransactionSizeExceedsLimit(usize, usize),
@@ -115,130 +111,31 @@ impl Status {
     Decode,
     Eq,
 )]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "type", content = "message")]
-#[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
-pub enum RollbackStatus {
-    Rolledback(String),
-    NotRolledback,
-    Finalized,
-}
-
-impl RollbackStatus {
-    pub fn is_finalized(&self) -> bool {
-        matches!(self, Self::Finalized)
-    }
-
-    pub fn is_applied(&self) -> bool {
-        matches!(self, Self::NotRolledback | Self::Finalized)
-    }
-
-    pub fn is_rolled_back(&self) -> bool {
-        matches!(self, Self::Rolledback(_))
-    }
-
-    pub fn to_fixed_array(
-        &self,
-    ) -> Result<[u8; ROLLBACK_MESSAGE_BUFFER_SIZE], ParseProcessedTransactionError> {
-        let mut buffer = [0; ROLLBACK_MESSAGE_BUFFER_SIZE];
-
-        match self {
-            Self::NotRolledback => {}
-            Self::Rolledback(message) => {
-                buffer[0] = 1;
-                Self::encode_message(&mut buffer, message)?;
-            }
-            Self::Finalized => buffer[0] = 2,
-        }
-
-        Ok(buffer)
-    }
-
-    pub fn from_fixed_array(
-        data: &[u8; ROLLBACK_MESSAGE_BUFFER_SIZE],
-    ) -> Result<Self, ParseProcessedTransactionError> {
-        match data[0] {
-            0 => Ok(Self::NotRolledback),
-            1 => Ok(Self::Rolledback(Self::decode_message(data)?)),
-            2 => Ok(Self::Finalized),
-            tag => Err(ParseProcessedTransactionError::InvalidRollbackStatusTag(
-                tag,
-            )),
-        }
-    }
-
-    fn encode_message(
-        buffer: &mut [u8; ROLLBACK_MESSAGE_BUFFER_SIZE],
-        message: &str,
-    ) -> Result<(), ParseProcessedTransactionError> {
-        let message_bytes = message.as_bytes();
-        if message_bytes.len() > ROLLBACK_MESSAGE_BUFFER_SIZE - 9 {
-            return Err(ParseProcessedTransactionError::RollbackMessageTooLong);
-        }
-
-        buffer[1..9].copy_from_slice(&(message_bytes.len() as u64).to_le_bytes());
-        buffer[9..9 + message_bytes.len()].copy_from_slice(message_bytes);
-        Ok(())
-    }
-
-    fn decode_message(
-        data: &[u8; ROLLBACK_MESSAGE_BUFFER_SIZE],
-    ) -> Result<String, ParseProcessedTransactionError> {
-        let message_len = u64::from_le_bytes(
-            data[1..9]
-                .try_into()
-                .map_err(|_| ParseProcessedTransactionError::TryFromSliceError)?,
-        ) as usize;
-        let message_end = 9usize
-            .checked_add(message_len)
-            .ok_or(ParseProcessedTransactionError::BufferTooShort)?;
-        if message_end > ROLLBACK_MESSAGE_BUFFER_SIZE {
-            return Err(ParseProcessedTransactionError::BufferTooShort);
-        }
-
-        String::from_utf8(data[9..message_end].to_vec())
-            .map_err(ParseProcessedTransactionError::FromUtf8Error)
-    }
-}
-
-#[derive(
-    Clone,
-    PartialEq,
-    Debug,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    Encode,
-    Decode,
-    Eq,
-)]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct ProcessedTransaction {
     pub runtime_transaction: RuntimeTransaction,
     pub status: Status,
     pub bitcoin_txid: Option<Hash>,
     pub logs: Vec<String>,
-    pub rollback_status: RollbackStatus,
     pub inner_instructions_list: InnerInstructionsList,
 }
 
-pub const ROLLBACK_MESSAGE_BUFFER_SIZE: usize = 1033;
 const LOG_MESSAGES_BYTES_LIMIT: usize = 255;
 pub const MAX_LOG_MESSAGES_COUNT: usize = 400;
 pub const MAX_LOG_MESSAGES_LEN: usize = 10_000 + 20; // adding extra 20 to the logs length field
 pub const MAX_STATUS_FAILED_MESSAGE_SIZE: usize = 1000;
 
-// Conservative upper bounds for inner-instruction serialization sizing
+// Conservative upper bounds for inner-instruction serialization sizing.
+// Inner instructions are recorded CPIs, so they use the limits the CPI syscall
+// enforces: every CPI the runtime accepts must fit.
 const MAX_INNER_INSTRUCTIONS_TOTAL: usize = u8::MAX as usize;
-const MAX_ACCOUNTS_PER_INSTRUCTION: usize = u8::MAX as usize; // bounded by pubkey indices
-const MAX_CPI_INSTRUCTION_SIZE: usize = 1280; // matches default in compute budget
+const MAX_ACCOUNTS_PER_INSTRUCTION: usize = MAX_CPI_INSTRUCTION_ACCOUNTS as usize;
+const MAX_CPI_INSTRUCTION_SIZE: usize = MAX_CPI_INSTRUCTION_DATA_LEN as usize;
 const MAX_CPI_INSTRUCTION_SERIALIZED_SIZE: usize = 1 /*program_id_index*/ + 4 /*accounts len*/ + MAX_ACCOUNTS_PER_INSTRUCTION + 4 /*data len*/ + MAX_CPI_INSTRUCTION_SIZE;
 
 impl ProcessedTransaction {
     pub fn max_serialized_size() -> usize {
-        ROLLBACK_MESSAGE_BUFFER_SIZE  // rollback status (fixed size buffer)
-            + 8  // runtime_transaction length field
+        8  // runtime_transaction length field
             + RUNTIME_TX_SIZE_LIMIT  // max runtime transaction size
             + 1  // bitcoin_txid variant flag (None/Some)
             + 32  // bitcoin_txid hash (when Some)
@@ -259,16 +156,8 @@ impl ProcessedTransaction {
         self.runtime_transaction.txid()
     }
 
-    fn to_vec_internal(
-        &self,
-        for_block_signature: bool,
-    ) -> Result<Vec<u8>, ParseProcessedTransactionError> {
+    pub fn to_vec(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
         let mut serialized = Vec::with_capacity(1024);
-
-        // Rollback status not included for block signature.
-        if !for_block_signature {
-            serialized.extend(self.rollback_status.to_fixed_array()?);
-        }
 
         let serialized_runtime_transaction = self.runtime_transaction.serialize();
         if serialized_runtime_transaction.len() > RUNTIME_TX_SIZE_LIMIT {
@@ -291,25 +180,22 @@ impl ProcessedTransaction {
             None => vec![0],
         });
 
-        // Tx logs not include for block signature.
-        if !for_block_signature {
-            if self.logs.len() > MAX_LOG_MESSAGES_COUNT {
-                return Err(ParseProcessedTransactionError::TooManyLogMessages);
-            }
-            if self.logs.iter().map(|s| s.len()).sum::<usize>() > MAX_LOG_MESSAGES_LEN {
-                return Err(ParseProcessedTransactionError::TooManyLogMessages);
-            }
+        if self.logs.len() > MAX_LOG_MESSAGES_COUNT {
+            return Err(ParseProcessedTransactionError::TooManyLogMessages);
+        }
+        if self.logs.iter().map(|s| s.len()).sum::<usize>() > MAX_LOG_MESSAGES_LEN {
+            return Err(ParseProcessedTransactionError::TooManyLogMessages);
+        }
 
-            serialized.extend((self.logs.len() as u64).to_le_bytes());
-            for log in &self.logs {
-                // Cut at a char boundary so the stored bytes stay valid UTF-8.
-                let mut log_len = std::cmp::min(log.len(), LOG_MESSAGES_BYTES_LIMIT);
-                while !log.is_char_boundary(log_len) {
-                    log_len -= 1;
-                }
-                serialized.extend((log_len as u64).to_le_bytes());
-                serialized.extend_from_slice(&log.as_bytes()[..log_len]);
+        serialized.extend((self.logs.len() as u64).to_le_bytes());
+        for log in &self.logs {
+            // Cut at a char boundary so the stored bytes stay valid UTF-8.
+            let mut log_len = std::cmp::min(log.len(), LOG_MESSAGES_BYTES_LIMIT);
+            while !log.is_char_boundary(log_len) {
+                log_len -= 1;
             }
+            serialized.extend((log_len as u64).to_le_bytes());
+            serialized.extend_from_slice(&log.as_bytes()[..log_len]);
         }
 
         serialized.extend(match &self.status {
@@ -356,14 +242,6 @@ impl ProcessedTransaction {
         Ok(serialized)
     }
 
-    pub fn to_vec(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
-        self.to_vec_internal(false)
-    }
-
-    pub fn to_vec_for_block_signature(&self) -> Result<Vec<u8>, ParseProcessedTransactionError> {
-        self.to_vec_internal(true)
-    }
-
     pub fn from_vec(data: &[u8]) -> Result<Self, ParseProcessedTransactionError> {
         fn get_const_slice<const N: usize>(
             data: &[u8],
@@ -394,15 +272,8 @@ impl ProcessedTransaction {
                 .ok_or(ParseProcessedTransactionError::TryFromSliceError)
         }
 
-        let mut size = 0;
-
-        // Rollback buffer - use get_const_slice
-        let rollback_buffer = get_const_slice(data, size)?;
-        let rollback_status = RollbackStatus::from_fixed_array(&rollback_buffer)?;
-
-        size += ROLLBACK_MESSAGE_BUFFER_SIZE;
-
         // Runtime transaction length - use get_const_slice
+        let mut size = 0;
         let data_bytes = get_const_slice(data, size)?;
         let runtime_transaction_len = u64::from_le_bytes(data_bytes) as usize;
         if runtime_transaction_len > RUNTIME_TX_SIZE_LIMIT {
@@ -534,7 +405,6 @@ impl ProcessedTransaction {
             status,
             bitcoin_txid,
             logs,
-            rollback_status,
             inner_instructions_list,
         })
     }
@@ -553,9 +423,7 @@ mod tests {
     use super::ProcessedTransaction;
     use crate::types::inner_instruction::InnerInstruction;
     use crate::Signature;
-    use crate::{
-        types::processed_transaction::ROLLBACK_MESSAGE_BUFFER_SIZE, RollbackStatus, Status,
-    };
+    use crate::Status;
     use arch_program::hash::Hash;
     use arch_program::pubkey::Pubkey;
     use arch_program::sanitized::SanitizedInstruction;
@@ -563,8 +431,7 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn test_rollback_with_message() {
-        let rollback_message = "a".repeat(ROLLBACK_MESSAGE_BUFFER_SIZE - 10);
+    fn test_serialization_roundtrip() {
         let processed_transaction = ProcessedTransaction {
             runtime_transaction: crate::RuntimeTransaction {
                 version: 1,
@@ -586,104 +453,12 @@ mod tests {
             status: Status::Processed,
             bitcoin_txid: None,
             logs: vec![],
-            rollback_status: RollbackStatus::Rolledback(rollback_message),
             inner_instructions_list: vec![],
         };
 
         let serialized = processed_transaction.to_vec().unwrap();
         let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
         assert_eq!(processed_transaction, deserialized);
-    }
-
-    #[test]
-    fn test_rollback_with_message_too_long() {
-        let rollback_message = "a".repeat(ROLLBACK_MESSAGE_BUFFER_SIZE);
-        let processed_transaction = ProcessedTransaction {
-            runtime_transaction: crate::RuntimeTransaction {
-                version: 1,
-                signatures: vec![],
-                message: ArchMessage {
-                    header: MessageHeader {
-                        num_readonly_signed_accounts: 0,
-                        num_readonly_unsigned_accounts: 0,
-                        num_required_signatures: 0,
-                    },
-                    account_keys: vec![],
-                    instructions: vec![],
-                    recent_blockhash: Hash::from_str(
-                        "0000000000000000000000000000000000000000000000000000000000000000",
-                    )
-                    .unwrap(),
-                },
-            },
-            status: Status::Processed,
-            bitcoin_txid: None,
-            logs: vec![],
-            rollback_status: RollbackStatus::Rolledback(rollback_message),
-            inner_instructions_list: vec![],
-        };
-
-        let serialized = processed_transaction.to_vec();
-        assert!(serialized.is_err());
-    }
-
-    #[test]
-    fn test_serialization_not_rolledback() {
-        let processed_transaction = ProcessedTransaction {
-            runtime_transaction: crate::RuntimeTransaction {
-                version: 1,
-                signatures: vec![],
-                message: ArchMessage {
-                    header: MessageHeader {
-                        num_readonly_signed_accounts: 0,
-                        num_readonly_unsigned_accounts: 0,
-                        num_required_signatures: 0,
-                    },
-                    account_keys: vec![],
-                    instructions: vec![],
-                    recent_blockhash: Hash::from_str(
-                        "0000000000000000000000000000000000000000000000000000000000000000",
-                    )
-                    .unwrap(),
-                },
-            },
-            status: Status::Processed,
-            bitcoin_txid: None,
-            logs: vec![],
-            rollback_status: RollbackStatus::NotRolledback,
-            inner_instructions_list: vec![],
-        };
-
-        let serialized = processed_transaction.to_vec().unwrap();
-        let deserialized = ProcessedTransaction::from_vec(&serialized).unwrap();
-        assert_eq!(processed_transaction, deserialized);
-    }
-
-    #[test]
-    fn finalized_status_round_trips() {
-        let applied = RollbackStatus::Finalized;
-        let applied_bytes = applied.to_fixed_array().unwrap();
-        assert_eq!(applied_bytes[0], 2);
-        assert_eq!(
-            RollbackStatus::from_fixed_array(&applied_bytes).unwrap(),
-            applied
-        );
-    }
-
-    #[test]
-    fn unknown_rollback_status_tag_is_rejected() {
-        let mut bytes = [0; ROLLBACK_MESSAGE_BUFFER_SIZE];
-        bytes[0] = 3;
-        assert_eq!(
-            RollbackStatus::from_fixed_array(&bytes),
-            Err(ParseProcessedTransactionError::InvalidRollbackStatusTag(3))
-        );
-    }
-
-    #[test]
-    fn rollback_default_message_size() {
-        let message = "Transaction rolled back in Bitcoin";
-        println!("Message size as bytes : {}", message.len());
     }
 
     // Tests for log validation checks
@@ -709,7 +484,6 @@ mod tests {
             status: Status::Processed,
             bitcoin_txid: None,
             logs: vec![],
-            rollback_status: RollbackStatus::NotRolledback,
             inner_instructions_list: vec![],
         }
     }
@@ -755,8 +529,7 @@ mod tests {
 
         // Manually corrupt the serialized data to have too many log messages
         // Find the position where logs length is stored
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let runtime_tx_len_pos = rollback_size;
+        let runtime_tx_len_pos = 0;
         let runtime_tx_len = u64::from_le_bytes(
             serialized[runtime_tx_len_pos..runtime_tx_len_pos + 8]
                 .try_into()
@@ -830,8 +603,7 @@ mod tests {
         let mut serialized = processed_transaction.to_vec().unwrap();
 
         // Find the position where the first log message length is stored
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let runtime_tx_len_pos = rollback_size;
+        let runtime_tx_len_pos = 0;
         let runtime_tx_len = u64::from_le_bytes(
             serialized[runtime_tx_len_pos..runtime_tx_len_pos + 8]
                 .try_into()
@@ -965,8 +737,7 @@ mod tests {
         let mut bytes = tx.to_vec().unwrap();
 
         // Compute offset to status flag
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let mut cursor = rollback_size;
+        let mut cursor = 0;
         let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
         cursor += 8 + rt_len;
 
@@ -1023,8 +794,7 @@ mod tests {
         let mut bytes = tx.to_vec().unwrap();
 
         // Walk to the first inner_len field to tamper it
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let mut cursor = rollback_size;
+        let mut cursor = 0;
         let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
         cursor += 8 + rt_len;
 
@@ -1134,8 +904,7 @@ mod tests {
         let mut bytes = tx.to_vec().unwrap();
 
         // Walk to outer_len
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let mut cursor = rollback_size;
+        let mut cursor = 0;
         let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
         cursor += 8 + rt_len;
         // btc flag
@@ -1170,8 +939,7 @@ mod tests {
         let mut bytes = tx.to_vec().unwrap();
 
         // Walk to outer_len
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let mut cursor = rollback_size;
+        let mut cursor = 0;
         let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
         cursor += 8 + rt_len;
         // btc flag
@@ -1247,8 +1015,7 @@ mod tests {
         let mut bytes = tx.to_vec().unwrap();
 
         // Walk to outer_len
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let mut cursor = rollback_size;
+        let mut cursor = 0;
         let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
         cursor += 8 + rt_len;
         // btc flag
@@ -1301,8 +1068,7 @@ mod tests {
         let mut bytes = tx.to_vec().unwrap();
 
         // Walk to outer_len
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let mut cursor = rollback_size;
+        let mut cursor = 0;
         let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
         cursor += 8 + rt_len;
         // btc flag
@@ -1339,8 +1105,7 @@ mod tests {
         let mut bytes = tx.to_vec().unwrap();
 
         // Walk to outer_len
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let mut cursor = rollback_size;
+        let mut cursor = 0;
         let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
         cursor += 8 + rt_len;
         // btc flag
@@ -1528,9 +1293,6 @@ mod tests {
             status: Status::Failed("X".repeat(super::MAX_STATUS_FAILED_MESSAGE_SIZE)), // Large error message
             bitcoin_txid: Some(Hash::from([0xFF; 32])),
             logs,
-            rollback_status: RollbackStatus::Rolledback(
-                "X".repeat(ROLLBACK_MESSAGE_BUFFER_SIZE - 9),
-            ),
             inner_instructions_list,
         };
 
@@ -1549,33 +1311,6 @@ mod tests {
             processed_transaction_serialized_len.len()
                 == ProcessedTransaction::max_serialized_size()
         );
-    }
-
-    #[test]
-    fn test_from_fixed_array_invalid_utf8() {
-        let mut data = [0u8; ROLLBACK_MESSAGE_BUFFER_SIZE];
-        data[0] = 1;
-        data[1..9].copy_from_slice(&(3u64.to_le_bytes()));
-        data[9..12].copy_from_slice(&[0xff, 0xff, 0xff]); // Invalid UTF-8
-        let result = RollbackStatus::from_fixed_array(&data);
-        assert!(matches!(
-            result,
-            Err(ParseProcessedTransactionError::FromUtf8Error(_))
-        ));
-    }
-
-    #[test]
-    fn test_from_fixed_array_msg_len_exceeds_buffer() {
-        let mut data = [0u8; ROLLBACK_MESSAGE_BUFFER_SIZE];
-        data[0] = 1;
-        // Set msg_len to exceed available space (buffer size - 9 bytes for header)
-        let invalid_msg_len = ROLLBACK_MESSAGE_BUFFER_SIZE - 8; // This will exceed when we add 9
-        data[1..9].copy_from_slice(&(invalid_msg_len as u64).to_le_bytes());
-        let result = RollbackStatus::from_fixed_array(&data);
-        assert!(matches!(
-            result,
-            Err(ParseProcessedTransactionError::BufferTooShort)
-        ));
     }
 
     #[test]
@@ -1598,8 +1333,7 @@ mod tests {
         let mut bytes = tx.to_vec().unwrap();
 
         // Walk to status flag, then bump error_len beyond MAX_STATUS_FAILED_MESSAGE_SIZE
-        let rollback_size = super::ROLLBACK_MESSAGE_BUFFER_SIZE;
-        let mut cursor = rollback_size;
+        let mut cursor = 0;
         let rt_len = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap()) as usize;
         cursor += 8 + rt_len;
         // bitcoin_txid flag

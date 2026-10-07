@@ -65,6 +65,8 @@ pub mod loader_instruction;
 pub mod log;
 
 pub mod native_loader;
+/// Durable transaction nonce accounts
+pub mod nonce;
 /// Program runtime interfaces and state management
 pub mod program;
 /// Error types for program operations

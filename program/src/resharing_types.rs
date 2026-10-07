@@ -6,8 +6,6 @@ use thiserror::Error;
 
 use crate::pubkey::Pubkey;
 
-const RESHARING_STATE_PREFIX: u64 = u64::MAX;
-
 /// Instruction for writing and aggregating resharing transcript shards.
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, PartialEq, Eq, Clone)]
 pub enum ResharingShardInstruction {
@@ -81,9 +79,6 @@ pub type ResharingState = ResharingStateV1;
 
 #[derive(Debug, Error)]
 pub enum ResharingStateError {
-    #[error("Invalid resharing state prefix: {0:#x}")]
-    InvalidPrefix(u64),
-
     #[error("Unsupported version: {0}")]
     UnsupportedVersion(u64),
 
@@ -94,15 +89,14 @@ pub enum ResharingStateError {
 impl ResharingStateV1 {
     pub fn new(prev_pubkey_package: Vec<u8>, transcript: Vec<u8>) -> Self {
         Self {
-            transcript,
             prev_pubkey_package,
+            transcript,
         }
     }
 
     /// Serialize the state.
     pub fn to_vec(&self) -> Result<Vec<u8>, ResharingStateError> {
         let mut writer = Vec::new();
-        writer.write_all(&RESHARING_STATE_PREFIX.to_le_bytes())?;
         writer.write_all(&ResharingStateVersion::V1.to_u64().to_le_bytes())?;
 
         writer.write_all(&(self.transcript.len() as u64).to_le_bytes())?;
@@ -122,11 +116,6 @@ impl ResharingStateV1 {
             reader.read_exact(&mut bytes)?;
             Ok(u64::from_le_bytes(bytes))
         };
-
-        let prefix = read_u64(&mut reader)?;
-        if prefix != RESHARING_STATE_PREFIX {
-            return Err(ResharingStateError::InvalidPrefix(prefix));
-        }
 
         let version = read_u64(&mut reader)?;
         ResharingStateVersion::try_from(version)?;
@@ -206,7 +195,6 @@ mod tests {
         let serialized = state.to_vec().unwrap();
         let restored = ResharingStateV1::from_vec(&serialized).unwrap();
 
-        assert_eq!(&serialized[..8], &[0xFF; 8]);
         assert_eq!(restored.transcript, state.transcript);
         assert_eq!(restored.prev_pubkey_package, state.prev_pubkey_package);
     }
@@ -216,15 +204,8 @@ mod tests {
         let state = ResharingStateV1::new(vec![1, 2, 3], vec![4, 5]);
         let serialized = state.to_vec().unwrap();
 
-        let mut invalid_prefix = serialized.clone();
-        invalid_prefix[..8].copy_from_slice(&0_u64.to_le_bytes());
-        assert!(matches!(
-            ResharingStateV1::from_vec(&invalid_prefix),
-            Err(ResharingStateError::InvalidPrefix(0))
-        ));
-
         let mut unsupported = serialized.clone();
-        unsupported[8..16].copy_from_slice(&2_u64.to_le_bytes());
+        unsupported[..8].copy_from_slice(&2_u64.to_le_bytes());
         assert!(matches!(
             ResharingStateV1::from_vec(&unsupported),
             Err(ResharingStateError::UnsupportedVersion(2))
@@ -238,7 +219,7 @@ mod tests {
         }
 
         let mut oversized = serialized.clone();
-        oversized[16..24].copy_from_slice(&u64::MAX.to_le_bytes());
+        oversized[8..16].copy_from_slice(&u64::MAX.to_le_bytes());
         assert!(ResharingStateV1::from_vec(&oversized).is_err());
 
         let mut trailing = serialized;

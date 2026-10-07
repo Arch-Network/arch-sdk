@@ -54,3 +54,6 @@ tempfile = { workspace = true }
 [features]
 default = []
 fuzzing = ["libfuzzer-sys"]
+
+[package.metadata.cargo-machete]
+ignored = ["url"] # feature-unification pin, see comment on the dependency

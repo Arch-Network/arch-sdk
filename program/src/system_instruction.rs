@@ -4,6 +4,7 @@ use thiserror::Error;
 use crate::account::AccountMeta;
 use crate::decode_error::DecodeError;
 use crate::instruction::Instruction;
+use crate::nonce::NONCE_ACCOUNT_LENGTH;
 use crate::pubkey::Pubkey;
 use crate::system_program::SYSTEM_PROGRAM_ID;
 
@@ -21,12 +22,8 @@ pub enum SystemError {
     MaxSeedLengthExceeded,
     #[error("provided address does not match addressed derived from seed")]
     AddressWithSeedMismatch,
-    #[error("advancing stored nonce requires a populated RecentBlockhashes sysvar")]
-    NonceNoRecentBlockhashes,
-    #[error("stored nonce is still in recent_blockhashes")]
-    NonceBlockhashNotExpired,
-    #[error("specified nonce does not match stored nonce")]
-    NonceUnexpectedBlockhashValue,
+    #[error("nonce was already advanced in this block")]
+    NonceAlreadyAdvanced,
 }
 
 impl<T> DecodeError<T> for SystemError {
@@ -35,7 +32,9 @@ impl<T> DecodeError<T> for SystemError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, PartialEq, Eq, wincode::SchemaWrite, wincode::SchemaRead,
+)]
 pub enum SystemInstruction {
     /// Create a new account
     ///
@@ -53,29 +52,6 @@ pub enum SystemInstruction {
         owner: Pubkey,
     },
 
-    /// Legacy: accounts are no longer anchored to Bitcoin outputs. The system
-    /// program rejects this instruction with `AccountUtxoModified`. The variant
-    /// is retained only because `SystemInstruction` is bincode-encoded with
-    /// positional discriminants. Use `CreateAccount` instead.
-    ///
-    /// # Account references
-    ///   0. `[WRITE, SIGNER]` Funding account
-    ///   1. `[WRITE, SIGNER]` New account
-    CreateAccountWithAnchor {
-        /// Number of lamports to transfer to the new account
-        lamports: u64,
-
-        /// Number of bytes of memory to allocate
-        space: u64,
-
-        /// Address of program that will own the new account
-        owner: Pubkey,
-
-        /// UTXO that would have been anchored; ignored
-        txid: [u8; 32],
-        vout: u32,
-    },
-
     /// Assign account to a program
     ///
     /// # Account references
@@ -83,20 +59,6 @@ pub enum SystemInstruction {
     Assign {
         /// Owner program account
         owner: Pubkey,
-    },
-
-    /// Legacy: accounts are no longer anchored to Bitcoin outputs. The system
-    /// program rejects this instruction with `AccountUtxoModified`. The variant
-    /// is retained only because `SystemInstruction` is bincode-encoded with
-    /// positional discriminants. Use `SignInput` to spend outputs paid to the
-    /// account's address.
-    ///
-    /// # Account references
-    ///   0. `[WRITE, SIGNER]` Account that would have been anchored
-    Anchor {
-        /// UTXO that would have been anchored; ignored
-        txid: [u8; 32],
-        vout: u32,
     },
 
     SignInput {
@@ -198,60 +160,66 @@ pub enum SystemInstruction {
         /// Owner to use to derive the funding account address
         from_owner: Pubkey,
     },
-    // /// Consumes a stored nonce, replacing it with a successor
-    // ///
-    // /// # Account references
-    // ///   0. `[WRITE]` Nonce account
-    // ///   1. `[]` RecentBlockhashes sysvar
-    // ///   2. `[SIGNER]` Nonce authority
-    // AdvanceNonceAccount,
 
-    // /// Withdraw funds from a nonce account
-    // ///
-    // /// # Account references
-    // ///   0. `[WRITE]` Nonce account
-    // ///   1. `[WRITE]` Recipient account
-    // ///   2. `[]` RecentBlockhashes sysvar
-    // ///   3. `[]` Rent sysvar
-    // ///   4. `[SIGNER]` Nonce authority
-    // ///
-    // /// The `u64` parameter is the lamports to withdraw, which must leave the
-    // /// account balance above the rent exempt reserve or at zero.
-    // WithdrawNonceAccount(u64),
+    /// Consume a stored nonce, replacing it with the value for the current
+    /// block. At most one advance per nonce account per block.
+    ///
+    /// As the first instruction of a transaction, this makes it a
+    /// durable-nonce transaction: its `recent_blockhash` must be the stored
+    /// nonce, and the advance is committed even if a later instruction fails.
+    ///
+    /// # Account references
+    ///   0. `[WRITE]` Nonce account
+    ///   1. `[SIGNER]` Nonce authority
+    AdvanceNonceAccount,
 
-    // /// Drive state of Uninitialized nonce account to Initialized, setting the nonce value
-    // ///
-    // /// # Account references
-    // ///   0. `[WRITE]` Nonce account
-    // ///   1. `[]` RecentBlockhashes sysvar
-    // ///   2. `[]` Rent sysvar
-    // ///
-    // /// The `Pubkey` parameter specifies the entity authorized to execute nonce
-    // /// instruction on the account
-    // ///
-    // /// No signatures are required to execute this instruction, enabling derived
-    // /// nonce account addresses
-    // InitializeNonceAccount(Pubkey),
+    /// Withdraw funds from a nonce account
+    ///
+    /// The `u64` parameter is the lamports to withdraw, which must leave the
+    /// account balance at or above the rent-exempt minimum, or at zero. A
+    /// withdrawal to zero closes the account (clears its data); an initialized
+    /// nonce account cannot be closed in the block that last advanced it.
+    ///
+    /// # Account references
+    ///   0. `[WRITE]` Nonce account
+    ///   1. `[WRITE]` Recipient account
+    ///   2. `[SIGNER]` Nonce authority (the nonce account itself while
+    ///      uninitialized)
+    WithdrawNonceAccount(u64),
 
-    // /// Change the entity authorized to execute nonce instructions on the account
-    // ///
-    // /// # Account references
-    // ///   0. `[WRITE]` Nonce account
-    // ///   1. `[SIGNER]` Nonce authority
-    // ///
-    // /// The `Pubkey` parameter identifies the entity to authorize
-    // AuthorizeNonceAccount(Pubkey),
+    /// Drive state of Uninitialized nonce account to Initialized, setting the nonce value
+    ///
+    /// The account must be system-owned, `nonce::NONCE_ACCOUNT_LENGTH` bytes
+    /// long, and rent-exempt.
+    ///
+    /// # Account references
+    ///   0. `[WRITE]` Nonce account
+    ///
+    /// The `Pubkey` parameter specifies the entity authorized to execute nonce
+    /// instruction on the account
+    ///
+    /// No signatures are required to execute this instruction, enabling derived
+    /// nonce account addresses
+    InitializeNonceAccount(Pubkey),
+
+    /// Change the entity authorized to execute nonce instructions on the account
+    ///
+    /// # Account references
+    ///   0. `[WRITE]` Nonce account
+    ///   1. `[SIGNER]` Nonce authority
+    ///
+    /// The `Pubkey` parameter identifies the entity to authorize
+    AuthorizeNonceAccount(Pubkey),
 }
 
-/// Creates a new account instruction linked to a specific UTXO.
-///
-/// This instruction will create a new account in the system identified by the given
-/// transaction ID and output index (txid, vout).
+/// Creates a new account funded by `from_pubkey` and owned by `owner`.
 ///
 /// # Parameters
-/// * `txid` - The transaction ID as a 32-byte array
-/// * `vout` - The output index
-/// * `pubkey` - The public key that will own the new account
+/// * `from_pubkey` - The funding account
+/// * `to_pubkey` - The account to create
+/// * `lamports` - Number of lamports to transfer to the new account
+/// * `space` - Number of bytes of memory to allocate
+/// * `owner` - The program that will own the new account
 ///
 /// # Returns
 /// * `Instruction` - The system instruction to create the account
@@ -266,42 +234,12 @@ pub fn create_account(
         AccountMeta::new(*from_pubkey, true),
         AccountMeta::new(*to_pubkey, true),
     ];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::CreateAccount {
             lamports,
             space,
             owner: *owner,
-        },
-        account_metas,
-    )
-}
-
-/// Legacy: accounts are no longer anchored to Bitcoin outputs; the system
-/// program rejects this instruction with `AccountUtxoModified`. Retained because
-/// `apl-associated-token-account` and `apl-token-metadata` still reference it.
-/// Use `create_account`.
-pub fn create_account_with_anchor(
-    from_pubkey: &Pubkey,
-    to_pubkey: &Pubkey,
-    lamports: u64,
-    space: u64,
-    owner: &Pubkey,
-    txid: [u8; 32],
-    vout: u32,
-) -> Instruction {
-    let account_metas = vec![
-        AccountMeta::new(*from_pubkey, true),
-        AccountMeta::new(*to_pubkey, true),
-    ];
-    Instruction::new_with_bincode(
-        SYSTEM_PROGRAM_ID,
-        &SystemInstruction::CreateAccountWithAnchor {
-            lamports,
-            space,
-            owner: *owner,
-            txid,
-            vout,
         },
         account_metas,
     )
@@ -320,7 +258,7 @@ pub fn create_account_with_anchor(
 /// * `Instruction` - The system instruction to assign a new owner
 pub fn assign(pubkey: &Pubkey, owner: &Pubkey) -> Instruction {
     let account_metas = vec![AccountMeta::new(*pubkey, true)];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::Assign { owner: *owner },
         account_metas,
@@ -332,7 +270,7 @@ pub fn transfer(from_pubkey: &Pubkey, to_pubkey: &Pubkey, lamports: u64) -> Inst
         AccountMeta::new(*from_pubkey, true),
         AccountMeta::new(*to_pubkey, false),
     ];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::Transfer { lamports },
         account_metas,
@@ -341,29 +279,16 @@ pub fn transfer(from_pubkey: &Pubkey, to_pubkey: &Pubkey, lamports: u64) -> Inst
 
 pub fn allocate(pubkey: &Pubkey, space: u64) -> Instruction {
     let account_metas = vec![AccountMeta::new(*pubkey, true)];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::Allocate { space },
         account_metas,
     )
 }
 
-/// Legacy: accounts are no longer anchored to Bitcoin outputs; the system
-/// program rejects this instruction with `AccountUtxoModified`. Retained because
-/// `apl-associated-token-account` and `apl-token-metadata` still reference it.
-/// Use `sign_input` to spend outputs paid to the account's address.
-pub fn anchor(pubkey: &Pubkey, txid: [u8; 32], vout: u32) -> Instruction {
-    let account_metas = vec![AccountMeta::new(*pubkey, true)];
-    Instruction::new_with_bincode(
-        SYSTEM_PROGRAM_ID,
-        &SystemInstruction::Anchor { txid, vout },
-        account_metas,
-    )
-}
-
 pub fn sign_input(index: u32, signer: &Pubkey) -> Instruction {
     let account_metas = vec![AccountMeta::new(*signer, true)];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::SignInput { index },
         account_metas,
@@ -387,7 +312,7 @@ pub fn create_account_with_seed(
         account_metas.push(AccountMeta::new_readonly(*base, true));
     }
 
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::CreateAccountWithSeed {
             base: *base,
@@ -410,7 +335,7 @@ pub fn assign_with_seed(
         AccountMeta::new(*address, false),
         AccountMeta::new_readonly(*base, true),
     ];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::AssignWithSeed {
             base: *base,
@@ -434,7 +359,7 @@ pub fn transfer_with_seed(
         AccountMeta::new_readonly(*from_base, true),
         AccountMeta::new(*to_pubkey, false),
     ];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::TransferWithSeed {
             lamports,
@@ -456,7 +381,7 @@ pub fn allocate_with_seed(
         AccountMeta::new(*address, false),
         AccountMeta::new_readonly(*base, true),
     ];
-    Instruction::new_with_bincode(
+    Instruction::new_with_wincode(
         SYSTEM_PROGRAM_ID,
         &SystemInstruction::AllocateWithSeed {
             base: *base,
@@ -465,5 +390,75 @@ pub fn allocate_with_seed(
             owner: *owner,
         },
         account_metas,
+    )
+}
+
+/// Creates and initializes a nonce account funded by `from_pubkey`.
+/// `nonce_pubkey` must sign; `lamports` must cover the rent-exempt minimum of
+/// `nonce::NONCE_ACCOUNT_LENGTH` bytes.
+pub fn create_nonce_account(
+    from_pubkey: &Pubkey,
+    nonce_pubkey: &Pubkey,
+    authority: &Pubkey,
+    lamports: u64,
+) -> Vec<Instruction> {
+    vec![
+        create_account(
+            from_pubkey,
+            nonce_pubkey,
+            lamports,
+            NONCE_ACCOUNT_LENGTH as u64,
+            &SYSTEM_PROGRAM_ID,
+        ),
+        Instruction::new_with_wincode(
+            SYSTEM_PROGRAM_ID,
+            SystemInstruction::InitializeNonceAccount(*authority),
+            vec![AccountMeta::new(*nonce_pubkey, false)],
+        ),
+    ]
+}
+
+/// Advances a nonce account. Put it first in a transaction whose
+/// `recent_blockhash` is the stored nonce to make a durable-nonce transaction.
+pub fn advance_nonce_account(nonce_pubkey: &Pubkey, authorized_pubkey: &Pubkey) -> Instruction {
+    Instruction::new_with_wincode(
+        SYSTEM_PROGRAM_ID,
+        SystemInstruction::AdvanceNonceAccount,
+        vec![
+            AccountMeta::new(*nonce_pubkey, false),
+            AccountMeta::new_readonly(*authorized_pubkey, true),
+        ],
+    )
+}
+
+pub fn withdraw_nonce_account(
+    nonce_pubkey: &Pubkey,
+    authorized_pubkey: &Pubkey,
+    to_pubkey: &Pubkey,
+    lamports: u64,
+) -> Instruction {
+    Instruction::new_with_wincode(
+        SYSTEM_PROGRAM_ID,
+        SystemInstruction::WithdrawNonceAccount(lamports),
+        vec![
+            AccountMeta::new(*nonce_pubkey, false),
+            AccountMeta::new(*to_pubkey, false),
+            AccountMeta::new_readonly(*authorized_pubkey, true),
+        ],
+    )
+}
+
+pub fn authorize_nonce_account(
+    nonce_pubkey: &Pubkey,
+    authorized_pubkey: &Pubkey,
+    new_authority: &Pubkey,
+) -> Instruction {
+    Instruction::new_with_wincode(
+        SYSTEM_PROGRAM_ID,
+        SystemInstruction::AuthorizeNonceAccount(*new_authority),
+        vec![
+            AccountMeta::new(*nonce_pubkey, false),
+            AccountMeta::new_readonly(*authorized_pubkey, true),
+        ],
     )
 }

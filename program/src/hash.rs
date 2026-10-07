@@ -24,6 +24,8 @@ use thiserror::Error;
     BorshDeserialize,
     Encode,
     Decode,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
 )]
 #[cfg_attr(feature = "fuzzing", derive(arbitrary::Arbitrary))]
 pub struct Hash([u8; 32]);

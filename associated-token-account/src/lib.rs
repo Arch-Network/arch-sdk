@@ -12,7 +12,7 @@ use arch_program::{
     program_pack::Pack,
     pubkey::Pubkey,
 };
-use tools::{create_pda_account, create_pda_account_with_anchor};
+use tools::create_pda_account;
 
 #[cfg(not(feature = "no-entrypoint"))]
 use arch_program::entrypoint;
@@ -28,36 +28,10 @@ enum CreateMode {
     Idempotent,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct CreateInstruction {
-    mode: CreateMode,
-    anchor: Option<([u8; 32], u32)>,
-}
-
-fn parse_anchor(input: &[u8]) -> ([u8; 32], u32) {
-    let txid = input[..32].try_into().expect("anchor txid is 32 bytes");
-    let vout = u32::from_le_bytes(input[32..36].try_into().expect("anchor vout is 4 bytes"));
-    (txid, vout)
-}
-
-fn parse_create_instruction(input: &[u8]) -> Result<CreateInstruction, ProgramError> {
+fn parse_create_instruction(input: &[u8]) -> Result<CreateMode, ProgramError> {
     match input {
-        [] => Ok(CreateInstruction {
-            mode: CreateMode::Always,
-            anchor: None,
-        }),
-        [1] => Ok(CreateInstruction {
-            mode: CreateMode::Idempotent,
-            anchor: None,
-        }),
-        bytes if bytes.len() == 36 => Ok(CreateInstruction {
-            mode: CreateMode::Always,
-            anchor: Some(parse_anchor(bytes)),
-        }),
-        [2, bytes @ ..] if bytes.len() == 36 => Ok(CreateInstruction {
-            mode: CreateMode::Idempotent,
-            anchor: Some(parse_anchor(bytes)),
-        }),
+        [] => Ok(CreateMode::Always),
+        [1] => Ok(CreateMode::Idempotent),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }
@@ -95,7 +69,7 @@ pub fn process_instruction(
     accounts: &[AccountInfo],
     input: &[u8],
 ) -> ProgramResult {
-    let instruction = parse_create_instruction(input)?;
+    let mode = parse_create_instruction(input)?;
     let account_info_iter = &mut accounts.iter();
 
     let funder_info = next_account_info(account_info_iter)?;
@@ -120,7 +94,7 @@ pub fn process_instruction(
         return Err(ProgramError::InvalidSeeds);
     }
 
-    if instruction.mode == CreateMode::Idempotent
+    if mode == CreateMode::Idempotent
         && validate_idempotent_account(
             associated_token_account_info,
             wallet_account_info.key,
@@ -138,27 +112,14 @@ pub fn process_instruction(
         &[bump_seed],
     ];
 
-    if let Some((txid, vout)) = instruction.anchor {
-        create_pda_account_with_anchor(
-            funder_info,
-            apl_token::state::Account::LEN,
-            spl_token_program_info.key,
-            txid,
-            vout,
-            system_program_info,
-            associated_token_account_info,
-            associated_token_account_signer_seeds,
-        )?;
-    } else {
-        create_pda_account(
-            funder_info,
-            apl_token::state::Account::LEN,
-            spl_token_program_info.key,
-            system_program_info,
-            associated_token_account_info,
-            associated_token_account_signer_seeds,
-        )?;
-    }
+    create_pda_account(
+        funder_info,
+        apl_token::state::Account::LEN,
+        spl_token_program_info.key,
+        system_program_info,
+        associated_token_account_info,
+        associated_token_account_signer_seeds,
+    )?;
 
     msg!("Initialize the associated token account");
     invoke(
@@ -231,57 +192,6 @@ pub fn create_associated_token_account_idempotent(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn create_associated_token_account_with_anchor(
-    funder: &Pubkey,
-    associated_token_account: &Pubkey,
-    wallet: &Pubkey,
-    mint: &Pubkey,
-    spl_token_program: &Pubkey,
-    system_program: &Pubkey,
-    txid: [u8; 32],
-    vout: u32,
-) -> Instruction {
-    let mut data = txid.to_vec();
-    data.extend_from_slice(&vout.to_le_bytes());
-
-    create_associated_token_account_instruction(
-        funder,
-        associated_token_account,
-        wallet,
-        mint,
-        spl_token_program,
-        system_program,
-        data,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn create_associated_token_account_idempotent_with_anchor(
-    funder: &Pubkey,
-    associated_token_account: &Pubkey,
-    wallet: &Pubkey,
-    mint: &Pubkey,
-    spl_token_program: &Pubkey,
-    system_program: &Pubkey,
-    txid: [u8; 32],
-    vout: u32,
-) -> Instruction {
-    let mut data = vec![2];
-    data.extend_from_slice(&txid);
-    data.extend_from_slice(&vout.to_le_bytes());
-
-    create_associated_token_account_instruction(
-        funder,
-        associated_token_account,
-        wallet,
-        mint,
-        spl_token_program,
-        system_program,
-        data,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
 fn create_associated_token_account_instruction(
     funder: &Pubkey,
     associated_token_account: &Pubkey,
@@ -309,7 +219,7 @@ fn create_associated_token_account_instruction(
 mod tests {
     use super::*;
     use apl_token::state::{Account as TokenAccount, AccountState};
-    use arch_program::{program_option::COption, utxo::UtxoMeta};
+    use arch_program::program_option::COption;
 
     fn token_account_data(mint: Pubkey, wallet: Pubkey) -> Vec<u8> {
         let mut data = vec![0; TokenAccount::LEN];
@@ -332,60 +242,29 @@ mod tests {
         lamports: &'a mut u64,
         data: &'a mut [u8],
         owner: &'a Pubkey,
-        utxo: &'a UtxoMeta,
     ) -> AccountInfo<'a> {
-        AccountInfo::new(key, lamports, data, owner, utxo, false, true, false)
+        AccountInfo::new(key, lamports, data, owner, false, true, false)
     }
 
     #[test]
-    fn parses_legacy_and_idempotent_create_instructions() {
-        assert_eq!(
-            parse_create_instruction(&[]),
-            Ok(CreateInstruction {
-                mode: CreateMode::Always,
-                anchor: None,
-            })
-        );
-        assert_eq!(
-            parse_create_instruction(&[1]),
-            Ok(CreateInstruction {
-                mode: CreateMode::Idempotent,
-                anchor: None,
-            })
-        );
-
-        let txid = [7; 32];
-        let vout: u32 = 42;
-        let mut anchored = txid.to_vec();
-        anchored.extend_from_slice(&vout.to_le_bytes());
-        assert_eq!(
-            parse_create_instruction(&anchored),
-            Ok(CreateInstruction {
-                mode: CreateMode::Always,
-                anchor: Some((txid, vout)),
-            })
-        );
-
-        let mut idempotent_anchored = vec![2];
-        idempotent_anchored.extend_from_slice(&anchored);
-        assert_eq!(
-            parse_create_instruction(&idempotent_anchored),
-            Ok(CreateInstruction {
-                mode: CreateMode::Idempotent,
-                anchor: Some((txid, vout)),
-            })
-        );
+    fn parses_create_and_idempotent_create_instructions() {
+        assert_eq!(parse_create_instruction(&[]), Ok(CreateMode::Always));
+        assert_eq!(parse_create_instruction(&[1]), Ok(CreateMode::Idempotent));
     }
 
     #[test]
     fn rejects_unknown_or_malformed_create_instructions() {
+        let mut idempotent_with_outpoint = vec![2];
+        idempotent_with_outpoint.extend_from_slice(&[0; 36]);
         for input in [
             vec![0],
             vec![2],
             vec![3],
             vec![1, 0],
             vec![0; 35],
+            vec![0; 36],
             vec![0; 37],
+            idempotent_with_outpoint,
         ] {
             assert_eq!(
                 parse_create_instruction(&input),
@@ -412,7 +291,7 @@ mod tests {
             &system_program,
         );
         assert_eq!(ordinary.data, vec![1]);
-        let legacy_ordinary = create_associated_token_account(
+        let create = create_associated_token_account(
             &funder,
             &associated_token_account,
             &wallet,
@@ -420,7 +299,8 @@ mod tests {
             &token_program,
             &system_program,
         );
-        assert_eq!(ordinary.accounts, legacy_ordinary.accounts);
+        assert!(create.data.is_empty());
+        assert_eq!(ordinary.accounts, create.accounts);
         assert_eq!(
             ordinary.accounts,
             vec![
@@ -432,72 +312,6 @@ mod tests {
                 AccountMeta::new_readonly(token_program, false),
             ]
         );
-
-        let txid = [9; 32];
-        let vout: u32 = 17;
-        let anchored = create_associated_token_account_idempotent_with_anchor(
-            &funder,
-            &associated_token_account,
-            &wallet,
-            &mint,
-            &token_program,
-            &system_program,
-            txid,
-            vout,
-        );
-        let mut expected_data = vec![2];
-        expected_data.extend_from_slice(&txid);
-        expected_data.extend_from_slice(&vout.to_le_bytes());
-        assert_eq!(anchored.data, expected_data);
-        assert_eq!(anchored.accounts, ordinary.accounts);
-        let legacy_anchored = create_associated_token_account_with_anchor(
-            &funder,
-            &associated_token_account,
-            &wallet,
-            &mint,
-            &token_program,
-            &system_program,
-            txid,
-            vout,
-        );
-        assert_eq!(anchored.accounts, legacy_anchored.accounts);
-    }
-
-    #[test]
-    fn legacy_builders_keep_their_existing_encodings() {
-        let funder = Pubkey::new_unique();
-        let associated_token_account = Pubkey::new_unique();
-        let wallet = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-        let token_program = Pubkey::new_unique();
-        let system_program = Pubkey::new_unique();
-
-        let ordinary = create_associated_token_account(
-            &funder,
-            &associated_token_account,
-            &wallet,
-            &mint,
-            &token_program,
-            &system_program,
-        );
-        assert!(ordinary.data.is_empty());
-
-        let txid = [5; 32];
-        let vout: u32 = 23;
-        let anchored = create_associated_token_account_with_anchor(
-            &funder,
-            &associated_token_account,
-            &wallet,
-            &mint,
-            &token_program,
-            &system_program,
-            txid,
-            vout,
-        );
-        let mut expected_data = txid.to_vec();
-        expected_data.extend_from_slice(&vout.to_le_bytes());
-        assert_eq!(anchored.data, expected_data);
-        assert_eq!(anchored.accounts, ordinary.accounts);
     }
 
     #[test]
@@ -506,10 +320,9 @@ mod tests {
         let wallet = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let token_program = apl_token::id();
-        let utxo = UtxoMeta::from([3; 32], 5);
         let mut lamports = 100;
         let mut data = token_account_data(mint, wallet);
-        let account = test_account_info(&key, &mut lamports, &mut data, &token_program, &utxo);
+        let account = test_account_info(&key, &mut lamports, &mut data, &token_program);
 
         assert_eq!(
             validate_idempotent_account(&account, &wallet, &mint, &token_program),
@@ -524,10 +337,9 @@ mod tests {
         let mint = Pubkey::new_unique();
         let token_program = apl_token::id();
         let system_program = Pubkey::system_program();
-        let utxo = UtxoMeta::from([0; 32], 0);
         let mut lamports = 0;
         let mut data = Vec::new();
-        let account = test_account_info(&key, &mut lamports, &mut data, &system_program, &utxo);
+        let account = test_account_info(&key, &mut lamports, &mut data, &system_program);
 
         assert_eq!(
             validate_idempotent_account(&account, &wallet, &mint, &token_program),
@@ -541,7 +353,6 @@ mod tests {
         let wallet = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let token_program = apl_token::id();
-        let utxo = UtxoMeta::from([4; 32], 2);
 
         let wrong_authority = Pubkey::new_unique();
         let mut authority_lamports = 1;
@@ -551,7 +362,6 @@ mod tests {
             &mut authority_lamports,
             &mut authority_data,
             &token_program,
-            &utxo,
         );
         assert_eq!(
             validate_idempotent_account(&authority_account, &wallet, &mint, &token_program),
@@ -561,13 +371,8 @@ mod tests {
         let wrong_mint = Pubkey::new_unique();
         let mut mint_lamports = 1;
         let mut mint_data = token_account_data(wrong_mint, wallet);
-        let mint_account = test_account_info(
-            &key,
-            &mut mint_lamports,
-            &mut mint_data,
-            &token_program,
-            &utxo,
-        );
+        let mint_account =
+            test_account_info(&key, &mut mint_lamports, &mut mint_data, &token_program);
         assert_eq!(
             validate_idempotent_account(&mint_account, &wallet, &mint, &token_program),
             Err(ProgramError::InvalidAccountData)
@@ -580,7 +385,6 @@ mod tests {
             &mut malformed_lamports,
             &mut malformed_data,
             &token_program,
-            &utxo,
         );
         assert_eq!(
             validate_idempotent_account(&malformed_account, &wallet, &mint, &token_program),
@@ -595,7 +399,6 @@ mod tests {
             &mut foreign_lamports,
             &mut foreign_data,
             &foreign_program,
-            &utxo,
         );
         assert_eq!(
             validate_idempotent_account(&foreign_account, &wallet, &mint, &token_program),
@@ -613,7 +416,6 @@ mod tests {
         let token_program_key = apl_token::id();
         let (associated_key, _) =
             get_associated_token_address_and_bump_seed(&wallet_key, &mint_key, &program_id);
-        let utxo = UtxoMeta::from([8; 32], 11);
 
         let mut funder_lamports = 1_000;
         let mut funder_data = Vec::new();
@@ -622,7 +424,6 @@ mod tests {
             &mut funder_lamports,
             &mut funder_data,
             &system_program_key,
-            &utxo,
             true,
             true,
             false,
@@ -634,7 +435,6 @@ mod tests {
             &mut associated_lamports,
             &mut associated_data,
             &token_program_key,
-            &utxo,
             false,
             true,
             false,
@@ -646,7 +446,6 @@ mod tests {
             &mut wallet_lamports,
             &mut wallet_data,
             &system_program_key,
-            &utxo,
             false,
             false,
             false,
@@ -658,7 +457,6 @@ mod tests {
             &mut mint_lamports,
             &mut mint_data,
             &token_program_key,
-            &utxo,
             false,
             false,
             false,
@@ -670,7 +468,6 @@ mod tests {
             &mut system_lamports,
             &mut system_data,
             &system_program_key,
-            &utxo,
             false,
             false,
             true,
@@ -682,7 +479,6 @@ mod tests {
             &mut token_program_lamports,
             &mut token_program_data,
             &system_program_key,
-            &utxo,
             false,
             false,
             true,
@@ -697,21 +493,11 @@ mod tests {
         ];
         let original_data = associated.data.borrow().to_vec();
         let original_lamports = **associated.lamports.borrow();
-        let original_utxo = associated.utxo;
 
         assert_eq!(process_instruction(&program_id, &accounts, &[1]), Ok(()));
-
-        let mut anchored_input = vec![2];
-        anchored_input.extend_from_slice(&[12; 32]);
-        anchored_input.extend_from_slice(&99u32.to_le_bytes());
-        assert_eq!(
-            process_instruction(&program_id, &accounts, &anchored_input),
-            Ok(())
-        );
         assert_eq!(associated.data.borrow().to_vec(), original_data);
         assert_eq!(**associated.lamports.borrow(), original_lamports);
         assert_eq!(associated.owner, &token_program_key);
-        assert_eq!(associated.utxo, original_utxo);
 
         let incompatible_data = token_account_data(mint_key, Pubkey::new_unique());
         associated
@@ -734,7 +520,6 @@ mod tests {
         let unsupported_token_program_key = Pubkey::new_unique();
         let (associated_key, _) =
             get_associated_token_address_and_bump_seed(&wallet_key, &mint_key, &program_id);
-        let utxo = UtxoMeta::from([0; 32], 0);
 
         let mut funder_lamports = 0;
         let mut associated_lamports = 0;
@@ -754,7 +539,6 @@ mod tests {
                 &mut funder_lamports,
                 &mut funder_data,
                 &system_program_key,
-                &utxo,
                 true,
                 true,
                 false,
@@ -764,7 +548,6 @@ mod tests {
                 &mut associated_lamports,
                 &mut associated_data,
                 &system_program_key,
-                &utxo,
                 false,
                 true,
                 false,
@@ -774,7 +557,6 @@ mod tests {
                 &mut wallet_lamports,
                 &mut wallet_data,
                 &system_program_key,
-                &utxo,
                 false,
                 false,
                 false,
@@ -784,7 +566,6 @@ mod tests {
                 &mut mint_lamports,
                 &mut mint_data,
                 &unsupported_token_program_key,
-                &utxo,
                 false,
                 false,
                 false,
@@ -794,7 +575,6 @@ mod tests {
                 &mut system_lamports,
                 &mut system_data,
                 &system_program_key,
-                &utxo,
                 false,
                 false,
                 true,
@@ -804,7 +584,6 @@ mod tests {
                 &mut token_program_lamports,
                 &mut token_program_data,
                 &system_program_key,
-                &utxo,
                 false,
                 false,
                 true,

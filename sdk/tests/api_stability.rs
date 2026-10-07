@@ -49,7 +49,6 @@ use arch_sdk::{
     ProcessedTransaction,
     // types/program_account.rs
     ProgramAccount,
-    RollbackStatus,
     // types/runtime_transaction.rs
     RuntimeTransaction,
     RuntimeTransactionError,
@@ -74,7 +73,6 @@ use arch_sdk::{
     MAX_TRANSACTIONS_PER_BLOCK,
     // types/mod.rs
     MAX_TX_BATCH_SIZE,
-    ROLLBACK_MESSAGE_BUFFER_SIZE,
     RUNTIME_TX_SIZE_LIMIT,
 };
 
@@ -158,13 +156,11 @@ fn account_info_fields() {
         lamports: 100,
         owner: arch_program::pubkey::Pubkey::system_program(),
         data: vec![0u8; 4],
-        utxo: String::new(),
         is_executable: false,
     };
     let _: u64 = ai.lamports;
     let _: arch_program::pubkey::Pubkey = ai.owner;
     let _: Vec<u8> = ai.data;
-    let _: String = ai.utxo;
     let _: bool = ai.is_executable;
 
     let aip = AccountInfoWithPubkey {
@@ -172,7 +168,6 @@ fn account_info_fields() {
         lamports: 0,
         owner: arch_program::pubkey::Pubkey::system_program(),
         data: vec![],
-        utxo: String::new(),
         is_executable: false,
     };
     let _: arch_program::pubkey::Pubkey = aip.key;
@@ -199,7 +194,6 @@ fn account_filter_variants_and_methods() {
         lamports: 0,
         owner: arch_program::pubkey::Pubkey::system_program(),
         data: vec![0u8; 32],
-        utxo: String::new(),
         is_executable: false,
     };
     let _: bool = AccountFilter::DataSize(32).matches(&ai);
@@ -333,7 +327,7 @@ fn inner_instruction_types() {
 }
 
 // ---------------------------------------------------------------------------
-// ProcessedTransaction / Status / RollbackStatus
+// ProcessedTransaction / Status
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -342,11 +336,6 @@ fn processed_transaction_fields_and_methods() {
     let _ = Status::Processed;
     let _ = Status::Failed(String::new());
 
-    let _ = RollbackStatus::NotRolledback;
-    let _ = RollbackStatus::Rolledback(String::new());
-    let _ = RollbackStatus::Finalized;
-
-    assert_eq!(ROLLBACK_MESSAGE_BUFFER_SIZE, 1033);
     assert_eq!(MAX_LOG_MESSAGES_COUNT, 400);
     assert_eq!(MAX_LOG_MESSAGES_LEN, 10_020);
     assert_eq!(MAX_STATUS_FAILED_MESSAGE_SIZE, 1000);
@@ -354,8 +343,6 @@ fn processed_transaction_fields_and_methods() {
     // ParseProcessedTransactionError variants
     let _ = ParseProcessedTransactionError::TryFromSliceError;
     let _ = ParseProcessedTransactionError::BufferTooShort;
-    let _ = ParseProcessedTransactionError::RollbackMessageTooLong;
-    let _ = ParseProcessedTransactionError::InvalidRollbackStatusTag(3);
     let _ = ParseProcessedTransactionError::LogMessageTooLong;
     let _ = ParseProcessedTransactionError::TooManyLogMessages;
     let _ = ParseProcessedTransactionError::StatusFailedMessageTooLong;
@@ -375,7 +362,6 @@ fn program_account_fields() {
             lamports: 0,
             owner: arch_program::pubkey::Pubkey::system_program(),
             data: vec![],
-            utxo: String::new(),
             is_executable: false,
         },
     };
@@ -801,7 +787,6 @@ fn constant_values() {
     assert_eq!(ALLOWED_VERSIONS, [0]);
     assert_eq!(ACCOUNT_FUNDING_AMOUNT, 1_000_000);
     assert_eq!(MAX_TRANSACTIONS_PER_BLOCK, 1024);
-    assert_eq!(ROLLBACK_MESSAGE_BUFFER_SIZE, 1033);
     assert_eq!(MAX_LOG_MESSAGES_COUNT, 400);
     assert_eq!(MAX_LOG_MESSAGES_LEN, 10_020);
     assert_eq!(MAX_STATUS_FAILED_MESSAGE_SIZE, 1000);

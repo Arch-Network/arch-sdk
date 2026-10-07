@@ -115,7 +115,7 @@ impl Instruction {
         digest(digest(self.serialize()))
     }
 
-    pub fn new_with_bincode<T: Serialize>(
+    pub fn new_with_wincode<T: wincode::Serialize<Src = T>>(
         program_id: Pubkey,
         data: T,
         accounts: Vec<AccountMeta>,
@@ -123,7 +123,7 @@ impl Instruction {
         Self {
             program_id,
             accounts,
-            data: bincode::serialize(&data).unwrap(),
+            data: wincode::serialize(&data).unwrap(),
         }
     }
 
@@ -408,9 +408,6 @@ pub enum InstructionError {
     #[error("Vote error: {0}")]
     VoteError(VoteError),
 
-    #[error("Account is not anchored")]
-    AccountNotAnchored,
-
     #[error("Not enough compute units")]
     NotEnoughComputeUnits,
 
@@ -429,12 +426,6 @@ pub enum InstructionError {
     #[error("Invalid utxo signer")]
     InvalidUtxoSigner,
 
-    #[error("Unable to find valid utxo for given account")]
-    InvalidUtxo,
-
-    #[error("Unable to fetch Utxo Tx")]
-    UnableToFetchUtxoTx,
-
     #[error("Build Account Address Error")]
     BuildAccountAddressError,
 
@@ -443,10 +434,6 @@ pub enum InstructionError {
 
     #[error("Duplicate shard accounts")]
     DuplicateShardAccounts,
-
-    /// A program wrote a different UTXO for an account; account UTXOs never change.
-    #[error("Account UTXO cannot be modified")]
-    AccountUtxoModified,
 }
 
 impl From<SystemError> for InstructionError {
@@ -497,7 +484,6 @@ impl From<u64> for InstructionError {
             NEGATIVE_ACCOUNT_LAMPORTS => Self::NegativeAccountLamports,
             READONLY_LAMPORT_CHANGE => Self::ReadonlyLamportChange,
             EXECUTABLE_LAMPORT_CHANGE => Self::ExecutableLamportChange,
-            ACCOUNT_NOT_ANCHORED => Self::AccountNotAnchored,
             NOT_ENOUGH_COMPUTE_UNITS => Self::NotEnoughComputeUnits,
             TRANSCRIPT_VERIFICATION_FAILED => Self::TranscriptVerificationFailed,
             INVALID_CHUNK => Self::InvalidChunk("Unknown".to_string()),
@@ -506,7 +492,6 @@ impl From<u64> for InstructionError {
             INVALID_UTXO_SIGNER => Self::InvalidUtxoSigner,
             INVALID_AGGREGATE_SIZE => Self::InvalidAggregateSize,
             DUPLICATE_SHARD_ACCOUNTS => Self::DuplicateShardAccounts,
-            ACCOUNT_UTXO_MODIFIED => Self::AccountUtxoModified,
             _ => {
                 // A valid custom error has no bits set in the upper 32
                 if value >> BUILTIN_BIT_SHIFT == 0 {

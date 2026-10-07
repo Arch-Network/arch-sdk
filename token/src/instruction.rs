@@ -455,10 +455,9 @@ pub enum TokenInstruction<'a> {
     // token/js/src/instructions/types.ts to maintain @solana/spl-token compatibility
     /// Sign a Bitcoin transaction input for a token-program-owned account.
     ///
-    /// Works for both Mint and token Account. Reads the pending Bitcoin
-    /// transaction via `get_transaction_to_sign`, computes its txid, validates
-    /// the owner/authority, and registers the specified input for signing while
-    /// updating the account's UTXO.
+    /// Works for both Mint and token Account. Validates the owner/authority
+    /// and registers the specified input of the pending Bitcoin transaction
+    /// (set earlier via `set_transaction_to_sign`) for signing.
     ///
     /// Accounts expected by this instruction:
     ///

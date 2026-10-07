@@ -25,3 +25,22 @@ pub fn is_exempt(lamports: u64, data_len: usize) -> bool {
     let rent = minimum_rent(data_len);
     lamports >= rent
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Consensus and clients size accounts with these exact values; any change
+    /// is a protocol change.
+    #[test]
+    fn minimum_rent_is_pinned() {
+        assert_eq!(minimum_rent(0), 256);
+        assert_eq!(minimum_rent(10), 276);
+    }
+
+    #[test]
+    fn exemption_starts_at_minimum_rent() {
+        assert!(!is_exempt(255, 0));
+        assert!(is_exempt(256, 0));
+    }
+}

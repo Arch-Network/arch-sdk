@@ -1,6 +1,6 @@
 //! Core account abstractions and management functionality for blockchain accounts, including account information and metadata structures.
 use crate::serde_error::{get_const_slice, SerialisationErrors};
-use crate::{msg, pubkey::Pubkey, utxo::UtxoMeta};
+use crate::{msg, pubkey::Pubkey};
 
 use bitcode::{Decode, Encode};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -21,7 +21,6 @@ pub struct AccountInfo<'a> {
     pub key: &'a Pubkey,
     /// The lamports in the account.  Modifiable by programs.
     pub lamports: Rc<RefCell<&'a mut u64>>,
-    pub utxo: &'a UtxoMeta, // utxo has this account key in script_pubkey
     pub data: Rc<RefCell<&'a mut [u8]>>,
     pub owner: &'a Pubkey, // owner of an account is always a program
     pub is_signer: bool,
@@ -163,9 +162,7 @@ impl fmt::Debug for AccountInfo<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("AccountInfo");
 
-        f.field("txid", &self.utxo.txid())
-            .field("vout", &self.utxo.vout())
-            .field("owner", &self.owner)
+        f.field("owner", &self.owner)
             .field("data.len", &self.data_len())
             .field("key", &self.key)
             .field("lamports", &self.lamports.borrow())
@@ -185,17 +182,14 @@ impl<'a> AccountInfo<'a> {
     /// * `key` - The account's public key
     /// * `data` - The account's mutable data
     /// * `owner` - The program that owns this account
-    /// * `utxo` - The UTXO metadata associated with this account
     /// * `is_signer` - Whether this account is a signer
     /// * `is_writable` - Whether this account is writable
     /// * `is_executable` - Whether this account contains executable code
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         key: &'a Pubkey,
         lamports: &'a mut u64,
         data: &'a mut [u8],
         owner: &'a Pubkey,
-        utxo: &'a UtxoMeta,
         is_signer: bool,
         is_writable: bool,
         is_executable: bool,
@@ -205,7 +199,6 @@ impl<'a> AccountInfo<'a> {
             lamports: Rc::new(RefCell::new(lamports)),
             data: Rc::new(RefCell::new(data)),
             owner,
-            utxo,
             is_signer,
             is_writable,
             is_executable,
@@ -378,10 +371,6 @@ impl<'a> AccountInfo<'a> {
                 owner.serialize(),
             );
         }
-    }
-
-    pub fn get_utxo(&self) -> &UtxoMeta {
-        self.utxo
     }
 }
 

@@ -2,7 +2,18 @@ use std::collections::BTreeMap;
 
 use crate::pubkey::Pubkey;
 
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
+)]
 pub struct VoteInit {
     node_pubkey: Pubkey,
     node_pubkey_parity_even: bool,
@@ -25,12 +36,28 @@ impl VoteInit {
         }
     }
 
+    /// The validator identity the vote account is for; it must sign
+    /// `Initialize`.
+    pub fn node_pubkey(&self) -> &Pubkey {
+        &self.node_pubkey
+    }
+
     pub const fn size_of() -> usize {
         32 + 1 + 32 + 32 + 1
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    wincode::SchemaWrite,
+    wincode::SchemaRead,
+)]
 pub struct VoteState {
     /// the node that votes in this account
     pub node_pubkey: Pubkey,
@@ -61,11 +88,11 @@ impl VoteState {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        bincode::serialize(self).unwrap()
+        wincode::serialize(self).unwrap()
     }
 
     pub fn deserialize(data: &[u8]) -> Self {
-        bincode::deserialize(data).unwrap()
+        wincode::deserialize(data).unwrap()
     }
 
     /// Returns the node public key in compressed format.
