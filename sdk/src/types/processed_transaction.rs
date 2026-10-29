@@ -89,11 +89,8 @@ impl Status {
                 _ => return Some(Status::Processed),
             }
         } else if let Some(obj) = value.as_object() {
-            if let Some(failed_message) = obj.get("Failed").and_then(|v| v.as_str()) {
-                return Some(Status::Failed(failed_message.to_string()));
-            } else {
-                return None;
-            }
+            let failed_message = obj.get("Failed").and_then(|v| v.as_str())?;
+            return Some(Status::Failed(failed_message.to_string()));
         }
         None
     }
@@ -242,6 +239,7 @@ impl ProcessedTransaction {
         Ok(serialized)
     }
 
+    /// Decodes a transaction from exactly `data`; trailing bytes are an error.
     pub fn from_vec(data: &[u8]) -> Result<Self, ParseProcessedTransactionError> {
         fn get_const_slice<const N: usize>(
             data: &[u8],
@@ -292,15 +290,19 @@ impl ProcessedTransaction {
         size += runtime_transaction_len;
 
         // Bitcoin transaction ID - use get_byte and get_const_slice
-        let bitcoin_txid = if get_byte(data, size)? == 1 {
-            size += 1;
-            let bytes = get_const_slice(data, size)?;
-            let res = Some(Hash::from(bytes));
-            size += 32;
-            res
-        } else {
-            size += 1;
-            None
+        let bitcoin_txid = match get_byte(data, size)? {
+            0 => {
+                size += 1;
+                None
+            }
+            1 => {
+                size += 1;
+                let bytes = get_const_slice(data, size)?;
+                size += 32;
+                Some(Hash::from(bytes))
+            }
+            // Only 0 and 1 are written; anything else is a second encoding of None.
+            _ => return Err(ParseProcessedTransactionError::TryFromSliceError),
         };
 
         // Logs length - use get_const_slice
@@ -398,6 +400,10 @@ impl ProcessedTransaction {
                 });
             }
             inner_instructions_list.push(inners);
+        }
+        // Trailing bytes would give the same transaction a second wire form.
+        if size != data.len() {
+            return Err(ParseProcessedTransactionError::TryFromSliceError);
         }
 
         Ok(ProcessedTransaction {

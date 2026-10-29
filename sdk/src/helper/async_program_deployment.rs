@@ -179,7 +179,7 @@ impl ProgramDeployer {
     ) -> Result<(), ProgramDeployerError> {
         let account_info = self.client.read_account_info(program_pubkey).await?;
 
-        if account_info.data[LoaderState::program_data_offset()..] != *elf {
+        if account_info.data.get(LoaderState::program_data_offset()..) != Some(elf) {
             return Err(ProgramDeployerError::ElfMismatch {
                 program: program_pubkey,
             });
@@ -518,6 +518,7 @@ pub fn extend_bytes_max_len() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::AccountInfo;
     use crate::ProcessedTransaction;
     use mockito::Matcher;
     use serde_json::json;
@@ -632,5 +633,44 @@ mod tests {
         blockhash_mock.assert_async().await;
         send_mock.assert_async().await;
         processed_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn verify_elf_deployed_rejects_account_shorter_than_header() {
+        let mut server = mockito::Server::new_async().await;
+        let program_pubkey = Pubkey::from([3_u8; 32]);
+        let account_info = AccountInfo {
+            lamports: 1,
+            owner: Pubkey::from([4_u8; 32]),
+            data: vec![0_u8; LoaderState::program_data_offset() - 1],
+            is_executable: false,
+        };
+        let account_mock = server
+            .mock("POST", "/")
+            .match_body(Matcher::PartialJson(json!({
+                "method": "read_account_info"
+            })))
+            .with_body(
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": "test",
+                    "result": account_info
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let mut config = Config::localnet();
+        config.arch_node_url = server.url();
+        let deployer = ProgramDeployer::new(&config);
+
+        let result = deployer.verify_elf_deployed(program_pubkey, &[42; 8]).await;
+
+        assert!(matches!(
+            result,
+            Err(ProgramDeployerError::ElfMismatch { program }) if program == program_pubkey
+        ));
+        account_mock.assert_async().await;
     }
 }

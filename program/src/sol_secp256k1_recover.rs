@@ -33,7 +33,7 @@ impl Secp256k1Pubkey {
     /// Panics if the provided slice is not exactly [`SECP256K1_PUBLIC_KEY_LENGTH`] bytes.
     pub fn new(pubkey_vec: &[u8]) -> Self {
         Self(
-            <[u8; SECP256K1_PUBLIC_KEY_LENGTH]>::try_from(<&[u8]>::clone(&pubkey_vec))
+            <[u8; SECP256K1_PUBLIC_KEY_LENGTH]>::try_from(pubkey_vec)
                 .expect("Slice must be the same length as a Pubkey"),
         )
     }

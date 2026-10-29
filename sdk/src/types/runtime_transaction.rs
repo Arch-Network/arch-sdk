@@ -23,8 +23,13 @@ use sha256::digest;
 
 use crate::verify_message_bip322;
 
-/// Maximum serialized transaction size, matching Solana's packet payload limit.
-pub const RUNTIME_TX_SIZE_LIMIT: usize = 1_232;
+/// Maximum serialized transaction size.
+pub const RUNTIME_TX_SIZE_LIMIT: usize = 4_096;
+
+/// Maximum accounts a single transaction can reference.
+/// Bounds account-keyed maps such as `TransactionReport`; enforced by
+/// `RuntimeTransaction::sanitize`, since `RUNTIME_TX_SIZE_LIMIT` alone fits more keys.
+pub const MAX_ACCOUNTS_PER_TRANSACTION: usize = 50;
 
 /// Allowed versions for RuntimeTransaction
 pub const ALLOWED_VERSIONS: [u32; 1] = [0];
@@ -146,6 +151,13 @@ impl Sanitize for RuntimeTransaction {
                 actual: self.signatures.len(),
             });
         }
+        if self.message.account_keys.len() > MAX_ACCOUNTS_PER_TRANSACTION {
+            return Err(SanitizeError::TooManyAccounts {
+                found: self.message.account_keys.len(),
+                limit: MAX_ACCOUNTS_PER_TRANSACTION,
+            });
+        }
+
         // Continue with message sanitization
         self.message.sanitize()
     }
@@ -194,6 +206,7 @@ impl RuntimeTransaction {
         }
     }
 
+    /// Decodes a transaction from exactly `data`; trailing bytes are an error.
     pub fn from_slice(data: &[u8]) -> Result<Self, RuntimeTransactionError> {
         let mut cursor: usize = 0;
 
@@ -224,9 +237,8 @@ impl RuntimeTransaction {
         let signatures_slice = get_slice(data, cursor, signatures_data_len)?;
 
         let mut signatures = Vec::with_capacity(signatures_len);
-        for sig_bytes in signatures_slice.chunks_exact(SIGNATURE_SIZE) {
-            let sig_array = get_const_slice::<SIGNATURE_SIZE>(sig_bytes, 0)?;
-            signatures.push(Signature::from(sig_array));
+        for sig_bytes in signatures_slice.as_chunks::<SIGNATURE_SIZE>().0 {
+            signatures.push(Signature::from(*sig_bytes));
             cursor += SIGNATURE_SIZE;
         }
 
@@ -310,14 +322,16 @@ impl RuntimeTransaction {
 mod tests {
     use super::{
         RuntimeTransaction, RuntimeTransactionError, SanitizedRuntimeTransaction, Signature,
-        ALLOWED_VERSIONS, RUNTIME_TX_SIZE_LIMIT,
+        ALLOWED_VERSIONS, MAX_ACCOUNTS_PER_TRANSACTION, RUNTIME_TX_SIZE_LIMIT,
     };
     use arch_program::hash::Hash;
     use arch_program::system_instruction;
     use arch_program::{
         pubkey::Pubkey,
         sanitize::{Sanitize as _, SanitizeError},
-        sanitized::{ArchMessage, MessageHeader, SanitizedInstruction},
+        sanitized::{
+            ArchMessage, MessageHeader, SanitizedInstruction, MAX_INSTRUCTION_COUNT_PER_TRANSACTION,
+        },
     };
     use bitcoin::{
         key::Keypair,
@@ -529,6 +543,48 @@ mod tests {
                 RUNTIME_TX_SIZE_LIMIT + 1,
                 RUNTIME_TX_SIZE_LIMIT,
             ))
+        );
+    }
+
+    /// The size limit fits more than the account cap, so `sanitize` must enforce it.
+    #[test]
+    fn sanitize_rejects_accounts_past_cap_within_size_limit() {
+        let mut transaction = create_test_transaction(0, 2, MAX_ACCOUNTS_PER_TRANSACTION);
+        assert_eq!(transaction.sanitize(), Ok(()));
+
+        transaction.message.account_keys.push(Pubkey::new_unique());
+        assert!(transaction.serialize().len() <= RUNTIME_TX_SIZE_LIMIT);
+        assert_eq!(
+            transaction.sanitize(),
+            Err(SanitizeError::TooManyAccounts {
+                found: MAX_ACCOUNTS_PER_TRANSACTION + 1,
+                limit: MAX_ACCOUNTS_PER_TRANSACTION,
+            })
+        );
+    }
+
+    /// Serde-decoded transactions skip `ArchMessage::deserialize`, so `sanitize`
+    /// must enforce the instruction cap that the size limit no longer implies.
+    #[test]
+    fn sanitize_rejects_instructions_past_cap_within_size_limit() {
+        let mut transaction = create_test_transaction(0, 2, 4);
+        let instruction = SanitizedInstruction {
+            program_id_index: 2,
+            accounts: vec![],
+            data: vec![],
+        };
+        transaction.message.instructions =
+            vec![instruction.clone(); MAX_INSTRUCTION_COUNT_PER_TRANSACTION];
+        assert_eq!(transaction.sanitize(), Ok(()));
+
+        transaction.message.instructions.push(instruction);
+        assert!(transaction.serialize().len() <= RUNTIME_TX_SIZE_LIMIT);
+        assert_eq!(
+            transaction.sanitize(),
+            Err(SanitizeError::TooManyInstructions {
+                found: MAX_INSTRUCTION_COUNT_PER_TRANSACTION + 1,
+                limit: MAX_INSTRUCTION_COUNT_PER_TRANSACTION,
+            })
         );
     }
 

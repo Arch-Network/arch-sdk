@@ -229,7 +229,10 @@ impl BlockingArchRpcClient {
 mod tests {
     use super::*;
     use crate::arch_program::pubkey::Pubkey;
-    use crate::{is_transaction_execution_complete, ArchError, BlockTransactionFilter, Status};
+    use crate::{
+        is_transaction_execution_complete, ArchError, BlockTransactionFilter, Status,
+        MAX_ACCOUNTS_BATCH_SIZE,
+    };
     use arch_program::hash::Hash;
     use arch_program::rent::minimum_rent;
     use arch_program::sanitized::ArchMessage;
@@ -825,6 +828,66 @@ mod tests {
             account_info2.is_executable
         );
 
+        mock.assert();
+    }
+
+    /// Inputs above `MAX_ACCOUNTS_BATCH_SIZE` are split into calls the validator accepts, and
+    /// the combined result keeps the input order.
+    #[test]
+    fn test_get_multiple_accounts_splits_inputs_above_the_cap() {
+        let mut server = Server::new();
+        let pubkeys: Vec<Pubkey> = (0..MAX_ACCOUNTS_BATCH_SIZE + 50)
+            .map(|_| Pubkey::new_unique())
+            .collect();
+        let owner = Pubkey::new_unique();
+
+        // Behaves like the validator: rejects calls above the cap, otherwise answers one
+        // account per requested key, in request order.
+        let mock = server
+            .mock("POST", "/")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "jsonrpc": "2.0",
+                "method": GET_MULTIPLE_ACCOUNTS
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body_from_request(move |request| {
+                let body: Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+                let keys: Vec<Pubkey> = serde_json::from_value(body["params"].clone()).unwrap();
+                let response = if keys.len() > MAX_ACCOUNTS_BATCH_SIZE {
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": "1",
+                        "error": { "code": -32600, "message": "batch size exceeds maximum" }
+                    })
+                } else {
+                    let accounts: Vec<Option<AccountInfoWithPubkey>> = keys
+                        .iter()
+                        .map(|key| {
+                            Some(AccountInfoWithPubkey {
+                                key: *key,
+                                lamports: minimum_rent(0),
+                                owner,
+                                data: vec![],
+                                is_executable: false,
+                            })
+                        })
+                        .collect();
+                    json!({ "jsonrpc": "2.0", "id": "1", "result": accounts })
+                };
+                response.to_string().into_bytes()
+            })
+            .expect(2)
+            .create();
+
+        let client = get_test_client(&server);
+        let result = client.get_multiple_accounts(pubkeys.clone()).unwrap();
+
+        let returned_keys: Vec<Pubkey> = result
+            .iter()
+            .map(|account| account.as_ref().unwrap().key)
+            .collect();
+        assert_eq!(returned_keys, pubkeys);
         mock.assert();
     }
 

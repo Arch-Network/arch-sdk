@@ -4,7 +4,7 @@ use crate::client::transport::http::HttpClient;
 use crate::client::transport::{RpcTransport, TcpClient};
 use crate::{
     sign_message_bip322, AccountInfoWithPubkey, BlockTransactionFilter, Config, FullBlock,
-    MAX_TX_BATCH_SIZE,
+    MAX_ACCOUNTS_BATCH_SIZE, MAX_TX_BATCH_SIZE,
 };
 use arch_program::hash::Hash;
 use bitcoin::key::Keypair;
@@ -130,21 +130,31 @@ impl ArchRpcClient {
         }
     }
 
-    /// Read account information for multiple public keys
+    /// Read account information for multiple public keys.
+    ///
+    /// The validator accepts at most `MAX_ACCOUNTS_BATCH_SIZE` pubkeys per call, so larger
+    /// inputs are sent as consecutive calls of that size. The result keeps the input order.
     pub async fn get_multiple_accounts(
         &self,
         pubkeys: Vec<Pubkey>,
     ) -> Result<Vec<Option<AccountInfoWithPubkey>>> {
-        match self
-            .call_method_with_params(GET_MULTIPLE_ACCOUNTS, pubkeys.clone())
-            .await?
-        {
-            Some(info) => Ok(info),
-            None => Err(ArchError::NotFound(format!(
-                "Accounts not found for pubkeys: {:?}",
-                pubkeys
-            ))),
+        let mut accounts = Vec::with_capacity(pubkeys.len());
+        for chunk in pubkeys.chunks(MAX_ACCOUNTS_BATCH_SIZE) {
+            let chunk_accounts: Vec<Option<AccountInfoWithPubkey>> = match self
+                .call_method_with_params(GET_MULTIPLE_ACCOUNTS, chunk)
+                .await?
+            {
+                Some(info) => info,
+                None => {
+                    return Err(ArchError::NotFound(format!(
+                        "Accounts not found for pubkeys: {:?}",
+                        chunk
+                    )))
+                }
+            };
+            accounts.extend(chunk_accounts);
         }
+        Ok(accounts)
     }
 
     /// Request an airdrop for a given public key

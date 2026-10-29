@@ -23,6 +23,14 @@ pub enum SanitizeError {
         chunk_size_cap: usize,
         shard_accounts: usize,
     },
+    TooManyAccounts {
+        found: usize,
+        limit: usize,
+    },
+    TooManyInstructions {
+        found: usize,
+        limit: usize,
+    },
 }
 
 impl Error for SanitizeError {}
@@ -63,6 +71,12 @@ impl fmt::Display for SanitizeError {
                     "invalid shard arguments: payload_size {}, chunk_size_cap {}, shard_accounts {}",
                     payload_size, chunk_size_cap, shard_accounts
                 )
+            }
+            SanitizeError::TooManyAccounts { found, limit } => {
+                write!(f, "too many accounts: found {}, limit {}", found, limit)
+            }
+            SanitizeError::TooManyInstructions { found, limit } => {
+                write!(f, "too many instructions: found {}, limit {}", found, limit)
             }
         }
     }

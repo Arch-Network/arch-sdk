@@ -196,7 +196,7 @@ mod tests {
     use super::*;
 
     /// Wincode encodes the variant index; independently built clients
-    /// (bootnode, arch-cli) depend on these values.
+    /// (bootnode) depend on these values.
     #[test]
     fn vote_instruction_discriminants_are_stable() {
         let discriminant = |ix: &VoteInstruction| -> u32 {

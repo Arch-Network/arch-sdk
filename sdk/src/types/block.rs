@@ -118,6 +118,7 @@ impl Block {
         serialized
     }
 
+    /// Decodes a block from exactly `data`; trailing bytes are an error.
     pub fn from_vec(data: &[u8]) -> Result<Self, BlockParseError> {
         let mut cursor = 0;
 
@@ -143,6 +144,11 @@ impl Block {
         for _ in 0..transactions_len {
             let tx_hash = read_hash(data, &mut cursor)?;
             transactions.push(tx_hash);
+        }
+        // One block, one encoding: trailing bytes would give the same block a
+        // second wire form.
+        if cursor != data.len() {
+            return Err(BlockParseError::InvalidBytes);
         }
 
         Ok(Block {

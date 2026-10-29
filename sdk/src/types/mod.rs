@@ -25,3 +25,7 @@ pub use subscription::*;
 pub use transaction_to_sign::*;
 
 pub const MAX_TX_BATCH_SIZE: usize = 100;
+
+/// Maximum number of pubkeys the validator accepts in one `get_multiple_accounts` call.
+/// `ArchRpcClient::get_multiple_accounts` splits larger inputs into calls of this size.
+pub const MAX_ACCOUNTS_BATCH_SIZE: usize = 100;

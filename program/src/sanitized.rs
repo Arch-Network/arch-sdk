@@ -139,6 +139,15 @@ impl Sanitize for ArchMessage {
             return Err(SanitizeError::IndexOutOfBounds);
         }
 
+        // `deserialize` enforces this too, but serde-decoded messages (JSON RPC)
+        // never pass through it.
+        if self.instructions.len() > MAX_INSTRUCTION_COUNT_PER_TRANSACTION {
+            return Err(SanitizeError::TooManyInstructions {
+                found: self.instructions.len(),
+                limit: MAX_INSTRUCTION_COUNT_PER_TRANSACTION,
+            });
+        }
+
         for ci in &self.instructions {
             if ci.program_id_index as usize >= self.account_keys.len() {
                 return Err(SanitizeError::IndexOutOfBounds);
@@ -294,6 +303,7 @@ impl ArchMessage {
         buffer
     }
 
+    /// Decodes a message from exactly `bytes`; trailing bytes are an error.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, SerialisationErrors> {
         let mut cursor: usize = 0;
 
@@ -327,7 +337,7 @@ impl ArchMessage {
 
         // Process account keys using safe iteration - no manual indexing
         let mut account_keys = Vec::with_capacity(num_keys as usize);
-        for key_bytes in account_keys_slice.chunks_exact(PUBKEY_SIZE) {
+        for key_bytes in account_keys_slice.as_chunks::<PUBKEY_SIZE>().0 {
             account_keys.push(Pubkey::from_slice(key_bytes));
         }
 
@@ -354,6 +364,11 @@ impl ArchMessage {
             let (instruction, bytes_read) = SanitizedInstruction::deserialize(remaining_bytes)?;
             instructions.push(instruction);
             cursor += bytes_read;
+        }
+        // The message is the last field of a transaction, so leftover bytes
+        // would give the same transaction a second wire form.
+        if cursor != bytes.len() {
+            return Err(SerialisationErrors::CorruptedData);
         }
 
         Ok(Self {

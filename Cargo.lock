@@ -19,7 +19,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "apl-associated-token-account"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "apl-token",
  "arch_program",
@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "apl-token"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "arch_program",
  "arrayref",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "apl-token-metadata"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "apl-token",
  "arch_program",
@@ -113,7 +113,7 @@ dependencies = [
 
 [[package]]
 name = "arch_program"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "arch-titan-types-core",
  "base64 0.22.1",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "arch_sdk"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "arch-titan-client",
  "arch_program",

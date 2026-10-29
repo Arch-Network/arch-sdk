@@ -67,11 +67,13 @@ use arch_sdk::{
     UnsubscribeResponse,
     WebSocketRequest,
     ALLOWED_VERSIONS,
+    // types/mod.rs
+    MAX_ACCOUNTS_BATCH_SIZE,
+    MAX_ACCOUNTS_PER_TRANSACTION,
     MAX_LOG_MESSAGES_COUNT,
     MAX_LOG_MESSAGES_LEN,
     MAX_STATUS_FAILED_MESSAGE_SIZE,
     MAX_TRANSACTIONS_PER_BLOCK,
-    // types/mod.rs
     MAX_TX_BATCH_SIZE,
     RUNTIME_TX_SIZE_LIMIT,
 };
@@ -377,7 +379,7 @@ fn program_account_fields() {
 fn runtime_transaction_fields_and_methods() {
     use arch_program::sanitized::{ArchMessage, MessageHeader};
 
-    assert_eq!(RUNTIME_TX_SIZE_LIMIT, 1_232);
+    assert_eq!(RUNTIME_TX_SIZE_LIMIT, 4_096);
     assert_eq!(ALLOWED_VERSIONS, [0]);
 
     let rt = RuntimeTransaction {
@@ -783,7 +785,9 @@ fn build_and_sign_transaction_signature() {
 #[test]
 fn constant_values() {
     assert_eq!(MAX_TX_BATCH_SIZE, 100);
-    assert_eq!(RUNTIME_TX_SIZE_LIMIT, 1_232);
+    assert_eq!(MAX_ACCOUNTS_BATCH_SIZE, 100);
+    assert_eq!(RUNTIME_TX_SIZE_LIMIT, 4_096);
+    assert_eq!(MAX_ACCOUNTS_PER_TRANSACTION, 50);
     assert_eq!(ALLOWED_VERSIONS, [0]);
     assert_eq!(ACCOUNT_FUNDING_AMOUNT, 1_000_000);
     assert_eq!(MAX_TRANSACTIONS_PER_BLOCK, 1024);

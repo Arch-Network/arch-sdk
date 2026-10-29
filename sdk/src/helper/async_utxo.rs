@@ -234,6 +234,11 @@ pub async fn prepare_fees() -> Result<String, ArchError> {
     .await
     .map_err(|e| ArchError::BitcoinRpcError(e.to_string()))??;
 
+    BitcoinHelper::new(&test_config)?
+        .wait_until_titan_indexes_transaction(&txid)
+        .await
+        .map_err(ArchError::TimeoutError)?;
+
     let rpc_clone = rpc.clone();
     let txid_clone = txid;
     let sent_tx = tokio::task::spawn_blocking(move || {

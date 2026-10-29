@@ -828,7 +828,7 @@ impl WebSocketClient {
 
         // First, check if we already have a matching subscription
         let subs = self.subscriptions.read().await;
-        for (_, handler) in subs.iter() {
+        for handler in subs.values() {
             // If we have a non-pending subscription for this topic with the same filter
             if !handler.pending && handler.topic == topic && handler.filter == filter {
                 return Ok(());
